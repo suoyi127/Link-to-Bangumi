@@ -16,6 +16,19 @@ int main() {
     require(anime_vault::api::serializeHealthPayload(payload) ==
                 R"({"status":"ok","service":"anime-vault"})",
             "health JSON must have exactly the two public fields");
+    constexpr std::string_view instanceToken = "0123456789abcdef0123456789abcdef";
+    require(anime_vault::api::serializeHealthPayload(
+                anime_vault::api::makeHealthPayload(instanceToken)) ==
+                R"({"status":"ok","service":"anime-vault","instanceToken":"0123456789abcdef0123456789abcdef"})",
+            "desktop health must echo only its validated instance token");
+    require(anime_vault::api::resolveInstanceToken(nullptr).empty(),
+            "developer health must not have an instance token");
+    require(anime_vault::api::resolveInstanceToken(instanceToken.data()) == instanceToken,
+            "valid desktop token must be accepted");
+    bool rejectedToken = false;
+    try { static_cast<void>(anime_vault::api::resolveInstanceToken("\"injected\"")); }
+    catch (const std::invalid_argument&) { rejectedToken = true; }
+    require(rejectedToken, "malformed instance token must fail startup");
 
     require(anime_vault::api::kHealthBindAddress == "127.0.0.1",
             "server must bind to loopback only");

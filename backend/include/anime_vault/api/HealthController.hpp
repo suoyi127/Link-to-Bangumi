@@ -1,6 +1,7 @@
 #pragma once
 
 #include <charconv>
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 #include <stdexcept>
@@ -17,16 +18,29 @@ inline constexpr std::string_view kHealthBindAddress = "127.0.0.1";
 struct HealthPayload {
     std::string_view status;
     std::string_view service;
+    std::string_view instanceToken;
 };
 
-inline constexpr HealthPayload makeHealthPayload() noexcept {
-    return {"ok", "anime-vault"};
+inline constexpr HealthPayload makeHealthPayload(std::string_view instanceToken = {}) noexcept {
+    return {"ok", "anime-vault", instanceToken};
 }
 
 inline std::string serializeHealthPayload(const HealthPayload& payload) {
-    // Both values are fixed by makeHealthPayload, so no input can enter this JSON.
-    return "{\"status\":\"" + std::string(payload.status) +
-           "\",\"service\":\"" + std::string(payload.service) + "\"}";
+    // The optional token is validated as lowercase hex before it enters this JSON.
+    auto json = "{\"status\":\"" + std::string(payload.status) +
+        "\",\"service\":\"" + std::string(payload.service) + "\"";
+    if (!payload.instanceToken.empty())
+        json += ",\"instanceToken\":\"" + std::string(payload.instanceToken) + "\"";
+    return json + "}";
+}
+
+inline std::string resolveInstanceToken(const char* value) {
+    if (!value) return {};
+    const std::string_view token(value);
+    if (token.size() != 32 || !std::all_of(token.begin(), token.end(), [](char ch) {
+        return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f');
+    })) throw std::invalid_argument("ANIME_VAULT_INSTANCE_TOKEN must be 32 lowercase hexadecimal characters");
+    return std::string(token);
 }
 
 inline std::optional<std::uint16_t> parseHealthPort(std::string_view text) noexcept {
@@ -53,6 +67,6 @@ inline std::uint16_t resolveHealthPort(const char* environmentValue) {
     return *port;
 }
 
-void registerHealthEndpoint();
+void registerHealthEndpoint(std::string instanceToken = {});
 
 }  // namespace anime_vault::api

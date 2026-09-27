@@ -13,6 +13,7 @@
 #include "anime_vault/infrastructure/ProcessLauncher.hpp"
 #include "anime_vault/services/PlaybackService.hpp"
 #include "anime_vault/services/RuntimePaths.hpp"
+#include "anime_vault/services/RuntimeWebRoot.hpp"
 
 #include <drogon/drogon.h>
 
@@ -109,7 +110,8 @@ int main() {
                 ? std::string{} : std::string("qb_download_dir_restart_required");
         };
         const auto port = anime_vault::api::resolveHealthPort(std::getenv("ANIME_VAULT_PORT"));
-        anime_vault::api::registerHealthEndpoint();
+        anime_vault::api::registerHealthEndpoint(
+            anime_vault::api::resolveInstanceToken(std::getenv("ANIME_VAULT_INSTANCE_TOKEN")));
         anime_vault::api::registerMediaEndpoints(media, organization, enricher, mikanEnricher);
         anime_vault::api::registerPlaybackEndpoint(repository, playback);
         anime_vault::api::registerManagementEndpoints(repository,
@@ -256,6 +258,16 @@ int main() {
                     callback(response);
                 });
         }, {drogon::Post});
+        if (const char* webDirectory = std::getenv("ANIME_VAULT_WEB_DIR"); webDirectory && *webDirectory) {
+            const auto* bytes = reinterpret_cast<const char8_t*>(webDirectory);
+            const auto root = anime_vault::validatedWebRoot(
+                std::filesystem::path(std::u8string_view(bytes, std::char_traits<char>::length(webDirectory))));
+            const auto encoded = root.u8string();
+            // Static files are enabled only for an explicit production bundle root.
+            drogon::app().setDocumentRoot(
+                std::string(reinterpret_cast<const char*>(encoded.data()), encoded.size()));
+            drogon::app().setHomePage("index.html");
+        }
         drogon::app().addListener(std::string(anime_vault::api::kHealthBindAddress), port).run();
         return 0;
     } catch (const std::exception& error) {

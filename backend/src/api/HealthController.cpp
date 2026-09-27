@@ -3,17 +3,18 @@
 #include <drogon/drogon.h>
 
 #include <functional>
+#include <utility>
 
 namespace anime_vault::api {
 
-void registerHealthEndpoint() {
+void registerHealthEndpoint(std::string instanceToken) {
     drogon::app().registerHandler(
         "/health",
-        [](const drogon::HttpRequestPtr&,
+        [instanceToken = std::move(instanceToken)](const drogon::HttpRequestPtr&,
            std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
             auto response = drogon::HttpResponse::newHttpResponse(
                 drogon::k200OK, drogon::CT_APPLICATION_JSON);
-            response->setBody(serializeHealthPayload(makeHealthPayload()));
+            response->setBody(serializeHealthPayload(makeHealthPayload(instanceToken)));
             callback(response);
         },
         {drogon::Get});
