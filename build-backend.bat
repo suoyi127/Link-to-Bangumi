@@ -1,8 +1,11 @@
 @echo off
 setlocal
 
+if not "%~1"=="" set "VCPKG_ROOT=%~1"
+if not defined VCPKG_ROOT set /p "VCPKG_ROOT=Enter vcpkg root: "
+set "VCPKG_ROOT=%VCPKG_ROOT:"=%"
 if not defined VCPKG_ROOT (
-    echo VCPKG_ROOT is not set. Point it to your vcpkg installation.
+    echo VCPKG_ROOT is empty. Point it to your vcpkg installation.
     exit /b 1
 )
 if not exist "%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" (
