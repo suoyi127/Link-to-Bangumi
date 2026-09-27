@@ -1,0 +1,6 @@
+# Phase 8 deployment placeholder. No application image or host media mounts exist yet.
+services:
+  scaffold:
+    image: alpine:3.20
+    profiles: [scaffold]
+    command: ["sh", "-c", "echo 'Anime Vault container deployment is planned for phase 8.'"]

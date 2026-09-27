@@ -1,0 +1,8 @@
+/build/
+/frontend/node_modules/
+/frontend/dist/
+/.env
+/.superpowers/
+*.db
+*.db-shm
+*.db-wal
