@@ -33,7 +33,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\dev.ps1 -VcpkgRoot 'C:\pat
 
 也可省略参数，脚本读取 `VCPKG_ROOT`，仍未设置时会提示输入。上例的执行策略仅对新开的这一次 PowerShell 进程有效，不修改系统设置。默认前端 `http://127.0.0.1:5173/`、后端 `http://127.0.0.1:8848/health`；已占用的端口不会被脚本关闭。调试多个实例时可指定 `-BackendPort`、`-FrontendPort`，Vite 代理随之调整。按 Ctrl+C 结束本次启动的进程。旧的 `build-backend.bat`、`start-backend.bat` 仍供只运行后端使用。
 
-桌面发布目录使用 `powershell -NoProfile -ExecutionPolicy Bypass -File .\package-desktop.ps1 -VcpkgRoot 'C:\path\to\vcpkg'` 生成到 `build\package\AnimeVault-<时间戳>`；每次生成新目录，不覆盖旧包。其中 `AnimeVault.exe` 是唯一需要用户点击的程序；同目录 `backend` 和 `web` 是运行资源，不可单独移走。桌面宿主自带 .NET 运行时；当前便携目录仍要求本机已有 Microsoft Edge WebView2 Runtime 和 Visual C++ x64 Redistributable。缺少 WebView2 时启动会显示提示。首次打开不要求 qB 或 `D:\追番`，请在设置页选择自己的 qB 下载目录并重启应用。安装程序 `Setup.exe` 将在下一阶段自动处理运行库先决条件；当前发布目录仅用于便携测试。
+桌面发布目录使用 `powershell -NoProfile -ExecutionPolicy Bypass -File .\package-desktop.ps1 -VcpkgRoot 'C:\path\to\vcpkg'` 生成到 `build\package\AnimeVault-<时间戳>`；每次生成新目录，不覆盖旧包。其中 `AnimeVault.exe` 是唯一需要用户点击的程序；同目录 `backend` 和 `web` 是运行资源，不可单独移走。桌面宿主自带 .NET 运行时；单独复制便携目录仍要求本机已有 Microsoft Edge WebView2 Runtime 和 Visual C++ x64 Redistributable。
+
+普通用户应从 GitHub Releases 下载 `Setup.exe` 安装，再从开始菜单启动 Anime Vault。安装器内含微软运行库安装程序；若电脑缺少 WebView2，安装过程需联网完成其 Evergreen Runtime 下载。首次打开不要求 qB 或 `D:\追番`，请在设置页选择自己的 qB 下载目录并重启应用。卸载不会删除 `%LOCALAPPDATA%\AnimeVault` 中的数据库/封面或用户媒体文件。当前未配置代码签名证书，Windows 可能对新下载的安装包显示 SmartScreen 警告；请确认下载来源为项目的 GitHub Release。
+
+维护者可在生成便携目录后安装 Inno Setup 7，并执行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\build-installer.ps1 -PackageDir 'D:\代码库\Link-to-Bangumi\build\package\AnimeVault-<实际时间戳>' -IsccPath 'C:\Program Files\Inno Setup 7\ISCC.exe'
+```
+
+脚本只接受本仓库的打包目录，从微软下载并验证两个先决条件安装程序的数字签名，然后在 `build\installer\AnimeVault-<时间戳>\Setup.exe` 生成新安装包。推送 `vX.Y.Z` 标签会触发 Windows GitHub Actions 构建、测试并上传 `Setup.exe`；脚本不会自行推送标签。
 
 需要 Windows 10/11、Visual Studio 2022 C++ 工具集、CMake 3.25+、Git、Node.js/npm 和 vcpkg。`vcpkg.json` 固定 baseline `9e593bb18ea69cc5095e012465dcd675a822ed0d`。在仓库根目录的 PowerShell 中：
 

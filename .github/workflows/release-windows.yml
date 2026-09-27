@@ -1,0 +1,83 @@
+name: Windows release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  windows-x64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Bootstrap vcpkg
+        shell: pwsh
+        run: |
+          $target = Join-Path $env:RUNNER_TEMP 'vcpkg'
+          # The manifest pins a historical builtin-baseline, so vcpkg needs Git history.
+          git clone https://github.com/microsoft/vcpkg.git $target
+          & (Join-Path $target 'bootstrap-vcpkg.bat') -disableMetrics
+          if ($LASTEXITCODE -ne 0) { throw 'vcpkg bootstrap failed' }
+          "VCPKG_ROOT=$target" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Verify sources
+        shell: pwsh
+        run: |
+          cmake --preset test
+          if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed' }
+          cmake --build --preset test
+          if ($LASTEXITCODE -ne 0) { throw 'CMake build failed' }
+          ctest --preset test
+          if ($LASTEXITCODE -ne 0) { throw 'CTest failed' }
+          npm.cmd --prefix frontend ci
+          if ($LASTEXITCODE -ne 0) { throw 'npm ci failed' }
+          npm.cmd --prefix frontend test -- --run
+          if ($LASTEXITCODE -ne 0) { throw 'frontend tests failed' }
+          npm.cmd --prefix frontend run lint
+          if ($LASTEXITCODE -ne 0) { throw 'frontend lint failed' }
+          npm.cmd --prefix frontend run build
+          if ($LASTEXITCODE -ne 0) { throw 'frontend build failed' }
+          dotnet run --project desktop/AnimeVault.Desktop.Tests/AnimeVault.Desktop.Tests.csproj
+          if ($LASTEXITCODE -ne 0) { throw 'desktop layout tests failed' }
+      - name: Build desktop package
+        shell: pwsh
+        run: |
+          & ./package-desktop.ps1 -VcpkgRoot $env:VCPKG_ROOT
+          if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw 'package build failed' }
+      - name: Install Inno Setup compiler
+        shell: pwsh
+        run: |
+          $download = Join-Path $env:RUNNER_TEMP 'innosetup-7.1.0-x64.exe'
+          Invoke-WebRequest 'https://github.com/jrsoftware/issrc/releases/download/is-7_1_0/innosetup-7.1.0-x64.exe' -OutFile $download
+          $signature = Get-AuthenticodeSignature -LiteralPath $download
+          if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'O=Pyrsys B.V.') { throw 'Inno Setup signature invalid' }
+          $location = Join-Path $env:RUNNER_TEMP 'inno7'
+          $process = Start-Process -FilePath $download -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER',"/DIR=$location") -WindowStyle Hidden -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw 'Inno Setup installation failed' }
+          "ISCC_PATH=$(Join-Path $location 'ISCC.exe')" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Build Setup.exe
+        shell: pwsh
+        run: |
+          $package = Get-ChildItem build/package -Directory -Filter 'AnimeVault-*' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $package) { throw 'Package directory missing' }
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          & ./build-installer.ps1 -PackageDir $package.FullName -IsccPath $env:ISCC_PATH -AppVersion $version
+          if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw 'Installer build failed' }
+          $setup = Get-ChildItem build/installer -Directory -Filter 'AnimeVault-*' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $setup -or -not (Test-Path (Join-Path $setup.FullName 'Setup.exe'))) { throw 'Setup.exe missing' }
+          "SETUP_PATH=$(Join-Path $setup.FullName 'Setup.exe')" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create $env:GITHUB_REF_NAME $env:SETUP_PATH --title "Anime Vault $env:GITHUB_REF_NAME" --generate-notes
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub Release creation failed' }
