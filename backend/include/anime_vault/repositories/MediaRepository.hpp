@@ -50,7 +50,7 @@ struct AuditPage { std::vector<AuditRecord> items; std::optional<std::int64_t> n
 struct UiPreferences {
     std::string preferredOperation{"hardlink"};
     int scanIntervalSeconds{3600};
-    std::string mpvExecutable, qbWebUiUrl;
+    std::string mpvExecutable, qbWebUiUrl, qbDownloadDirectory;
 };
 
 struct MediaCorrection {

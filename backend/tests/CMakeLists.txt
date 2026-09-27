@@ -1,5 +1,11 @@
 find_package(Catch2 3 CONFIG REQUIRED)
 
+add_executable(anime_vault_runtime_paths_tests unit/RuntimePathsTest.cpp)
+target_link_libraries(anime_vault_runtime_paths_tests PRIVATE anime_vault_core anime_vault_storage Catch2::Catch2WithMain)
+target_compile_features(anime_vault_runtime_paths_tests PRIVATE cxx_std_20)
+anime_vault_apply_warnings(anime_vault_runtime_paths_tests)
+add_test(NAME RuntimePaths COMMAND anime_vault_runtime_paths_tests)
+
 add_executable(anime_vault_scan_reconciliation_tests integration/ScanReconciliationTest.cpp)
 target_link_libraries(anime_vault_scan_reconciliation_tests PRIVATE anime_vault_api Catch2::Catch2WithMain)
 target_compile_features(anime_vault_scan_reconciliation_tests PRIVATE cxx_std_20)

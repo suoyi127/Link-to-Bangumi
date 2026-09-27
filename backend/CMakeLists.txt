@@ -40,6 +40,7 @@ add_library(anime_vault_core STATIC
   src/services/OrganizationService.cpp
   src/services/BangumiMatcher.cpp
   src/services/PlaybackService.cpp
+  src/services/RuntimePaths.cpp
   src/infrastructure/ProcessLauncher.cpp
 )
 target_include_directories(anime_vault_core PUBLIC

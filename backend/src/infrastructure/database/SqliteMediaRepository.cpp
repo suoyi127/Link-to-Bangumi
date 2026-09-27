@@ -558,7 +558,7 @@ AuditPage SqliteMediaRepository::listAuditPage(std::int64_t offset, int limit,
 UiPreferences SqliteMediaRepository::getUiPreferences() const {
     std::lock_guard lock(database_.mutex());
     auto* db = database_.handle();
-    auto stmt = prepare(db, "SELECT key,json_extract(value_json,'$') FROM setting WHERE key IN ('preferredOperation','scanIntervalSeconds','mpvExecutable','qbWebUiUrl')");
+    auto stmt = prepare(db, "SELECT key,json_extract(value_json,'$') FROM setting WHERE key IN ('preferredOperation','scanIntervalSeconds','mpvExecutable','qbWebUiUrl','qbDownloadDirectory')");
     UiPreferences preferences;
     int rc;
     while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) {
@@ -567,6 +567,7 @@ UiPreferences SqliteMediaRepository::getUiPreferences() const {
         else if (key == "scanIntervalSeconds") preferences.scanIntervalSeconds = sqlite3_column_int(stmt.get(), 1);
         else if (key == "mpvExecutable") preferences.mpvExecutable = column(stmt.get(), 1);
         else if (key == "qbWebUiUrl") preferences.qbWebUiUrl = column(stmt.get(), 1);
+        else if (key == "qbDownloadDirectory") preferences.qbDownloadDirectory = column(stmt.get(), 1);
     }
     if (rc != SQLITE_DONE) throw std::runtime_error(sqlite3_errmsg(db));
     return preferences;
@@ -580,7 +581,8 @@ void SqliteMediaRepository::putUiPreferences(const UiPreferences& preferences) {
     for (const auto& [key, value] : {std::pair{"preferredOperation", preferences.preferredOperation},
                                     {"scanIntervalSeconds", std::to_string(preferences.scanIntervalSeconds)},
                                     {"mpvExecutable", preferences.mpvExecutable},
-                                    {"qbWebUiUrl", preferences.qbWebUiUrl}}) {
+                                    {"qbWebUiUrl", preferences.qbWebUiUrl},
+                                    {"qbDownloadDirectory", preferences.qbDownloadDirectory}}) {
         sqlite3_reset(stmt.get());
         sqlite3_clear_bindings(stmt.get());
         bind(stmt.get(), 1, key);
