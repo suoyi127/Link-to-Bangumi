@@ -57,6 +57,21 @@ std::int64_t pageNumber(const Request& request, const std::string& name,
         throw ApiError(400, "invalid_page", "invalid page parameter");
     return value;
 }
+InboxPageHttpRequest parseInboxPageRequest(const Request& request) {
+    if (!request->body().empty()) throw ApiError(400, "invalid_request", "inbox takes no body");
+    for (const auto& [name, _] : request->getParameters())
+        if (name != "limit" && name != "offset" && name != "origin")
+            throw ApiError(400, "invalid_page", "unknown page parameter");
+    InboxPageHttpRequest dto;
+    dto.limit = static_cast<int>(pageNumber(request, "limit", 100, 1, 100));
+    dto.offset = pageNumber(request, "offset", 0, 0, 1'000'000);
+    if (request->getParameters().contains("origin")) {
+        dto.origin = request->getParameter("origin");
+        if (*dto.origin != "qb_download" && *dto.origin != "external_import")
+            throw ApiError(400, "invalid_origin", "invalid inbox origin");
+    }
+    return dto;
+}
 Json::Value scanJson(const ScanRecord& scan) {
     Json::Value json;
     json["id"] = Json::Int64(scan.id);
@@ -449,12 +464,8 @@ void registerMediaEndpoints(MediaService& service, OrganizationService& organiza
     }, {drogon::Get});
     drogon::app().registerHandler("/api/inbox", [&service](const Request& request, Callback&& callback) {
         respond(request, std::move(callback), [&] {
-            if (!request->body().empty()) throw ApiError(400, "invalid_request", "inbox takes no body");
-            for (const auto& [name, _] : request->getParameters())
-                if (name != "limit" && name != "offset") throw ApiError(400, "invalid_page", "unknown page parameter");
-            const auto limit = static_cast<int>(pageNumber(request, "limit", 100, 1, 100));
-            const auto offset = pageNumber(request, "offset", 0, 0, 1'000'000);
-            const auto page = service.listInboxPage(offset, limit);
+            const auto dto = parseInboxPageRequest(request);
+            const auto page = service.listInboxPage(dto.offset, dto.limit, dto.origin);
             Json::Value result;
             result["items"] = Json::Value(Json::arrayValue);
             for (const auto& media : page.items) result["items"].append(mediaJson(media));

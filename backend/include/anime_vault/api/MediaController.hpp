@@ -9,10 +9,17 @@
 
 #include <json/json.h>
 #include <filesystem>
+#include <optional>
+#include <string>
 #include <string_view>
 
 namespace anime_vault::api {
 class MediaService;
+struct InboxPageHttpRequest {
+    std::int64_t offset{};
+    int limit{100};
+    std::optional<std::string> origin;
+};
 struct ExecuteOrganizationHttpRequest {
     std::int64_t planId{};
     std::string idempotencyKey;

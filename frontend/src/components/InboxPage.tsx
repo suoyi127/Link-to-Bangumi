@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Alert, Button, Checkbox, Input, Modal, Select, Space, Spin, Table, Typography } from 'antd'
+import { Alert, Button, Checkbox, Input, Modal, Select, Space, Spin, Table, Tabs, Typography } from 'antd'
 import { correctMedia, executeOrganization, getInbox, getSettings, previewOrganization, searchBangumi } from '../api/client'
-import type { BangumiSearch, Media, Preferences, Preview } from '../api/types'
+import type { BangumiSearch, InboxOrigin, Media, Preferences, Preview } from '../api/types'
 
 type Props = { onOpenAnime: (id: number) => void }
 type Correction = Pick<Media, 'title' | 'season' | 'episodeNumber' | 'episodeType'>
@@ -11,7 +11,9 @@ const executable = (plan: Preview | null) => !!plan && plan.conflicts.length ===
 
 export function InboxPage({ onOpenAnime }: Props) {
   const [items, setItems] = useState<Media[]>([])
-  const [offset, setOffset] = useState(0)
+  const [origin, setOrigin] = useState<InboxOrigin>('qb_download')
+  const [offsets, setOffsets] = useState<Record<InboxOrigin, number>>({ qb_download: 0, external_import: 0 })
+  const offset = offsets[origin]
   const [nextOffset, setNextOffset] = useState<number | null>(null)
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -35,10 +37,10 @@ export function InboxPage({ onOpenAnime }: Props) {
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
     setLoading(true)
-    try { const page = await getInbox(100, offset, signal); setItems(page.items); setNextOffset(page.nextOffset); setTotal(page.total); setError('') }
+    try { const page = await getInbox(100, offset, signal, origin); if (signal?.aborted) return; setItems(page.items); setNextOffset(page.nextOffset); setTotal(page.total); setError('') }
     catch (cause) { if (!signal?.aborted) setError(errorText(cause)) }
     finally { if (!signal?.aborted) setLoading(false) }
-  }, [offset])
+  }, [offset, origin])
   useEffect(() => { const controller = new AbortController(); void refresh(controller.signal); return () => controller.abort() }, [refresh])
   useEffect(() => {
     let active = true
@@ -49,7 +51,8 @@ export function InboxPage({ onOpenAnime }: Props) {
   const clearPlan = () => { previewSequence.current++; setPlan(null); setKey(''); setQbComplete(false); setConfirmOpen(false); setRetry(false) }
   const choose = (item: Media) => { selectionSequence.current++; searchSequence.current++; clearPlan(); setSelected(item); setCorrection({ title: item.title, season: item.season, episodeNumber: item.episodeNumber, episodeType: item.episodeType }); setQuery(''); setResults(null); setError('') }
   const editCorrection = (field: keyof Correction, value: string) => { if (!correction) return; clearPlan(); setCorrection({ ...correction, [field]: value }) }
-  const changePage = (next: number) => { selectionSequence.current++; searchSequence.current++; clearPlan(); setSelected(null); setCorrection(null); setOffset(next) }
+  const changePage = (next: number) => { selectionSequence.current++; searchSequence.current++; clearPlan(); setSelected(null); setCorrection(null); setOffsets((old) => ({ ...old, [origin]: next })) }
+  const changeOrigin = (next: InboxOrigin) => { if (next === origin) return; selectionSequence.current++; searchSequence.current++; clearPlan(); setSelected(null); setCorrection(null); setItems([]); setNextOffset(null); setTotal(0); setError(''); setOrigin(next) }
   async function save() {
     if (!selected || !correction || !episodeTypes.includes(correction.episodeType)) return
     const sequence = selectionSequence.current
@@ -88,11 +91,12 @@ export function InboxPage({ onOpenAnime }: Props) {
   }
 
   return <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+    <Tabs activeKey={origin} onChange={(value) => changeOrigin(value as InboxOrigin)} items={[{ key: 'qb_download', label: 'qB 下载' }, { key: 'external_import', label: '外来导入' }]} />
     <Button onClick={() => void refresh()} disabled={loading}>刷新</Button>
     {loading && <Spin aria-label="正在加载待整理文件" />}
     {error && !confirmOpen && <Alert type="error" showIcon message={error} />}
     <Table rowKey="id" loading={loading} dataSource={items} locale={{ emptyText: '暂无待整理文件' }} pagination={false} columns={[
-      { title: '来源', dataIndex: 'filename' }, { title: '类型', dataIndex: 'origin' }, { title: '状态', dataIndex: 'status' },
+      { title: '文件名', dataIndex: 'filename' }, { title: '状态', dataIndex: 'status' },
       { title: '置信度', dataIndex: 'confidence' }, { title: '标题', dataIndex: 'title' },
       { title: '季', dataIndex: 'season' }, { title: '集数', dataIndex: 'episodeNumber' },
       { title: '操作', render: (_, item: Media) => <Button onClick={() => choose(item)} aria-label={`编辑 ${item.title}`}>编辑与整理</Button> },

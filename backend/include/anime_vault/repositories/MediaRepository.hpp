@@ -161,7 +161,8 @@ public:
     virtual UiPreferences getUiPreferences() const = 0;
     virtual void putUiPreferences(const UiPreferences& preferences) = 0;
     virtual std::vector<MediaRecord> listInbox() const = 0;
-    virtual InboxPage listInboxPage(std::int64_t offset, int limit) const = 0;
+    virtual InboxPage listInboxPage(std::int64_t offset, int limit,
+                                    std::optional<std::string> origin = std::nullopt) const = 0;
     virtual std::optional<BangumiCacheRecord> getBangumiCache(const std::string& key) const = 0;
     virtual void putBangumiCache(const BangumiCacheRecord& record) = 0;
     virtual bool putBangumiFailureIfStale(const BangumiCacheRecord& record,

@@ -61,6 +61,15 @@ TEST_CASE("media service scans inbox and previews without creating a target") {
     REQUIRE(combinedInbox.size() == 2);
     REQUIRE(combinedInbox.at(0).origin == "qb_download");
     REQUIRE(combinedInbox.at(1).origin == "external_import");
+    REQUIRE(service.listInboxPage(0, 100).total == 2);
+    const auto qbPage = service.listInboxPage(0, 100, "qb_download");
+    REQUIRE(qbPage.total == 1);
+    REQUIRE(qbPage.items.size() == 1);
+    REQUIRE(qbPage.items.front().origin == "qb_download");
+    const auto importPage = service.listInboxPage(0, 100, "external_import");
+    REQUIRE(importPage.total == 1);
+    REQUIRE(importPage.items.size() == 1);
+    REQUIRE(importPage.items.front().origin == "external_import");
     REQUIRE(fs::file_size(video) == 5);
     REQUIRE(fs::last_write_time(video) == sourceTime);
     REQUIRE(fs::file_size(importedVideo) == 14);

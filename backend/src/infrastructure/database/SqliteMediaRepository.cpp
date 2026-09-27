@@ -607,18 +607,30 @@ std::optional<std::int64_t> boundedInboxNextOffset(std::int64_t offset, int limi
     return offset + limit;
 }
 
-InboxPage SqliteMediaRepository::listInboxPage(std::int64_t offset, int limit) const {
+InboxPage SqliteMediaRepository::listInboxPage(std::int64_t offset, int limit,
+                                               std::optional<std::string> origin) const {
     if (offset < 0 || offset > 1'000'000 || limit < 1 || limit > 100)
         throw std::invalid_argument("invalid inbox page");
+    if (origin && *origin != "qb_download" && *origin != "external_import")
+        throw std::invalid_argument("invalid inbox origin");
     std::lock_guard lock(database_.mutex());
     auto* db = database_.handle();
-    auto count = prepare(db, "SELECT COUNT(*) FROM media_file WHERE status='inbox'");
+    const bool filtered = origin.has_value();
+    auto count = prepare(db, filtered
+        ? "SELECT COUNT(*) FROM media_file WHERE status='inbox' AND origin=?"
+        : "SELECT COUNT(*) FROM media_file WHERE status='inbox'");
+    if (filtered) bind(count.get(), 1, *origin);
     if (sqlite3_step(count.get()) != SQLITE_ROW) throw std::runtime_error(sqlite3_errmsg(db));
     InboxPage page;
     page.total = sqlite3_column_int64(count.get(), 0);
-    auto stmt = prepare(db, "SELECT m.id,m.scan_id,m.source_path,m.filename,m.episode_number,m.episode_type,m.size_bytes,m.status,m.confidence,m.title,m.season,a.bangumi_subject_id,m.source_modified_at,m.origin,m.anime_id,m.parsed_title,m.library_path FROM media_file m LEFT JOIN anime a ON a.id=m.anime_id WHERE m.status='inbox' ORDER BY m.id LIMIT ? OFFSET ?");
-    sqlite3_bind_int(stmt.get(), 1, limit + 1);
-    sqlite3_bind_int64(stmt.get(), 2, offset);
+    auto stmt = prepare(db, filtered
+        ? "SELECT m.id,m.scan_id,m.source_path,m.filename,m.episode_number,m.episode_type,m.size_bytes,m.status,m.confidence,m.title,m.season,a.bangumi_subject_id,m.source_modified_at,m.origin,m.anime_id,m.parsed_title,m.library_path FROM media_file m LEFT JOIN anime a ON a.id=m.anime_id WHERE m.status='inbox' AND m.origin=? ORDER BY m.id LIMIT ? OFFSET ?"
+        : "SELECT m.id,m.scan_id,m.source_path,m.filename,m.episode_number,m.episode_type,m.size_bytes,m.status,m.confidence,m.title,m.season,a.bangumi_subject_id,m.source_modified_at,m.origin,m.anime_id,m.parsed_title,m.library_path FROM media_file m LEFT JOIN anime a ON a.id=m.anime_id WHERE m.status='inbox' ORDER BY m.id LIMIT ? OFFSET ?");
+    // Count and page use the same filter so a busy source cannot hide the other source.
+    if (filtered) bind(stmt.get(), 1, *origin);
+    const int firstPageParameter = filtered ? 2 : 1;
+    sqlite3_bind_int(stmt.get(), firstPageParameter, limit + 1);
+    sqlite3_bind_int64(stmt.get(), firstPageParameter + 1, offset);
     int rc;
     while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) page.items.push_back(mediaRow(stmt.get()));
     if (rc != SQLITE_DONE) throw std::runtime_error(sqlite3_errmsg(db));

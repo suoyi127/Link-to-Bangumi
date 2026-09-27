@@ -151,6 +151,13 @@ TEST_CASE("organization execution route confirms a disposable import plan") {
     REQUIRE((*lastPage->getJsonObject())["items"].size() == 1);
     REQUIRE((*lastPage->getJsonObject())["items"][0]["filename"].asString() == "page-100.mkv");
     REQUIRE((*lastPage->getJsonObject())["nextOffset"].isNull());
+    const auto importedPage = inboxGet("/api/inbox?origin=external_import");
+    REQUIRE(importedPage->statusCode() == drogon::k200OK);
+    REQUIRE((*importedPage->getJsonObject())["total"].asInt64() == 1);
+    REQUIRE((*importedPage->getJsonObject())["items"][0]["origin"].asString() == "external_import");
+    const auto invalidOrigin = inboxGet("/api/inbox?origin=invalid");
+    REQUIRE(invalidOrigin->statusCode() == drogon::k400BadRequest);
+    REQUIRE((*invalidOrigin->getJsonObject())["error"]["code"].asString() == "invalid_origin");
     REQUIRE((*inboxGet("/api/inbox?limit=101")->getJsonObject())["error"]["code"].asString() == "invalid_page");
     REQUIRE((*inboxGet("/api/inbox?offset=-1")->getJsonObject())["error"]["code"].asString() == "invalid_page");
     Json::Value correction;

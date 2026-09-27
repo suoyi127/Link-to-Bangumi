@@ -10,6 +10,13 @@ it('requests a bounded inbox page with its offset', async () => {
   expect(fetchMock).toHaveBeenCalledWith('/api/inbox?limit=100&offset=100', expect.anything())
 })
 
+it('requests only the selected inbox origin', async () => {
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [], nextOffset: null, total: 0 }), { status: 200 }))
+  vi.stubGlobal('fetch', fetchMock)
+  await getInbox(100, 0, undefined, 'qb_download')
+  expect(fetchMock).toHaveBeenCalledWith('/api/inbox?limit=100&offset=0&origin=qb_download', expect.anything())
+})
+
 it('preserves stable error metadata without exposing backend message', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { code: 'invalid_page', message: 'private path' }, requestId: 'r-7' }), { status: 400 })))
   await expect(getScans()).rejects.toMatchObject({ code: 'invalid_page', requestId: 'r-7', status: 400 })

@@ -1,4 +1,4 @@
-import type { Anime, AnimeDetail, AuditLog, BangumiSearch, Execution, InboxPage, Media, MetadataSync, MikanFeeds, Page, Preferences, Preview, QbAction, QbMikanRule, QbStatus, Scan, Settings } from './types'
+import type { Anime, AnimeDetail, AuditLog, BangumiSearch, Execution, InboxOrigin, InboxPage, Media, MetadataSync, MikanFeeds, Page, Preferences, Preview, QbAction, QbMikanRule, QbStatus, Scan, Settings } from './types'
 
 export class ApiError extends Error {
   constructor(public code: string, public status: number, public requestId?: string) {
@@ -44,7 +44,7 @@ async function startScan(path: string) {
 }
 export const startSourceScan = () => startScan('/api/scans')
 export const startImportScan = () => startScan('/api/imports/scan')
-export const getInbox = (limit = 100, offset = 0, signal?: AbortSignal) => request<InboxPage>(`/api/inbox${pageQuery(limit, offset)}`, { signal })
+export const getInbox = (limit = 100, offset = 0, signal?: AbortSignal, origin?: InboxOrigin) => request<InboxPage>(`/api/inbox${pageQuery(limit, offset)}${origin ? `&origin=${encodeURIComponent(origin)}` : ''}`, { signal })
 export const correctMedia = (id: number, correction: Pick<Media, 'title' | 'season' | 'episodeNumber' | 'episodeType'>) => request<Media>(`/api/inbox/${id}/parse`, json(correction))
 export const getAnime = (limit = 50, offset = 0, signal?: AbortSignal) => request<Page<Anime>>(`/api/anime${pageQuery(limit, offset)}`, { signal })
 export const getAnimeDetail = (id: number, mediaLimit = 50, mediaOffset = 0) => request<AnimeDetail>(`/api/anime/${id}?mediaLimit=${mediaLimit}&mediaOffset=${mediaOffset}`)

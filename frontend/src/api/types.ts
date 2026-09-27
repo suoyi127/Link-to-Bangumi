@@ -1,4 +1,5 @@
 export type Page<T> = { items: T[]; nextOffset: number | null }
+export type InboxOrigin = 'qb_download' | 'external_import'
 export type InboxPage = Page<Media> & { total: number }
 export type Scan = { id: number; source: string; status: string; discoveredCount: number; processedCount: number; errorCount: number; errorSummary: string }
 export type Media = { id: number; scanId: number; sourcePath: string; filename: string; parsedTitle: string; title: string; season: string; episodeNumber: string; episodeType: string; sizeBytes: number; status: string; origin: string; animeId: number | null; confidence: number; bangumiSubjectId?: number }

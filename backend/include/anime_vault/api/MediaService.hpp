@@ -38,7 +38,8 @@ public:
     ScanRecord createImportScan(std::chrono::seconds stableFor = std::chrono::seconds{60});
     ScanRecord getScan(std::int64_t id) const;
     std::vector<MediaRecord> listInbox() const;
-    InboxPage listInboxPage(std::int64_t offset, int limit) const;
+    InboxPage listInboxPage(std::int64_t offset, int limit,
+                            std::optional<std::string> origin = std::nullopt) const;
     MediaRecord correct(std::int64_t id, const MediaCorrection& correction);
     PreviewResponse preview(std::int64_t id, const std::string& operation = "hardlink");
 

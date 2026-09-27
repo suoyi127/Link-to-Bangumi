@@ -231,9 +231,10 @@ std::vector<MediaRecord> MediaService::listInbox() const {
     return repository_.listInbox();
 }
 
-InboxPage MediaService::listInboxPage(std::int64_t offset, int limit) const {
+InboxPage MediaService::listInboxPage(std::int64_t offset, int limit,
+                                      std::optional<std::string> origin) const {
     const std::lock_guard lock(mutex_);
-    return repository_.listInboxPage(offset, limit);
+    return repository_.listInboxPage(offset, limit, std::move(origin));
 }
 
 MediaRecord MediaService::correct(std::int64_t id, const MediaCorrection& correction) {

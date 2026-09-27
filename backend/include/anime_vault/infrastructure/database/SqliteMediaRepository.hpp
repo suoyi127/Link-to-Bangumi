@@ -38,7 +38,8 @@ public:
     UiPreferences getUiPreferences() const override;
     void putUiPreferences(const UiPreferences& preferences) override;
     std::vector<MediaRecord> listInbox() const override;
-    InboxPage listInboxPage(std::int64_t offset, int limit) const override;
+    InboxPage listInboxPage(std::int64_t offset, int limit,
+                            std::optional<std::string> origin = std::nullopt) const override;
     std::optional<BangumiCacheRecord> getBangumiCache(const std::string& key) const override;
     void putBangumiCache(const BangumiCacheRecord& record) override;
     bool putBangumiFailureIfStale(const BangumiCacheRecord& record,

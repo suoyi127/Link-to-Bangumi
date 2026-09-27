@@ -112,15 +112,40 @@ it('invalidates a preview as soon as a correction field changes', async () => {
 }, 20000)
 
 it('loads the next inbox page from the server', async () => {
-  const { inbox } = setup('external_import')
-  inbox.mockResolvedValueOnce({ items: [media('external_import')], total: 101, nextOffset: 100 })
-    .mockResolvedValueOnce({ items: [{ ...media('external_import'), id: 101, title: '第101个' }], total: 101, nextOffset: null })
+  const { inbox } = setup('qb_download')
+  inbox.mockResolvedValueOnce({ items: [media('qb_download')], total: 101, nextOffset: 100 })
+    .mockResolvedValueOnce({ items: [{ ...media('qb_download'), id: 101, title: '第101个' }], total: 101, nextOffset: null })
   render(<InboxPage onOpenAnime={vi.fn()} />)
   await screen.findByRole('button', { name: '编辑 旧标题' })
   fireEvent.click(screen.getByRole('button', { name: '下一页' }))
-  await waitFor(() => expect(inbox).toHaveBeenLastCalledWith(100, 100, expect.anything()))
+  await waitFor(() => expect(inbox).toHaveBeenLastCalledWith(100, 100, expect.anything(), 'qb_download'))
   expect(await screen.findByRole('button', { name: '编辑 第101个' })).toBeInTheDocument()
 }, 20000)
+
+it('separates qB and external files with independent pages and clears a switched preview', async () => {
+  const { inbox } = setup('qb_download')
+  const qbSecond = { ...media('qb_download'), id: 101, title: '第二页番剧', filename: 'second.mkv' }
+  const imported = { ...media('external_import'), id: 201, title: '外来番剧', filename: 'imported.mkv' }
+  inbox.mockResolvedValueOnce({ items: [media('qb_download')], total: 101, nextOffset: 100 })
+    .mockResolvedValueOnce({ items: [qbSecond], total: 101, nextOffset: null })
+    .mockResolvedValueOnce({ items: [imported], total: 1, nextOffset: null })
+    .mockResolvedValueOnce({ items: [qbSecond], total: 101, nextOffset: null })
+  render(<InboxPage onOpenAnime={vi.fn()} />)
+  expect(await screen.findByRole('tab', { name: /qB 下载/ })).toHaveAttribute('aria-selected', 'true')
+  expect(await screen.findByRole('button', { name: '编辑 旧标题' })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '下一页' }))
+  fireEvent.click(await screen.findByRole('button', { name: '编辑 第二页番剧' }))
+  fireEvent.click(screen.getByRole('button', { name: '生成预览' }))
+  await screen.findByText(/目标：\/library\/new.mkv/)
+  fireEvent.click(screen.getByRole('tab', { name: /外来导入/ }))
+  expect(await screen.findByRole('button', { name: '编辑 外来番剧' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '确认执行' })).not.toBeInTheDocument()
+  expect(screen.queryByLabelText('规范标题')).not.toBeInTheDocument()
+  expect(inbox).toHaveBeenLastCalledWith(100, 0, expect.anything(), 'external_import')
+  fireEvent.click(screen.getByRole('tab', { name: /qB 下载/ }))
+  expect(await screen.findByRole('button', { name: '编辑 第二页番剧' })).toBeInTheDocument()
+  expect(inbox).toHaveBeenLastCalledWith(100, 100, expect.anything(), 'qb_download')
+}, 30000)
 
 it('requires a supported episode type for an unknown parse', async () => {
   const { inbox, correction } = setup('external_import')
