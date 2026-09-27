@@ -12,7 +12,7 @@ function setup(origin: string) {
   vi.stubGlobal('matchMedia', vi.fn().mockImplementation(() => ({ matches: false, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn() })))
   const getComputedStyle = window.getComputedStyle.bind(window)
   vi.spyOn(window, 'getComputedStyle').mockImplementation((element) => getComputedStyle(element))
-  vi.spyOn(client, 'getSettings').mockResolvedValue({ sourcePath: '/source', importPath: '/imports', libraryPath: '/library', dataPath: '/data', bangumiConfigured: false, qbWebUiConfigured: false, preferredOperation: 'hardlink', scanIntervalSeconds: 3600, mpvExecutable: '', qbWebUiUrl: '' })
+  vi.spyOn(client, 'getSettings').mockResolvedValue({ sourcePath: '/source', importPath: '/imports', libraryPath: '/library', dataPath: '/data', bangumiConfigured: false, qbWebUiConfigured: false, qbDownloadConfigured: true, qbDownloadDirectory: '/source', preferredOperation: 'hardlink', scanIntervalSeconds: 3600, mpvExecutable: '', qbWebUiUrl: '' })
   const inbox = vi.spyOn(client, 'getInbox').mockResolvedValue({ items: [media(origin)], total: 1, nextOffset: null })
   const correction = vi.spyOn(client, 'correctMedia').mockResolvedValue({ ...media(origin), title: '新标题', animeId: 9 })
   const preview = vi.spyOn(client, 'previewOrganization').mockResolvedValue({ id: 12, targetPath: '/library/new.mkv', operation: 'copy', expiresAt: '2099-01-01T00:00:00Z', conflicts: [] })
@@ -23,7 +23,7 @@ function setup(origin: string) {
 
 it('uses the saved preferred operation as the initial preview choice', async () => {
   const { preview } = setup('external_import')
-  vi.mocked(client.getSettings).mockResolvedValue({ sourcePath: '/source', importPath: '/imports', libraryPath: '/library', dataPath: '/data', bangumiConfigured: false, qbWebUiConfigured: false, preferredOperation: 'copy', scanIntervalSeconds: 3600, mpvExecutable: '', qbWebUiUrl: '' })
+  vi.mocked(client.getSettings).mockResolvedValue({ sourcePath: '/source', importPath: '/imports', libraryPath: '/library', dataPath: '/data', bangumiConfigured: false, qbWebUiConfigured: false, qbDownloadConfigured: true, qbDownloadDirectory: '/source', preferredOperation: 'copy', scanIntervalSeconds: 3600, mpvExecutable: '', qbWebUiUrl: '' })
   render(<InboxPage onOpenAnime={vi.fn()} />)
   fireEvent.click(await screen.findByRole('button', { name: '编辑 旧标题' }))
   await waitFor(() => expect(client.getSettings).toHaveBeenCalled())

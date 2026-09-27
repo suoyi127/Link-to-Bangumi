@@ -21,7 +21,7 @@ Without a configured qB directory, the backend uses an empty private sentinel di
 
 ## Failure and safety behavior
 
-Startup does not touch `D:/追番`. If a configured directory later disappears, startup still opens the app; qB scan returns `source_root_unavailable`. Invalid stored configuration is surfaced as a settings error rather than silently redirecting downloads. A path update is validated against canonical roots and does not alter disk content. No endpoint accepts a root directory, a relative path, or a path nested inside the import, library, or data directories.
+Startup does not touch `D:/追番`. If a configured directory later disappears, startup still opens the app with its private empty source and marks qB download scanning unavailable; the saved choice stays visible for correction. A path update is validated against canonical roots and does not alter disk content. No endpoint accepts a root directory, a relative path, or a path nested inside the import, library, or data directories. Until a saved change is activated by restart, the Mikan download endpoints reject it rather than sending new torrents to the old directory.
 
 ## Verification
 

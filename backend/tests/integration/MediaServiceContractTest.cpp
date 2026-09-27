@@ -10,6 +10,30 @@
 #include <iterator>
 #include <thread>
 
+TEST_CASE("unconfigured qB source cannot be scanned but external imports remain available") {
+    namespace fs = std::filesystem;
+    const auto root = fs::temp_directory_path() /
+        ("anime-vault-unconfigured-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    struct Cleanup { fs::path path; ~Cleanup() { std::error_code error; fs::remove_all(path, error); } } cleanup{root};
+    const auto source = root / "private-empty-source";
+    const auto imported = root / "import";
+    const auto library = root / "library";
+    fs::create_directories(source);
+    fs::create_directories(imported);
+    fs::create_directories(library);
+    anime_vault::SqliteDatabase db(root / "vault.db");
+    db.migrate();
+    anime_vault::SqliteMediaRepository repository(db);
+    anime_vault::api::MediaService service(repository, source, library, imported, false);
+    try {
+        service.createScan(std::chrono::seconds{0});
+        FAIL("unconfigured qB source should be unavailable");
+    } catch (const anime_vault::api::ApiError& error) {
+        REQUIRE(error.code == "qb_download_dir_unconfigured");
+    }
+    REQUIRE(service.createImportScan(std::chrono::seconds{0}).source == "external_import");
+}
+
 #ifdef ANIME_VAULT_STANDALONE_TEST_MAIN
 #include <catch2/catch_session.hpp>
 int main(int argc, char* argv[]) { return Catch::Session().run(argc, argv); }

@@ -1,5 +1,6 @@
 #include "anime_vault/api/MediaController.hpp"
 #include "anime_vault/api/MediaService.hpp"
+#include "anime_vault/services/RuntimePaths.hpp"
 
 #include <drogon/drogon.h>
 #include <atomic>
@@ -283,6 +284,15 @@ UiPreferences parseUiPreferencesRequest(const Json::Value& body) {
     return result;
 }
 
+QbDownloadDirectoryRequest parseQbDownloadDirectoryRequest(const Json::Value& body) {
+    if (!body.isObject() || body.size() != 1 || !body["path"].isString())
+        throw ApiError(400, "invalid_request", "path string is required");
+    const auto path = body["path"].asString();
+    if (path.size() > 4096 || path.find('\0') != std::string::npos)
+        throw ApiError(400, "invalid_qb_download_directory", "invalid qB directory path");
+    return {path};
+}
+
 void registerManagementEndpoints(MediaRepository& repository, EffectiveSettings settings) {
     const auto pathString = [](const std::filesystem::path& path) {
         const auto bytes = std::filesystem::absolute(path).lexically_normal().u8string();
@@ -292,6 +302,8 @@ void registerManagementEndpoints(MediaRepository& repository, EffectiveSettings 
         const auto preferences = repository.getUiPreferences();
         Json::Value json;
         json["sourcePath"] = pathString(settings.sourcePath);
+        json["qbDownloadDirectory"] = preferences.qbDownloadDirectory;
+        json["qbDownloadConfigured"] = settings.qbDownloadConfigured;
         json["importPath"] = pathString(settings.importPath);
         json["libraryPath"] = pathString(settings.libraryPath);
         json["dataPath"] = pathString(settings.dataPath);
@@ -360,8 +372,45 @@ void registerManagementEndpoints(MediaRepository& repository, EffectiveSettings 
                 throw ApiError(400, "invalid_request", "settings write takes no query");
             const auto body = request->getJsonObject();
             if (!body) throw ApiError(400, "invalid_request", "JSON object required");
-            repository.putUiPreferences(parseUiPreferencesRequest(*body));
+            auto preferences = parseUiPreferencesRequest(*body);
+            preferences.qbDownloadDirectory = repository.getUiPreferences().qbDownloadDirectory;
+            repository.putUiPreferences(preferences);
             return settingsJson();
+        });
+    }, {drogon::Put});
+    drogon::app().registerHandler("/api/settings/qb-download-directory", [&repository, settings, settingsJson](
+        const Request& request, Callback&& callback) {
+        respond(request, std::move(callback), [&] {
+            if (request->body().size() > 8192)
+                throw ApiError(400, "request_too_large", "settings request is too large");
+            if (!request->getParameters().empty())
+                throw ApiError(400, "invalid_request", "directory write takes no query");
+            const auto body = request->getJsonObject();
+            if (!body) throw ApiError(400, "invalid_request", "JSON object required");
+            const auto dto = parseQbDownloadDirectoryRequest(*body);
+            auto preferences = repository.getUiPreferences();
+            if (dto.path.empty()) {
+                preferences.qbDownloadDirectory.clear();
+            } else {
+                try {
+                    const auto* bytes = reinterpret_cast<const char8_t*>(dto.path.data());
+                    const auto path = std::filesystem::path(std::u8string_view(bytes, dto.path.size()));
+                    const auto validated = validateQbDownloadDirectory(path,
+                        settings.importPath, settings.libraryPath, settings.dataPath);
+                    const auto encoded = validated.u8string();
+                    preferences.qbDownloadDirectory.assign(
+                        reinterpret_cast<const char*>(encoded.data()), encoded.size());
+                } catch (const RuntimePathError& error) {
+                    throw ApiError(error.code == "overlapping_roots" ? 409 : 400,
+                        error.code, error.what());
+                } catch (const std::exception&) {
+                    throw ApiError(400, "invalid_qb_download_directory", "invalid qB directory path");
+                }
+            }
+            repository.putUiPreferences(preferences);
+            auto result = settingsJson();
+            result["restartRequired"] = true;
+            return result;
         });
     }, {drogon::Put});
 }

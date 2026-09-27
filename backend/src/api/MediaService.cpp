@@ -117,8 +117,8 @@ std::string expiration() {
 } // namespace
 
 MediaService::MediaService(MediaRepository& repository, fs::path sourceRoot, fs::path libraryRoot,
-                           fs::path importRoot)
-    : repository_(repository), sourceRoot_(fs::canonical(sourceRoot)),
+                           fs::path importRoot, bool qbConfigured)
+    : repository_(repository), qbConfigured_(qbConfigured), sourceRoot_(fs::canonical(sourceRoot)),
       sourceRequestedRoot_(fs::absolute(sourceRoot).lexically_normal()),
       importRoot_(fs::absolute(std::move(importRoot)).lexically_normal()),
       libraryRoot_(canonicalConfiguredPath(libraryRoot)), scanner_(std::move(sourceRoot)),
@@ -128,6 +128,8 @@ MediaService::MediaService(MediaRepository& repository, fs::path sourceRoot, fs:
 
 ScanRecord MediaService::createScan(std::chrono::seconds stableFor) {
     const std::lock_guard lock(mutex_);
+    if (!qbConfigured_)
+        throw ApiError(409, "qb_download_dir_unconfigured", "select a qB download directory first");
     validateSourceRoot();
     validateDistinctRoots(sourceRequestedRoot_, importRoot_, libraryRoot_);
     enforceRateLimit();

@@ -4,14 +4,18 @@
 
 ## 目录与安全边界
 
-默认目录：
+默认目录（qB 来源由用户在设置页选择；未配置也可启动）：
 
 | 用途 | 默认路径 | 环境变量 |
 | --- | --- | --- |
-| qB 下载来源 | `D:\追番\番剧` | `ANIME_VAULT_SOURCE_DIR` |
-| 外来导入暂存（需自行创建，初始应为空） | `D:\追番\外来导入` | `ANIME_VAULT_IMPORT_DIR` |
-| 整理目标媒体库 | `D:\追番\媒体库` | `ANIME_VAULT_LIBRARY_DIR` |
-| SQLite 数据 | `D:\追番\anime-vault-data` | `ANIME_VAULT_DATA_DIR` |
+| qB 下载来源 | 未配置，须在设置页选择已有目录 | `ANIME_VAULT_SOURCE_DIR` |
+| 外来导入暂存（需自行创建，初始应为空） | `%USERPROFILE%\Videos\AnimeVault\Import` | `ANIME_VAULT_IMPORT_DIR` |
+| 整理目标媒体库 | `%USERPROFILE%\Videos\AnimeVault\Library` | `ANIME_VAULT_LIBRARY_DIR` |
+| SQLite 数据 | `%LOCALAPPDATA%\AnimeVault` | `ANIME_VAULT_DATA_DIR` |
+
+首次使用时，在设置页填写已有的 qB 下载目录并保存，然后重启后端；更改目录不会移动或删除原文件。未配置或所选目录不可用时，qB 扫描与 Mikan 自动下载创建不可用，外来导入和本地浏览仍可使用。
+
+从旧版 `D:\追番` 布局升级时，如需继续使用原 SQLite 数据，可在启动前显式设置 `ANIME_VAULT_DATA_DIR` 指向旧数据目录；开发者设置的 `ANIME_VAULT_SOURCE_DIR` 会覆盖设置页保存的 qB 下载目录，应在切换到页面配置后移除该环境变量。
 
 来源、导入和媒体库目录必须相互独立且不嵌套。扫描只读取来源；外来导入仅由单独按钮触发，不能把任意路径当作导入来源。每次成功扫描会把来源中已消失且尚未整理的媒体标记为 `missing`，从待整理和番剧媒体列表排除；记录保留，文件重新出现后可恢复。未过稳定期但仍存在的文件不会被误判为消失；已整理的媒体库文件不会因来源移除而被隐藏。此同步在手动点击扫描后生效，自动扫描调度尚未实现。整理会先给出目标与冲突预览，再要求明确确认；不会删除 qB 来源。不要把 `D:\追番` 用于测试。
 
@@ -35,7 +39,7 @@ npm.cmd --prefix frontend run lint
 npm.cmd --prefix frontend run build -- --configLoader runner
 ```
 
-日常构建与启动后端时，先确认上表中的来源和外来导入目录存在。在仓库根目录运行（路径改为自己的 vcpkg 安装目录）：
+日常构建与启动后端无需事先安装 qB 或建立 qB 下载目录。在仓库根目录运行（路径改为自己的 vcpkg 安装目录）：
 
 ```powershell
 .\build-backend.bat 'C:\path\to\vcpkg'

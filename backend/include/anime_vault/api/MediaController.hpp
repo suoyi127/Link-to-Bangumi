@@ -39,7 +39,10 @@ struct EffectiveSettings {
     std::filesystem::path sourcePath, importPath, libraryPath, dataPath;
     bool bangumiConfigured{};
     bool qbConfigured{};
+    bool qbDownloadConfigured{};
 };
+struct QbDownloadDirectoryRequest { std::string path; };
+QbDownloadDirectoryRequest parseQbDownloadDirectoryRequest(const Json::Value& body);
 UiPreferences parseUiPreferencesRequest(const Json::Value& body);
 Json::Value executeOrganizationJson(const ExecuteOrganizationResult& result);
 void registerManagementEndpoints(MediaRepository& repository, EffectiveSettings settings);

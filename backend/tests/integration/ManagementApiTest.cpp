@@ -86,6 +86,34 @@ TEST_CASE("management routes paginate and persist only allowed preferences") {
     auto settings = get("/api/settings");
     REQUIRE((*settings->getJsonObject())["bangumiConfigured"].asBool());
     REQUIRE_FALSE((*settings->getJsonObject())["qbWebUiConfigured"].asBool());
+    REQUIRE_FALSE((*settings->getJsonObject())["qbDownloadConfigured"].asBool());
+    const auto selected = root / "selected-qb";
+    fs::create_directories(selected);
+    fs::create_directories(root / "import");
+    auto selectDirectory = [&](const std::string& path) {
+        Json::Value selection;
+        selection["path"] = path;
+        auto request = drogon::HttpRequest::newHttpJsonRequest(selection);
+        request->setMethod(drogon::Put);
+        request->setPath("/api/settings/qb-download-directory");
+        auto [result, response] = client->sendRequest(request);
+        REQUIRE(result == drogon::ReqResult::Ok);
+        return response;
+    };
+    const auto selectedBytes = selected.u8string();
+    const std::string selectedUtf8(reinterpret_cast<const char*>(selectedBytes.data()), selectedBytes.size());
+    const auto canonicalBytes = fs::canonical(selected).u8string();
+    const std::string canonicalUtf8(reinterpret_cast<const char*>(canonicalBytes.data()), canonicalBytes.size());
+    auto selectedResponse = selectDirectory(selectedUtf8);
+    REQUIRE(selectedResponse->statusCode() == drogon::k200OK);
+    REQUIRE(selectedResponse->getJsonObject());
+    REQUIRE((*selectedResponse->getJsonObject())["restartRequired"].asBool());
+    REQUIRE((*get("/api/settings")->getJsonObject())["qbDownloadDirectory"].asString() == canonicalUtf8);
+    REQUIRE((*selectDirectory("relative-qb")->getJsonObject())["error"]["code"].asString() ==
+        "invalid_qb_download_directory");
+    const auto importBytes = (root / "import").u8string();
+    REQUIRE((*selectDirectory(std::string(reinterpret_cast<const char*>(importBytes.data()), importBytes.size()))
+        ->getJsonObject())["error"]["code"].asString() == "overlapping_roots");
     const auto sourcePath = (*settings->getJsonObject())["sourcePath"].asString();
     Json::Value body;
     body["preferredOperation"] = "copy";
@@ -103,6 +131,7 @@ TEST_CASE("management routes paginate and persist only allowed preferences") {
     settings = get("/api/settings");
     REQUIRE((*settings->getJsonObject())["preferredOperation"].asString() == "copy");
     REQUIRE((*settings->getJsonObject())["sourcePath"].asString() == sourcePath);
+    REQUIRE((*settings->getJsonObject())["qbDownloadDirectory"].asString() == canonicalUtf8);
     body["sourcePath"] = "C:/untrusted";
     REQUIRE((*put(body)->getJsonObject())["error"]["code"].asString() == "invalid_request");
     body.removeMember("sourcePath");

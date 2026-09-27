@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Alert, Button, Descriptions, Input, InputNumber, List, Popconfirm, Space, Spin, Typography } from 'antd'
-import { addMikanFeed, createMikanRule, getAuditLogs, getMikanFeeds, getQbStatus, getSettings, putSettings } from '../api/client'
+import { addMikanFeed, createMikanRule, getAuditLogs, getMikanFeeds, getQbStatus, getSettings, putQbDownloadDirectory, putSettings } from '../api/client'
 import type { AuditLog, MikanFeeds, Preferences, QbStatus, Settings } from '../api/types'
 
 const auditPageSize = 50
@@ -9,6 +9,9 @@ const errorText = (error: unknown) => error instanceof Error ? error.message : '
 export function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [draft, setDraft] = useState<Preferences | null>(null)
+  const [qbPath, setQbPath] = useState('')
+  const [qbPathSaving, setQbPathSaving] = useState(false)
+  const [restartRequired, setRestartRequired] = useState(false)
   const [settingsError, setSettingsError] = useState('')
   const [qbStatus, setQbStatus] = useState<QbStatus | null>(null)
   const [mikanFeeds, setMikanFeeds] = useState<MikanFeeds | null>(null)
@@ -27,12 +30,15 @@ export function SettingsPage() {
   const [auditLoading, setAuditLoading] = useState(true)
   const [auditError, setAuditError] = useState('')
   const auditSequence = useRef(0)
+  const qbPathPending = restartRequired || Boolean(settings?.qbDownloadDirectory &&
+    settings.qbDownloadDirectory !== settings.sourcePath)
 
   useEffect(() => {
     let active = true
     void getSettings().then((value) => {
       if (!active) return
       setSettings(value)
+      setQbPath(value.qbDownloadDirectory)
       setDraft({ preferredOperation: value.preferredOperation, scanIntervalSeconds: value.scanIntervalSeconds, mpvExecutable: value.mpvExecutable, qbWebUiUrl: value.qbWebUiUrl })
       if (value.qbWebUiConfigured) void getQbStatus().then((status) => { if (active) setQbStatus(status) })
         .catch(() => { if (active) setQbStatus({ configured: true, connected: false, errorCode: 'network_error', version: '', torrentCount: 0, completedCount: 0 }) })
@@ -62,6 +68,18 @@ export function SettingsPage() {
       setDraft({ preferredOperation: updated.preferredOperation, scanIntervalSeconds: updated.scanIntervalSeconds, mpvExecutable: updated.mpvExecutable, qbWebUiUrl: updated.qbWebUiUrl })
     } catch (cause) { setSettingsError(errorText(cause)) }
     finally { setSaving(false) }
+  }
+
+  async function saveQbPath() {
+    if (qbPathSaving) return
+    setQbPathSaving(true); setSettingsError('')
+    try {
+      const updated = await putQbDownloadDirectory(qbPath.trim())
+      setSettings(updated)
+      setQbPath(updated.qbDownloadDirectory)
+      setRestartRequired(updated.restartRequired)
+    } catch (cause) { setSettingsError(errorText(cause)) }
+    finally { setQbPathSaving(false) }
   }
 
   async function addFeed() {
@@ -96,13 +114,17 @@ export function SettingsPage() {
     {settingsError && <Alert type="error" message={settingsError} />}
     {!settings && !settingsError && <Spin aria-label="正在加载设置" />}
     {settings && draft && <>
-      <Typography.Title level={4}>生效路径（只读，修改环境变量后重启）</Typography.Title>
+      <Typography.Title level={4}>生效路径</Typography.Title>
       <Descriptions bordered column={1} items={[
-        { key: 'source', label: 'qB 下载目录', children: settings.sourcePath },
+        { key: 'source', label: '当前 qB 下载目录', children: settings.qbDownloadConfigured ? settings.sourcePath : '尚未配置 qB 下载目录' },
         { key: 'import', label: '外来导入目录', children: settings.importPath },
         { key: 'library', label: '媒体库目录', children: settings.libraryPath },
         { key: 'data', label: '数据目录', children: settings.dataPath },
       ]} />
+      <label>qB 下载目录 <Input aria-label="qB 下载目录" value={qbPath} onChange={(event) => setQbPath(event.target.value)} maxLength={4096} placeholder="选择已有的 qB 下载文件夹路径" /></label>
+      <Typography.Text type="secondary">仅识别你选择的 qB 下载目录；外来导入与媒体库保持独立。修改目录不会移动或删除已有文件。</Typography.Text>
+      <Button loading={qbPathSaving} onClick={() => void saveQbPath()}>保存 qB 下载目录</Button>
+      {qbPathPending && <Alert type="warning" message="qB 下载目录已保存，重启后端后生效。" />}
       <Alert type="info" message={settings.bangumiConfigured ? 'Bangumi 已配置（直接联网）' : 'Bangumi 未配置；本地浏览仍可用'} />
       <Alert type={qbStatus?.connected ? 'success' : 'info'} message={qbStatus?.connected ? `qBittorrent 已连接 · ${qbStatus.version} · ${qbStatus.torrentCount} 个任务（${qbStatus.completedCount} 个已下载）` : settings.qbWebUiConfigured ? `qBittorrent 已配置，${qbStatus ? `连接失败（${qbStatus.errorCode}）` : '正在检查连接'}` : 'qBittorrent Web UI 未启用；qB 下载完成需手动确认'} />
       <Typography.Title level={4}>Mikan 订阅（由 qB 获取 RSS）</Typography.Title>
@@ -111,7 +133,7 @@ export function SettingsPage() {
       {mikanError && <Alert type="warning" message={mikanError} />}
       <List size="small" dataSource={mikanFeeds?.feeds ?? []} locale={{ emptyText: '暂无可读取的 Mikan 订阅' }} renderItem={(feed) => <List.Item>{feed.title || 'Mikan 订阅'} · {feed.articleCount} 篇{feed.hasError ? ' · qB 获取失败' : ''}</List.Item>} />
       <Typography.Text type="secondary">新订阅首次获取完成后，已有条目将标记已读；随后自动建立每集下载首个可识别资源的 qB 规则，不限定画质或字幕。无法识别集数的条目会跳过。</Typography.Text>
-      <Space.Compact><Input aria-label="Mikan RSS 地址" value={feedUrl} onChange={(event) => setFeedUrl(event.target.value)} maxLength={1024} placeholder="https://mikanani.me/RSS/Bangumi?..." /><Button loading={addingFeed} disabled={!settings.qbWebUiConfigured || !feedUrl.trim()} onClick={() => void addFeed()}>添加 Mikan 订阅</Button></Space.Compact>
+      <Space.Compact><Input aria-label="Mikan RSS 地址" value={feedUrl} onChange={(event) => setFeedUrl(event.target.value)} maxLength={1024} placeholder="https://mikanani.me/RSS/Bangumi?..." /><Button loading={addingFeed} disabled={!settings.qbWebUiConfigured || !settings.qbDownloadConfigured || qbPathPending || !feedUrl.trim()} onClick={() => void addFeed()}>添加 Mikan 订阅</Button></Space.Compact>
       <Typography.Title level={5}>qB 自动下载规则</Typography.Title>
       <Typography.Text type="secondary">先将订阅加入 qB，再填写该订阅的完整地址。关键词按文章标题包含匹配；同名规则不会覆盖。下载目标固定为 {settings.sourcePath}。</Typography.Text>
       {ruleMessage && <Alert type={ruleMessage.startsWith('自动') ? 'success' : 'warning'} message={ruleMessage} />}
@@ -119,7 +141,7 @@ export function SettingsPage() {
       <Input aria-label="规则订阅地址" value={ruleFeedUrl} onChange={(event) => setRuleFeedUrl(event.target.value)} maxLength={1024} placeholder="https://mikanani.me/RSS/Bangumi?..." />
       <Input aria-label="标题包含关键词" value={ruleKeyword} onChange={(event) => setRuleKeyword(event.target.value)} maxLength={120} placeholder="例如字幕组名称或番剧名" />
       <Popconfirm title="确认创建自动下载规则？" description={`启用后 qB 可能立即下载已发布的匹配条目，保存到 ${settings.sourcePath}。`} okText="确认创建" cancelText="取消" onConfirm={() => void addRule()}>
-        <Button loading={creatingRule} disabled={!settings.qbWebUiConfigured || !ruleName.trim() || !ruleFeedUrl.trim() || !ruleKeyword.trim()}>创建自动下载规则</Button>
+        <Button loading={creatingRule} disabled={!settings.qbWebUiConfigured || !settings.qbDownloadConfigured || qbPathPending || !ruleName.trim() || !ruleFeedUrl.trim() || !ruleKeyword.trim()}>创建自动下载规则</Button>
       </Popconfirm>
       <Typography.Title level={4}>偏好</Typography.Title>
       <label>首选整理方式 <select aria-label="首选整理方式" value={draft.preferredOperation} onChange={(event) => setDraft({ ...draft, preferredOperation: event.target.value as Preferences['preferredOperation'] })}><option value="hardlink">硬链接</option><option value="copy">复制</option><option value="symlink">符号链接</option></select></label>

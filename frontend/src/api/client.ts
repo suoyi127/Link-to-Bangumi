@@ -55,6 +55,7 @@ export const playMedia = (id: number) => request<{ mediaId: number; status: 'sta
 export const previewOrganization = (mediaFileId: number, operation: Preferences['preferredOperation']) => request<Preview>('/api/organize/preview', json({ mediaFileId, operation }))
 export const executeOrganization = (planId: number, idempotencyKey: string, qbDownloadComplete: boolean) => request<Execution>('/api/organize/execute', json({ planId, idempotencyKey, confirmed: true, qbDownloadComplete }))
 export const getSettings = () => request<Settings>('/api/settings')
+export const putQbDownloadDirectory = (path: string) => request<Settings & { restartRequired: boolean }>('/api/settings/qb-download-directory', { ...json({ path }), method: 'PUT' })
 export const getQbStatus = () => request<QbStatus>('/api/qb/status')
 export const getMikanFeeds = () => request<MikanFeeds>('/api/qb/rss')
 export const addMikanFeed = (url: string) => request<QbAction>('/api/qb/rss/feeds', json({ url }))

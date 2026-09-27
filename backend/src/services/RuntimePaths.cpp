@@ -1,6 +1,8 @@
 #include "anime_vault/services/RuntimePaths.hpp"
 
 #include <cstdlib>
+#include <algorithm>
+#include <cwctype>
 #include <memory>
 #include <string>
 
@@ -21,6 +23,23 @@ fs::path environmentPath(const char* narrow, const wchar_t* wide) {
     if (const auto* value = std::getenv(narrow); value && *value) return fs::path(value);
 #endif
     return {};
+}
+bool within(const fs::path& root, const fs::path& candidate) {
+    auto parent = root.begin();
+    auto child = candidate.begin();
+    for (; parent != root.end(); ++parent, ++child) {
+        if (child == candidate.end()) return false;
+#ifdef _WIN32
+        auto left = parent->wstring();
+        auto right = child->wstring();
+        std::transform(left.begin(), left.end(), left.begin(), std::towlower);
+        std::transform(right.begin(), right.end(), right.begin(), std::towlower);
+        if (left != right) return false;
+#else
+        if (*parent != *child) return false;
+#endif
+    }
+    return true;
 }
 } // namespace
 
@@ -58,5 +77,34 @@ RuntimePaths resolveRuntimePaths(fs::path data, fs::path imported, fs::path libr
         result.source = result.data / "unconfigured-qb-source";
     }
     return result;
+}
+
+fs::path validateQbDownloadDirectory(const fs::path& candidate, const fs::path& imported,
+                                     const fs::path& library, const fs::path& data) {
+    if (candidate.empty() || !candidate.is_absolute())
+        throw RuntimePathError("invalid_qb_download_directory", "absolute qB directory required");
+    std::error_code error;
+    if (!fs::is_directory(candidate, error) || error)
+        throw RuntimePathError("invalid_qb_download_directory", "qB directory must exist");
+    const auto selected = fs::canonical(candidate, error);
+    if (error || selected == selected.root_path())
+        throw RuntimePathError("invalid_qb_download_directory", "filesystem root is not allowed");
+    // Resolve existing ancestors so junctions and symlinks cannot conceal overlap.
+    for (const auto& protectedRoot : {imported, library, data}) {
+        const auto resolved = fs::weakly_canonical(fs::absolute(protectedRoot), error);
+        if (error) throw RuntimePathError("invalid_qb_download_directory", "cannot resolve protected root");
+        if (within(selected, resolved) || within(resolved, selected))
+            throw RuntimePathError("overlapping_roots", "qB directory overlaps another application root");
+    }
+    return selected;
+}
+
+bool qbDirectoryActive(const fs::path& active, std::string_view stored,
+                       bool environmentOverride) {
+    if (stored.empty()) return environmentOverride;
+    const auto* bytes = reinterpret_cast<const char8_t*>(stored.data());
+    std::error_code error;
+    const auto selected = fs::path(std::u8string_view(bytes, stored.size()));
+    return fs::equivalent(active, selected, error) && !error;
 }
 } // namespace anime_vault

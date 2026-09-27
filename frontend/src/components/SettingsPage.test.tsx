@@ -8,6 +8,7 @@ const settings: Settings = {
   sourcePath: 'X:/source', importPath: 'X:/imports', libraryPath: 'X:/library', dataPath: 'X:/data',
   bangumiConfigured: false, qbWebUiConfigured: false, preferredOperation: 'hardlink',
   scanIntervalSeconds: 3600, mpvExecutable: '', qbWebUiUrl: '',
+  qbDownloadConfigured: false, qbDownloadDirectory: '',
 }
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
@@ -22,15 +23,43 @@ it('shows immutable effective paths and honest inactive integration status, then
   vi.spyOn(client, 'getAuditLogs').mockResolvedValue({ items: [], nextOffset: null })
   const put = vi.spyOn(client, 'putSettings').mockResolvedValue({ ...settings, preferredOperation: 'copy' })
   render(<SettingsPage />)
-  expect(await screen.findByText('X:/source')).toBeInTheDocument()
+  expect(await screen.findByText('尚未配置 qB 下载目录')).toBeInTheDocument()
   expect(screen.getByText('X:/imports')).toBeInTheDocument()
   expect(screen.getByText(/Bangumi 未配置/)).toBeInTheDocument()
   expect(screen.getByText(/qBittorrent Web UI 未启用/)).toBeInTheDocument()
+  expect(screen.getByText(/尚未配置 qB 下载目录/)).toBeInTheDocument()
   expect(screen.getByText(/mpv.*本机播放/)).toBeInTheDocument()
   expect(screen.getByText(/扫描间隔.*预留/)).toBeInTheDocument()
   fireEvent.change(screen.getByLabelText('首选整理方式'), { target: { value: 'copy' } })
   fireEvent.click(screen.getByRole('button', { name: '保存偏好' }))
   await waitFor(() => expect(put).toHaveBeenCalledWith({ preferredOperation: 'copy', scanIntervalSeconds: 3600, mpvExecutable: '', qbWebUiUrl: '' }))
+})
+
+it('saves a user-selected qB download directory and asks for a restart', async () => {
+  vi.spyOn(client, 'getSettings').mockResolvedValue(settings)
+  vi.spyOn(client, 'getAuditLogs').mockResolvedValue({ items: [], nextOffset: null })
+  const save = vi.spyOn(client, 'putQbDownloadDirectory').mockResolvedValue({
+    ...settings, qbDownloadDirectory: 'X:/chosen', restartRequired: true,
+  })
+  render(<SettingsPage />)
+  fireEvent.change(await screen.findByLabelText('qB 下载目录'), { target: { value: 'X:/chosen' } })
+  fireEvent.click(screen.getByRole('button', { name: '保存 qB 下载目录' }))
+  await waitFor(() => expect(save).toHaveBeenCalledWith('X:/chosen'))
+  expect(await screen.findByText(/重启后端后生效/)).toBeInTheDocument()
+})
+
+it('keeps Mikan download actions disabled while a saved directory awaits restart', async () => {
+  vi.spyOn(client, 'getSettings').mockResolvedValue({
+    ...settings, qbWebUiConfigured: true, qbDownloadConfigured: true,
+    qbDownloadDirectory: 'X:/new-source',
+  })
+  vi.spyOn(client, 'getAuditLogs').mockResolvedValue({ items: [], nextOffset: null })
+  vi.spyOn(client, 'getQbStatus').mockResolvedValue({ configured: true, connected: true, errorCode: '', version: '5.2', torrentCount: 0, completedCount: 0 })
+  vi.spyOn(client, 'getMikanFeeds').mockResolvedValue({ feedCount: 0, articleCount: 0, pairCount: 0, errorCode: '', feeds: [] })
+  render(<SettingsPage />)
+  expect(await screen.findByText(/重启后端后生效/)).toBeInTheDocument()
+  fireEvent.change(screen.getByLabelText('Mikan RSS 地址'), { target: { value: 'https://mikanani.me/RSS/Bangumi?bangumiId=1' } })
+  expect(screen.getByRole('button', { name: '添加 Mikan 订阅' })).toBeDisabled()
 })
 
 it('paginates audit history using the returned cursor', async () => {
@@ -46,7 +75,7 @@ it('paginates audit history using the returned cursor', async () => {
 })
 
 it('shows live qB diagnostics when credentials are configured', async () => {
-  vi.spyOn(client, 'getSettings').mockResolvedValue({ ...settings, qbWebUiConfigured: true })
+  vi.spyOn(client, 'getSettings').mockResolvedValue({ ...settings, qbWebUiConfigured: true, qbDownloadConfigured: true })
   vi.spyOn(client, 'getAuditLogs').mockResolvedValue({ items: [], nextOffset: null })
   vi.spyOn(client, 'getQbStatus').mockResolvedValue({ configured: true, connected: true, errorCode: '', version: '5.1.0', torrentCount: 3, completedCount: 2 })
   render(<SettingsPage />)
@@ -55,7 +84,7 @@ it('shows live qB diagnostics when credentials are configured', async () => {
 })
 
 it('shows Mikan feeds and adds a user-approved feed through qB', async () => {
-  vi.spyOn(client, 'getSettings').mockResolvedValue({ ...settings, qbWebUiConfigured: true })
+  vi.spyOn(client, 'getSettings').mockResolvedValue({ ...settings, qbWebUiConfigured: true, qbDownloadConfigured: true })
   vi.spyOn(client, 'getAuditLogs').mockResolvedValue({ items: [], nextOffset: null })
   vi.spyOn(client, 'getQbStatus').mockResolvedValue({ configured: true, connected: true, errorCode: '', version: '5.2.1', torrentCount: 1, completedCount: 1 })
   const feeds = vi.spyOn(client, 'getMikanFeeds').mockResolvedValue({ feedCount: 1, articleCount: 26, pairCount: 1, errorCode: '', feeds: [{ title: 'Mikan Project', articleCount: 26, hasError: false }] })
@@ -69,7 +98,7 @@ it('shows Mikan feeds and adds a user-approved feed through qB', async () => {
 })
 
 it('creates a qB download rule only after confirming its target and immediate effect', async () => {
-  vi.spyOn(client, 'getSettings').mockResolvedValue({ ...settings, qbWebUiConfigured: true })
+  vi.spyOn(client, 'getSettings').mockResolvedValue({ ...settings, qbWebUiConfigured: true, qbDownloadConfigured: true })
   vi.spyOn(client, 'getAuditLogs').mockResolvedValue({ items: [], nextOffset: null })
   vi.spyOn(client, 'getQbStatus').mockResolvedValue({ configured: true, connected: true, errorCode: '', version: '5.2.1', torrentCount: 1, completedCount: 1 })
   vi.spyOn(client, 'getMikanFeeds').mockResolvedValue({ feedCount: 1, articleCount: 0, pairCount: 0, errorCode: '', feeds: [] })

@@ -33,7 +33,8 @@ class MediaService {
 public:
     MediaService(MediaRepository& repository, std::filesystem::path sourceRoot,
                  std::filesystem::path libraryRoot,
-                 std::filesystem::path importRoot = "D:/追番/外来导入");
+                 std::filesystem::path importRoot = "D:/追番/外来导入",
+                 bool qbConfigured = true);
     ScanRecord createScan(std::chrono::seconds stableFor = std::chrono::seconds{60});
     ScanRecord createImportScan(std::chrono::seconds stableFor = std::chrono::seconds{60});
     ScanRecord getScan(std::int64_t id) const;
@@ -45,6 +46,7 @@ public:
 
 private:
     MediaRepository& repository_;
+    bool qbConfigured_;
     std::filesystem::path sourceRoot_;
     std::filesystem::path sourceRequestedRoot_;
     std::filesystem::path importRoot_;

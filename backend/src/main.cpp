@@ -12,6 +12,7 @@
 #include "anime_vault/infrastructure/network/DrogonCoverTransport.hpp"
 #include "anime_vault/infrastructure/ProcessLauncher.hpp"
 #include "anime_vault/services/PlaybackService.hpp"
+#include "anime_vault/services/RuntimePaths.hpp"
 
 #include <drogon/drogon.h>
 
@@ -21,6 +22,7 @@
 #include <filesystem>
 #include <string>
 #include <memory>
+#include <optional>
 
 namespace {
 class OfflineBangumiTransport final : public anime_vault::BangumiTransport {
@@ -42,20 +44,34 @@ public:
 
 int main() {
     try {
-        const auto environmentPath = [](const char* name, const char* fallback) {
+        const auto environmentPath = [](const char* name, const std::filesystem::path& fallback) {
             const char* value = std::getenv(name);
             return std::filesystem::path(value && *value ? value : fallback);
         };
-        const auto data = environmentPath("ANIME_VAULT_DATA_DIR", "D:/追番/anime-vault-data");
+        const auto data = environmentPath("ANIME_VAULT_DATA_DIR", anime_vault::defaultDataDirectory());
         std::filesystem::create_directories(data);
         anime_vault::SqliteDatabase database(data / "anime-vault.db");
         database.migrate();
         anime_vault::SqliteMediaRepository repository(database);
-        const auto source = environmentPath("ANIME_VAULT_SOURCE_DIR", "D:/追番/番剧");
-        const auto library = environmentPath("ANIME_VAULT_LIBRARY_DIR", "D:/追番/媒体库");
-        const auto imported = environmentPath("ANIME_VAULT_IMPORT_DIR", "D:/追番/外来导入");
+        const auto mediaRoot = anime_vault::defaultMediaDirectory();
+        std::optional<std::filesystem::path> sourceOverride;
+        if (const char* value = std::getenv("ANIME_VAULT_SOURCE_DIR"); value && *value)
+            sourceOverride = std::filesystem::path(value);
+        auto paths = anime_vault::resolveRuntimePaths(data,
+            environmentPath("ANIME_VAULT_IMPORT_DIR", mediaRoot / "Import"),
+            environmentPath("ANIME_VAULT_LIBRARY_DIR", mediaRoot / "Library"),
+            sourceOverride, repository.getUiPreferences().qbDownloadDirectory);
+        // A removed drive must not prevent the desktop app from opening; keep the saved choice pending.
+        if (paths.qbConfigured && !std::filesystem::is_directory(paths.source)) {
+            paths.source = paths.data / "unconfigured-qb-source";
+            paths.qbConfigured = false;
+        }
+        const auto& source = paths.source;
+        const auto& library = paths.library;
+        const auto& imported = paths.imported;
+        if (!paths.qbConfigured) std::filesystem::create_directories(source);
         anime_vault::api::MediaService media(repository,
-            source, library, imported);
+            source, library, imported, paths.qbConfigured);
         std::filesystem::create_directories(library);
         anime_vault::OrganizationService organization(repository, source, imported, library);
         anime_vault::NativeProcessLauncher processLauncher;
@@ -85,6 +101,13 @@ int main() {
             [qb](anime_vault::MikanEnricher::CatalogCompletion completion) {
                 qb->readMikanTitles(std::move(completion));
             });
+        const auto qbDownloadError = [&repository, source, configured = paths.qbConfigured,
+                                      environmentOverride = sourceOverride.has_value()] {
+            if (!configured) return std::string("qb_download_dir_unconfigured");
+            return anime_vault::qbDirectoryActive(source,
+                repository.getUiPreferences().qbDownloadDirectory, environmentOverride)
+                ? std::string{} : std::string("qb_download_dir_restart_required");
+        };
         const auto port = anime_vault::api::resolveHealthPort(std::getenv("ANIME_VAULT_PORT"));
         anime_vault::api::registerHealthEndpoint();
         anime_vault::api::registerMediaEndpoints(media, organization, enricher, mikanEnricher);
@@ -92,7 +115,7 @@ int main() {
         anime_vault::api::registerManagementEndpoints(repository,
             {source, imported, library, data,
              std::getenv("ANIME_VAULT_BANGUMI_USER_AGENT") &&
-             *std::getenv("ANIME_VAULT_BANGUMI_USER_AGENT"), qb->configured()});
+             *std::getenv("ANIME_VAULT_BANGUMI_USER_AGENT"), qb->configured(), paths.qbConfigured});
         anime_vault::api::registerAnimeEndpoints(repository, bangumi, covers);
         drogon::app().registerHandler("/api/qb/status", [qb](const drogon::HttpRequestPtr&,
             std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
@@ -126,7 +149,7 @@ int main() {
                 callback(drogon::HttpResponse::newHttpJsonResponse(payload));
             });
         }, {drogon::Get});
-        drogon::app().registerHandler("/api/qb/rss/feeds", [qb, source](const drogon::HttpRequestPtr& request,
+        drogon::app().registerHandler("/api/qb/rss/feeds", [qb, source, qbDownloadError](const drogon::HttpRequestPtr& request,
             std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
             const auto body = request->body().size() <= 2048 ? request->getJsonObject() : nullptr;
             if (!body || !body->isObject() || body->size() != 1 || !(*body)["url"].isString() ||
@@ -136,6 +159,15 @@ int main() {
                 payload["error"]["message"] = "a Mikan HTTPS RSS URL is required";
                 auto response = drogon::HttpResponse::newHttpJsonResponse(payload);
                 response->setStatusCode(drogon::k400BadRequest);
+                callback(response);
+                return;
+            }
+            if (const auto error = qbDownloadError(); !error.empty()) {
+                Json::Value payload;
+                payload["error"]["code"] = error;
+                payload["error"]["message"] = "restart or configure the qB download directory";
+                auto response = drogon::HttpResponse::newHttpJsonResponse(payload);
+                response->setStatusCode(drogon::k409Conflict);
                 callback(response);
                 return;
             }
@@ -158,7 +190,7 @@ int main() {
                     callback(response);
                 });
         }, {drogon::Post});
-        drogon::app().registerHandler("/api/qb/rss/rules", [qb, source](const drogon::HttpRequestPtr& request,
+        drogon::app().registerHandler("/api/qb/rss/rules", [qb, source, qbDownloadError](const drogon::HttpRequestPtr& request,
             std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
             const auto body = request->body().size() <= 4096 ? request->getJsonObject() : nullptr;
             if (!body || !body->isObject() || body->size() != 3 ||
@@ -169,6 +201,15 @@ int main() {
                 payload["error"]["message"] = "ruleName, feedUrl and keyword are required";
                 auto response = drogon::HttpResponse::newHttpJsonResponse(payload);
                 response->setStatusCode(drogon::k400BadRequest);
+                callback(response);
+                return;
+            }
+            if (const auto error = qbDownloadError(); !error.empty()) {
+                Json::Value payload;
+                payload["error"]["code"] = error;
+                payload["error"]["message"] = "restart or configure the qB download directory";
+                auto response = drogon::HttpResponse::newHttpJsonResponse(payload);
+                response->setStatusCode(drogon::k409Conflict);
                 callback(response);
                 return;
             }
