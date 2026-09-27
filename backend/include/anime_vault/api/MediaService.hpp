@@ -36,6 +36,7 @@ public:
                  std::filesystem::path importRoot = "D:/追番/外来导入",
                  bool qbConfigured = true);
     ScanRecord createScan(std::chrono::seconds stableFor = std::chrono::seconds{60});
+    void validateQbSourceReady() const;
     ScanRecord createImportScan(std::chrono::seconds stableFor = std::chrono::seconds{60});
     ScanRecord getScan(std::int64_t id) const;
     std::vector<MediaRecord> listInbox() const;

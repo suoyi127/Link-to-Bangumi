@@ -30,7 +30,7 @@ export function SettingsPage() {
   const [auditLoading, setAuditLoading] = useState(true)
   const [auditError, setAuditError] = useState('')
   const auditSequence = useRef(0)
-  const qbPathPending = restartRequired || Boolean(settings?.qbDownloadDirectory &&
+  const qbPathPending = restartRequired || Boolean(!settings?.qbDownloadEnvironmentOverride && settings?.qbDownloadDirectory &&
     settings.qbDownloadDirectory !== settings.sourcePath)
 
   useEffect(() => {
@@ -123,7 +123,8 @@ export function SettingsPage() {
       ]} />
       <label>qB 下载目录 <Input aria-label="qB 下载目录" value={qbPath} onChange={(event) => setQbPath(event.target.value)} maxLength={4096} placeholder="选择已有的 qB 下载文件夹路径" /></label>
       <Typography.Text type="secondary">仅识别你选择的 qB 下载目录；外来导入与媒体库保持独立。修改目录不会移动或删除已有文件。</Typography.Text>
-      <Button loading={qbPathSaving} onClick={() => void saveQbPath()}>保存 qB 下载目录</Button>
+      <Button loading={qbPathSaving} disabled={settings.qbDownloadEnvironmentOverride} onClick={() => void saveQbPath()}>保存 qB 下载目录</Button>
+      {settings.qbDownloadEnvironmentOverride && <Alert type="info" message="环境变量正在覆盖页面保存的 qB 下载目录；移除 ANIME_VAULT_SOURCE_DIR 后才能在此修改。" />}
       {qbPathPending && <Alert type="warning" message="qB 下载目录已保存，重启后端后生效。" />}
       <Alert type="info" message={settings.bangumiConfigured ? 'Bangumi 已配置（直接联网）' : 'Bangumi 未配置；本地浏览仍可用'} />
       <Alert type={qbStatus?.connected ? 'success' : 'info'} message={qbStatus?.connected ? `qBittorrent 已连接 · ${qbStatus.version} · ${qbStatus.torrentCount} 个任务（${qbStatus.completedCount} 个已下载）` : settings.qbWebUiConfigured ? `qBittorrent 已配置，${qbStatus ? `连接失败（${qbStatus.errorCode}）` : '正在检查连接'}` : 'qBittorrent Web UI 未启用；qB 下载完成需手动确认'} />

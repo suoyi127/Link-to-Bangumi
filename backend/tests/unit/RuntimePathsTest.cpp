@@ -77,6 +77,7 @@ TEST_CASE("a newly saved qB directory cannot receive downloads before restart") 
     const auto pendingBytes = (root / "pending").u8string();
     const std::string pending(reinterpret_cast<const char*>(pendingBytes.data()), pendingBytes.size());
     REQUIRE_FALSE(anime_vault::qbDirectoryActive(root / "active", pending, false));
+    REQUIRE(anime_vault::qbDirectoryActive(root / "active", pending, true));
     REQUIRE(anime_vault::qbDirectoryActive(root / "pending", pending, false));
     REQUIRE_FALSE(anime_vault::qbDirectoryActive(root / "active", "", false));
     REQUIRE(anime_vault::qbDirectoryActive(root / "active", "", true));

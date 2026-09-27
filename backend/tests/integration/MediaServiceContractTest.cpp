@@ -34,6 +34,33 @@ TEST_CASE("unconfigured qB source cannot be scanned but external imports remain 
     REQUIRE(service.createImportScan(std::chrono::seconds{0}).source == "external_import");
 }
 
+TEST_CASE("download target validation pins the original qB source root") {
+    namespace fs = std::filesystem;
+    const auto root = fs::temp_directory_path() /
+        ("anime-vault-download-target-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    struct Cleanup { fs::path path; ~Cleanup() { std::error_code error; fs::remove_all(path, error); } } cleanup{root};
+    const auto source = root / "source";
+    const auto imported = root / "import";
+    const auto library = root / "library";
+    fs::create_directories(source);
+    fs::create_directories(imported);
+    fs::create_directories(library);
+    anime_vault::SqliteDatabase db(root / "vault.db");
+    db.migrate();
+    anime_vault::SqliteMediaRepository repository(db);
+    anime_vault::api::MediaService service(repository, source, library, imported);
+    REQUIRE_NOTHROW(service.validateQbSourceReady());
+    fs::rename(source, root / "former-source");
+    std::error_code linkError;
+    fs::create_directory_symlink(imported, source, linkError);
+    try {
+        service.validateQbSourceReady();
+        FAIL("changed or missing qB root must not receive new downloads");
+    } catch (const anime_vault::api::ApiError& error) {
+        REQUIRE((error.code == "source_root_changed" || error.code == "source_root_unavailable"));
+    }
+}
+
 #ifdef ANIME_VAULT_STANDALONE_TEST_MAIN
 #include <catch2/catch_session.hpp>
 int main(int argc, char* argv[]) { return Catch::Session().run(argc, argv); }

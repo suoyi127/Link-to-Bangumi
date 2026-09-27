@@ -9,6 +9,7 @@ const settings: Settings = {
   bangumiConfigured: false, qbWebUiConfigured: false, preferredOperation: 'hardlink',
   scanIntervalSeconds: 3600, mpvExecutable: '', qbWebUiUrl: '',
   qbDownloadConfigured: false, qbDownloadDirectory: '',
+  qbDownloadEnvironmentOverride: false,
 }
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
@@ -60,6 +61,22 @@ it('keeps Mikan download actions disabled while a saved directory awaits restart
   expect(await screen.findByText(/重启后端后生效/)).toBeInTheDocument()
   fireEvent.change(screen.getByLabelText('Mikan RSS 地址'), { target: { value: 'https://mikanani.me/RSS/Bangumi?bangumiId=1' } })
   expect(screen.getByRole('button', { name: '添加 Mikan 订阅' })).toBeDisabled()
+})
+
+it('keeps an explicit environment source active despite an older saved directory', async () => {
+  const overriddenSettings = {
+    ...settings, qbWebUiConfigured: true, qbDownloadConfigured: true,
+    qbDownloadDirectory: 'X:/older-saved', qbDownloadEnvironmentOverride: true,
+  }
+  vi.spyOn(client, 'getSettings').mockResolvedValue(overriddenSettings)
+  vi.spyOn(client, 'getAuditLogs').mockResolvedValue({ items: [], nextOffset: null })
+  vi.spyOn(client, 'getQbStatus').mockResolvedValue({ configured: true, connected: true, errorCode: '', version: '5.2', torrentCount: 0, completedCount: 0 })
+  vi.spyOn(client, 'getMikanFeeds').mockResolvedValue({ feedCount: 0, articleCount: 0, pairCount: 0, errorCode: '', feeds: [] })
+  render(<SettingsPage />)
+  fireEvent.change(await screen.findByLabelText('Mikan RSS 地址'), { target: { value: 'https://mikanani.me/RSS/Bangumi?bangumiId=1' } })
+  expect(screen.getByRole('button', { name: '添加 Mikan 订阅' })).toBeEnabled()
+  expect(screen.getByRole('button', { name: '保存 qB 下载目录' })).toBeDisabled()
+  expect(screen.getByText(/环境变量正在覆盖/)).toBeInTheDocument()
 })
 
 it('paginates audit history using the returned cursor', async () => {

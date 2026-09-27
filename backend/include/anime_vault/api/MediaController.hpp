@@ -40,6 +40,7 @@ struct EffectiveSettings {
     bool bangumiConfigured{};
     bool qbConfigured{};
     bool qbDownloadConfigured{};
+    bool qbDownloadEnvironmentOverride{};
 };
 struct QbDownloadDirectoryRequest { std::string path; };
 QbDownloadDirectoryRequest parseQbDownloadDirectoryRequest(const Json::Value& body);

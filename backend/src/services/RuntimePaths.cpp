@@ -101,6 +101,7 @@ fs::path validateQbDownloadDirectory(const fs::path& candidate, const fs::path& 
 
 bool qbDirectoryActive(const fs::path& active, std::string_view stored,
                        bool environmentOverride) {
+    if (environmentOverride) return true;
     if (stored.empty()) return environmentOverride;
     const auto* bytes = reinterpret_cast<const char8_t*>(stored.data());
     std::error_code error;

@@ -128,12 +128,16 @@ MediaService::MediaService(MediaRepository& repository, fs::path sourceRoot, fs:
 
 ScanRecord MediaService::createScan(std::chrono::seconds stableFor) {
     const std::lock_guard lock(mutex_);
+    validateQbSourceReady();
+    enforceRateLimit();
+    return scanFrom(scanner_, "qb_download", stableFor);
+}
+
+void MediaService::validateQbSourceReady() const {
     if (!qbConfigured_)
         throw ApiError(409, "qb_download_dir_unconfigured", "select a qB download directory first");
     validateSourceRoot();
     validateDistinctRoots(sourceRequestedRoot_, importRoot_, libraryRoot_);
-    enforceRateLimit();
-    return scanFrom(scanner_, "qb_download", stableFor);
 }
 
 ScanRecord MediaService::createImportScan(std::chrono::seconds stableFor) {

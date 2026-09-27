@@ -304,6 +304,7 @@ void registerManagementEndpoints(MediaRepository& repository, EffectiveSettings 
         json["sourcePath"] = pathString(settings.sourcePath);
         json["qbDownloadDirectory"] = preferences.qbDownloadDirectory;
         json["qbDownloadConfigured"] = settings.qbDownloadConfigured;
+        json["qbDownloadEnvironmentOverride"] = settings.qbDownloadEnvironmentOverride;
         json["importPath"] = pathString(settings.importPath);
         json["libraryPath"] = pathString(settings.libraryPath);
         json["dataPath"] = pathString(settings.dataPath);
@@ -388,6 +389,9 @@ void registerManagementEndpoints(MediaRepository& repository, EffectiveSettings 
             const auto body = request->getJsonObject();
             if (!body) throw ApiError(400, "invalid_request", "JSON object required");
             const auto dto = parseQbDownloadDirectoryRequest(*body);
+            if (settings.qbDownloadEnvironmentOverride)
+                throw ApiError(409, "qb_download_directory_overridden",
+                    "remove ANIME_VAULT_SOURCE_DIR before changing the directory here");
             auto preferences = repository.getUiPreferences();
             if (dto.path.empty()) {
                 preferences.qbDownloadDirectory.clear();

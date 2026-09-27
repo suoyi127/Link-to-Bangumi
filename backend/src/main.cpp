@@ -115,7 +115,8 @@ int main() {
         anime_vault::api::registerManagementEndpoints(repository,
             {source, imported, library, data,
              std::getenv("ANIME_VAULT_BANGUMI_USER_AGENT") &&
-             *std::getenv("ANIME_VAULT_BANGUMI_USER_AGENT"), qb->configured(), paths.qbConfigured});
+             *std::getenv("ANIME_VAULT_BANGUMI_USER_AGENT"), qb->configured(),
+             paths.qbConfigured, sourceOverride.has_value()});
         anime_vault::api::registerAnimeEndpoints(repository, bangumi, covers);
         drogon::app().registerHandler("/api/qb/status", [qb](const drogon::HttpRequestPtr&,
             std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
@@ -149,7 +150,7 @@ int main() {
                 callback(drogon::HttpResponse::newHttpJsonResponse(payload));
             });
         }, {drogon::Get});
-        drogon::app().registerHandler("/api/qb/rss/feeds", [qb, source, qbDownloadError](const drogon::HttpRequestPtr& request,
+        drogon::app().registerHandler("/api/qb/rss/feeds", [qb, source, qbDownloadError, &media](const drogon::HttpRequestPtr& request,
             std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
             const auto body = request->body().size() <= 2048 ? request->getJsonObject() : nullptr;
             if (!body || !body->isObject() || body->size() != 1 || !(*body)["url"].isString() ||
@@ -168,6 +169,16 @@ int main() {
                 payload["error"]["message"] = "restart or configure the qB download directory";
                 auto response = drogon::HttpResponse::newHttpJsonResponse(payload);
                 response->setStatusCode(drogon::k409Conflict);
+                callback(response);
+                return;
+            }
+            try { media.validateQbSourceReady(); }
+            catch (const anime_vault::api::ApiError& error) {
+                Json::Value payload;
+                payload["error"]["code"] = error.code;
+                payload["error"]["message"] = error.what();
+                auto response = drogon::HttpResponse::newHttpJsonResponse(payload);
+                response->setStatusCode(static_cast<drogon::HttpStatusCode>(error.status));
                 callback(response);
                 return;
             }
@@ -190,7 +201,7 @@ int main() {
                     callback(response);
                 });
         }, {drogon::Post});
-        drogon::app().registerHandler("/api/qb/rss/rules", [qb, source, qbDownloadError](const drogon::HttpRequestPtr& request,
+        drogon::app().registerHandler("/api/qb/rss/rules", [qb, source, qbDownloadError, &media](const drogon::HttpRequestPtr& request,
             std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
             const auto body = request->body().size() <= 4096 ? request->getJsonObject() : nullptr;
             if (!body || !body->isObject() || body->size() != 3 ||
@@ -210,6 +221,16 @@ int main() {
                 payload["error"]["message"] = "restart or configure the qB download directory";
                 auto response = drogon::HttpResponse::newHttpJsonResponse(payload);
                 response->setStatusCode(drogon::k409Conflict);
+                callback(response);
+                return;
+            }
+            try { media.validateQbSourceReady(); }
+            catch (const anime_vault::api::ApiError& error) {
+                Json::Value payload;
+                payload["error"]["code"] = error.code;
+                payload["error"]["message"] = error.what();
+                auto response = drogon::HttpResponse::newHttpJsonResponse(payload);
+                response->setStatusCode(static_cast<drogon::HttpStatusCode>(error.status));
                 callback(response);
                 return;
             }
