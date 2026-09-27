@@ -35,7 +35,17 @@ npm.cmd --prefix frontend run lint
 npm.cmd --prefix frontend run build -- --configLoader runner
 ```
 
-生产/开发后端可用 `cmake --preset dev`、`cmake --build --preset dev`。按生成器实际输出路径启动 `anime_vault_server.exe`（例如 `build\dev\backend\Debug\anime_vault_server.exe`）。服务仅绑定 `127.0.0.1`，默认端口 `8848`；`http://127.0.0.1:8848/health` 应返回 `status: ok`。可用 `ANIME_VAULT_PORT` 改端口，但必须同步修改 `frontend/vite.config.ts` 中 `/api`、`/health` 的代理目标。
+日常启动后端时，先确认上表中的来源和外来导入目录存在；首次编译可在仓库根目录运行：
+
+```powershell
+cmake --preset dev
+cmake --build --preset dev
+.\start-backend.bat
+```
+
+之后可双击根目录的 `start-backend.bat`，或在 PowerShell 中运行 `.\start-backend.bat`。它从批处理所在目录依次查找 `build\dev\backend\Debug`、`build\test\backend\Debug`、`build\debug\backend\Debug`、`build\release\backend\Release` 中的 `anime_vault_server.exe`，在当前窗口前台运行；关闭窗口或按 Ctrl+C 会停止服务。找不到程序时会提示上述编译命令，不会自动编译。脚本继承启动它的进程环境变量，不内置路径覆盖、Bangumi 标识或 qB 凭据；如需配置，先在同一个 PowerShell 窗口设置环境变量再运行脚本。双击启动时，只能继承 Windows 用户/系统环境变量，不能继承另一个 PowerShell 窗口中临时设置的值。
+
+服务仅绑定 `127.0.0.1`，默认端口 `8848`；`http://127.0.0.1:8848/health` 应返回 `status: ok`。可在运行脚本前设置 `ANIME_VAULT_PORT` 改端口，但必须同步修改 `frontend/vite.config.ts` 中 `/api`、`/health` 的代理目标。
 
 另开 PowerShell 启动界面：
 
