@@ -25,6 +25,16 @@ Anime Vault 从实际下载到本机的媒体文件名解析番剧标题、集�
 
 ## 编译与启动
 
+开发者推荐使用仓库根目录的 `dev.ps1`，它构建 Debug 后端、在缺少依赖时运行 `npm ci`，并同时启动 Vite 和后端：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\dev.ps1 -VcpkgRoot 'C:\path\to\vcpkg'
+```
+
+也可省略参数，脚本读取 `VCPKG_ROOT`，仍未设置时会提示输入。上例的执行策略仅对新开的这一次 PowerShell 进程有效，不修改系统设置。默认前端 `http://127.0.0.1:5173/`、后端 `http://127.0.0.1:8848/health`；已占用的端口不会被脚本关闭。调试多个实例时可指定 `-BackendPort`、`-FrontendPort`，Vite 代理随之调整。按 Ctrl+C 结束本次启动的进程。旧的 `build-backend.bat`、`start-backend.bat` 仍供只运行后端使用。
+
+桌面发布目录使用 `powershell -NoProfile -ExecutionPolicy Bypass -File .\package-desktop.ps1 -VcpkgRoot 'C:\path\to\vcpkg'` 生成到 `build\package\AnimeVault-<时间戳>`；每次生成新目录，不覆盖旧包。其中 `AnimeVault.exe` 是唯一需要用户点击的程序；同目录 `backend` 和 `web` 是运行资源，不可单独移走。桌面宿主自带 .NET 运行时；当前便携目录仍要求本机已有 Microsoft Edge WebView2 Runtime 和 Visual C++ x64 Redistributable。缺少 WebView2 时启动会显示提示。首次打开不要求 qB 或 `D:\追番`，请在设置页选择自己的 qB 下载目录并重启应用。安装程序 `Setup.exe` 将在下一阶段自动处理运行库先决条件；当前发布目录仅用于便携测试。
+
 需要 Windows 10/11、Visual Studio 2022 C++ 工具集、CMake 3.25+、Git、Node.js/npm 和 vcpkg。`vcpkg.json` 固定 baseline `9e593bb18ea69cc5095e012465dcd675a822ed0d`。在仓库根目录的 PowerShell 中：
 
 ```powershell
@@ -48,7 +58,7 @@ npm.cmd --prefix frontend run build -- --configLoader runner
 
 也可直接运行 `.\build-backend.bat`：若当前环境已有 `VCPKG_ROOT` 就使用它，否则在窗口中提示输入 vcpkg 路径；命令参数优先于已有环境变量。输入仅对本次构建生效，不会永久修改 Windows 环境变量。脚本从自身所在目录运行 `cmake --preset dev` 和 `cmake --build --preset dev`，只构建后端，不自动启动；路径无效或缺少 CMake 时会报错。之后可双击根目录的 `start-backend.bat`，或在 PowerShell 中运行 `.\start-backend.bat`。启动脚本依次查找 `build\dev\backend\Debug`、`build\test\backend\Debug`、`build\debug\backend\Debug`、`build\release\backend\Release` 中的 `anime_vault_server.exe`，在当前窗口前台运行；关闭窗口或按 Ctrl+C 会停止服务。找不到程序时会提示编译命令，不会自动编译。启动脚本继承启动它的进程环境变量，不内置路径覆盖、Bangumi 标识或 qB 凭据；如需配置，先在同一个 PowerShell 窗口设置环境变量再运行脚本。双击启动时，只能继承 Windows 用户/系统环境变量，不能继承另一个 PowerShell 窗口中临时设置的值。
 
-服务仅绑定 `127.0.0.1`，默认端口 `8848`；`http://127.0.0.1:8848/health` 应返回 `status: ok`。可在运行脚本前设置 `ANIME_VAULT_PORT` 改端口，但必须同步修改 `frontend/vite.config.ts` 中 `/api`、`/health` 的代理目标。
+服务仅绑定 `127.0.0.1`，默认端口 `8848`；`http://127.0.0.1:8848/health` 应返回 `status: ok`。单独使用旧批处理时，若设置 `ANIME_VAULT_PORT` 改端口，还需设置 `ANIME_VAULT_DEV_BACKEND_PORT`，使 Vite 代理指向相同端口；`dev.ps1` 自动处理两者。
 
 另开 PowerShell 启动界面：
 
