@@ -35,15 +35,15 @@ npm.cmd --prefix frontend run lint
 npm.cmd --prefix frontend run build -- --configLoader runner
 ```
 
-日常启动后端时，先确认上表中的来源和外来导入目录存在；首次编译可在仓库根目录运行：
+日常构建与启动后端时，先确认上表中的来源和外来导入目录存在，并设置 `VCPKG_ROOT` 指向已安装的 vcpkg。在仓库根目录运行：
 
 ```powershell
-cmake --preset dev
-cmake --build --preset dev
+$env:VCPKG_ROOT = 'C:\path\to\vcpkg'
+.\build-backend.bat
 .\start-backend.bat
 ```
 
-之后可双击根目录的 `start-backend.bat`，或在 PowerShell 中运行 `.\start-backend.bat`。它从批处理所在目录依次查找 `build\dev\backend\Debug`、`build\test\backend\Debug`、`build\debug\backend\Debug`、`build\release\backend\Release` 中的 `anime_vault_server.exe`，在当前窗口前台运行；关闭窗口或按 Ctrl+C 会停止服务。找不到程序时会提示上述编译命令，不会自动编译。脚本继承启动它的进程环境变量，不内置路径覆盖、Bangumi 标识或 qB 凭据；如需配置，先在同一个 PowerShell 窗口设置环境变量再运行脚本。双击启动时，只能继承 Windows 用户/系统环境变量，不能继承另一个 PowerShell 窗口中临时设置的值。
+`build-backend.bat` 从批处理所在目录运行 `cmake --preset dev` 和 `cmake --build --preset dev`，只构建后端，不自动启动；未设置有效的 `VCPKG_ROOT` 或缺少 CMake 时会报错。之后可双击根目录的 `start-backend.bat`，或在 PowerShell 中运行 `.\start-backend.bat`。启动脚本依次查找 `build\dev\backend\Debug`、`build\test\backend\Debug`、`build\debug\backend\Debug`、`build\release\backend\Release` 中的 `anime_vault_server.exe`，在当前窗口前台运行；关闭窗口或按 Ctrl+C 会停止服务。找不到程序时会提示编译命令，不会自动编译。两个脚本都继承启动它们的进程环境变量，不内置路径覆盖、Bangumi 标识或 qB 凭据；如需配置，先在同一个 PowerShell 窗口设置环境变量再运行脚本。双击启动时，只能继承 Windows 用户/系统环境变量，不能继承另一个 PowerShell 窗口中临时设置的值。
 
 服务仅绑定 `127.0.0.1`，默认端口 `8848`；`http://127.0.0.1:8848/health` 应返回 `status: ok`。可在运行脚本前设置 `ANIME_VAULT_PORT` 改端口，但必须同步修改 `frontend/vite.config.ts` 中 `/api`、`/health` 的代理目标。
 
