@@ -4,6 +4,7 @@
 #include <nlohmann/json.hpp>
 
 #include <stdexcept>
+#include <charconv>
 #include <chrono>
 #include <filesystem>
 #include <iomanip>
@@ -31,15 +32,46 @@ std::string formEncode(const std::string& value) {
     }
     return encoded;
 }
+std::string hostHeader(std::string_view base) { return std::string(base.substr(7)); }
+bool verifiedLandingPage(drogon::ReqResult result, const drogon::HttpResponsePtr& response) {
+    return result == drogon::ReqResult::Ok && response &&
+        response->statusCode() == drogon::k200OK &&
+        QbWebClient::looksLikeQbWebUi(response->getBody());
+}
+}
+
+QbEndpoint QbWebClient::parseEndpoint(std::string_view baseUrl) {
+    if (!baseUrl.starts_with("http://")) throw std::invalid_argument("qB URL must use local HTTP");
+    const auto authority = baseUrl.substr(7);
+    std::string_view address;
+    std::string_view portText;
+    if (authority.starts_with("[::1]:")) {
+        address = "::1";
+        portText = authority.substr(6);
+    } else if (authority.starts_with("127.0.0.1:")) {
+        address = "127.0.0.1";
+        portText = authority.substr(10);
+    } else {
+        throw std::invalid_argument("qB URL must use an explicit loopback address");
+    }
+    int port{};
+    const auto [end, error] = std::from_chars(portText.data(), portText.data() + portText.size(), port);
+    if (portText.empty() || error != std::errc{} || end != portText.data() + portText.size() ||
+        port < 1 || port > 65535)
+        throw std::invalid_argument("invalid qB port");
+    return {std::string(address), std::string(authority), port};
+}
+
+bool QbWebClient::looksLikeQbWebUi(std::string_view body) {
+    return body.size() <= 1024 * 1024 && body.find("qBittorrent WebUI") != std::string_view::npos;
 }
 
 QbWebClient::QbWebClient(std::string baseUrl, std::string username, std::string password)
     : baseUrl_(std::move(baseUrl)), username_(std::move(username)), password_(std::move(password)) {
-    // This machine has a different server on IPv4:8080; never send qB credentials there.
-    if (baseUrl_ != "http://[::1]:8080")
-        throw std::invalid_argument("qB API must use the verified IPv6 loopback endpoint");
-    // Drogon's URL constructor rejects IPv6 on this build; the IP/port overload works.
-    if (configured()) client_ = drogon::HttpClient::newHttpClient("::1", 8080);
+    const auto endpoint = parseEndpoint(baseUrl_);
+    // A numeric address avoids DNS changing which local service receives the credentials.
+    if (configured()) client_ = drogon::HttpClient::newHttpClient(
+        endpoint.address, static_cast<std::uint16_t>(endpoint.port));
 }
 
 std::optional<std::string> QbWebClient::loginCookie(int status, std::string_view body,
@@ -211,21 +243,20 @@ void QbWebClient::inspect(Completion completion) const {
     if (!configured()) { completion({false, false, "qb_unconfigured"}); return; }
     auto preflight = drogon::HttpRequest::newHttpRequest();
     preflight->setMethod(drogon::Get);
-    preflight->setPath("/api/v2/app/version");
-    preflight->addHeader("Host", "[::1]:8080");
+    preflight->setPath("/");
+    preflight->addHeader("Host", hostHeader(baseUrl_));
     auto login = drogon::HttpRequest::newHttpRequest();
     login->setMethod(drogon::Post);
     login->setPath("/api/v2/auth/login");
     login->addHeader("Content-Type", "application/x-www-form-urlencoded");
-    login->addHeader("Host", "[::1]:8080");
+    login->addHeader("Host", hostHeader(baseUrl_));
     login->addHeader("Referer", baseUrl_ + "/");
     login->setBody("username=" + formEncode(username_) + "&password=" + formEncode(password_));
     auto client = client_;
     client->sendRequest(preflight, [client, login, completion = std::move(completion), base = baseUrl_](
         drogon::ReqResult result, const drogon::HttpResponsePtr& response) mutable {
         // An unrelated IPv4 server also owns port 8080; reject an unexpected endpoint before login.
-        if (result != drogon::ReqResult::Ok || !response ||
-            (response->statusCode() != drogon::k403Forbidden && response->statusCode() != drogon::k200OK)) {
+        if (!verifiedLandingPage(result, response)) {
             completion({true, false, "qb_unexpected_service"}); return;
         }
         client->sendRequest(login, [client, completion = std::move(completion), base](
@@ -242,7 +273,7 @@ void QbWebClient::inspect(Completion completion) const {
         auto request = drogon::HttpRequest::newHttpRequest();
         request->setMethod(drogon::Get);
         request->setPath("/api/v2/app/version");
-        request->addHeader("Host", "[::1]:8080");
+        request->addHeader("Host", hostHeader(base));
         request->addHeader("Cookie", *cookie);
         request->addHeader("Referer", base + "/");
         client->sendRequest(request, [client, cookie = *cookie, completion = std::move(completion), base](
@@ -255,7 +286,7 @@ void QbWebClient::inspect(Completion completion) const {
             auto torrents = drogon::HttpRequest::newHttpRequest();
             torrents->setMethod(drogon::Get);
             torrents->setPath("/api/v2/torrents/info?filter=all");
-            torrents->addHeader("Host", "[::1]:8080");
+            torrents->addHeader("Host", hostHeader(base));
             torrents->addHeader("Cookie", cookie);
             torrents->addHeader("Referer", base + "/");
             client->sendRequest(torrents, [completion = std::move(completion), version](
@@ -286,21 +317,20 @@ void QbWebClient::readMikanTitles(RssCompletion completion) const {
     if (!configured()) { completion({0, 0, {}, "qb_unconfigured"}); return; }
     auto preflight = drogon::HttpRequest::newHttpRequest();
     preflight->setMethod(drogon::Get);
-    preflight->setPath("/api/v2/app/version");
-    preflight->addHeader("Host", "[::1]:8080");
+    preflight->setPath("/");
+    preflight->addHeader("Host", hostHeader(baseUrl_));
     auto client = client_;
     const auto base = baseUrl_;
     const auto form = "username=" + formEncode(username_) + "&password=" + formEncode(password_);
     client->sendRequest(preflight, [client, base, form, completion = std::move(completion)](
         drogon::ReqResult result, const drogon::HttpResponsePtr& response) mutable {
-        if (result != drogon::ReqResult::Ok || !response ||
-            (response->statusCode() != drogon::k403Forbidden && response->statusCode() != drogon::k200OK)) {
+        if (!verifiedLandingPage(result, response)) {
             completion({0, 0, {}, "qb_unexpected_service"}); return;
         }
         auto login = drogon::HttpRequest::newHttpRequest();
         login->setMethod(drogon::Post);
         login->setPath("/api/v2/auth/login");
-        login->addHeader("Host", "[::1]:8080");
+        login->addHeader("Host", hostHeader(base));
         login->addHeader("Content-Type", "application/x-www-form-urlencoded");
         login->addHeader("Referer", base + "/");
         login->setBody(form);
@@ -316,7 +346,7 @@ void QbWebClient::readMikanTitles(RssCompletion completion) const {
             auto request = drogon::HttpRequest::newHttpRequest();
             request->setMethod(drogon::Get);
             request->setPath("/api/v2/rss/items?withData=true");
-            request->addHeader("Host", "[::1]:8080");
+            request->addHeader("Host", hostHeader(base));
             request->addHeader("Cookie", *cookie);
             request->addHeader("Referer", base + "/");
             client->sendRequest(request, [completion = std::move(completion)](
@@ -342,19 +372,18 @@ void QbWebClient::addMikanFeed(std::string url, ActionCompletion completion) con
     const auto form = "username=" + formEncode(username_) + "&password=" + formEncode(password_);
     auto preflight = drogon::HttpRequest::newHttpRequest();
     preflight->setMethod(drogon::Get);
-    preflight->setPath("/api/v2/app/version");
-    preflight->addHeader("Host", "[::1]:8080");
+    preflight->setPath("/");
+    preflight->addHeader("Host", hostHeader(base));
     client->sendRequest(preflight, [client, base, form, url = std::move(url),
                                     completion = std::move(completion)](
         drogon::ReqResult result, const drogon::HttpResponsePtr& response) mutable {
-        if (result != drogon::ReqResult::Ok || !response ||
-            (response->statusCode() != drogon::k403Forbidden && response->statusCode() != drogon::k200OK)) {
+        if (!verifiedLandingPage(result, response)) {
             completion({false, "qb_unexpected_service"}); return;
         }
         auto login = drogon::HttpRequest::newHttpRequest();
         login->setMethod(drogon::Post);
         login->setPath("/api/v2/auth/login");
-        login->addHeader("Host", "[::1]:8080");
+        login->addHeader("Host", hostHeader(base));
         login->addHeader("Content-Type", "application/x-www-form-urlencoded");
         login->addHeader("Referer", base + "/");
         login->setBody(form);
@@ -369,7 +398,7 @@ void QbWebClient::addMikanFeed(std::string url, ActionCompletion completion) con
             auto request = drogon::HttpRequest::newHttpRequest();
             request->setMethod(drogon::Post);
             request->setPath("/api/v2/rss/addFeed");
-            request->addHeader("Host", "[::1]:8080");
+            request->addHeader("Host", hostHeader(base));
             request->addHeader("Content-Type", "application/x-www-form-urlencoded");
             request->addHeader("Cookie", *cookie);
             request->addHeader("Referer", base + "/");
@@ -427,7 +456,7 @@ void QbWebClient::addMikanFeedWithAutoRule(std::string url, std::string savePath
                     auto request = drogon::HttpRequest::newHttpRequest();
                     request->setMethod(method);
                     request->setPath(path);
-                    request->addHeader("Host", "[::1]:8080");
+                    request->addHeader("Host", hostHeader(base));
                     request->addHeader("Referer", base + "/");
                     if (!cookie.empty()) request->addHeader("Cookie", cookie);
                     if (method == drogon::Post) {
@@ -517,19 +546,18 @@ void QbWebClient::createMikanRule(QbMikanRuleSpec spec, ActionCompletion complet
     const auto form = "username=" + formEncode(username_) + "&password=" + formEncode(password_);
     auto preflight = drogon::HttpRequest::newHttpRequest();
     preflight->setMethod(drogon::Get);
-    preflight->setPath("/api/v2/app/version");
-    preflight->addHeader("Host", "[::1]:8080");
+    preflight->setPath("/");
+    preflight->addHeader("Host", hostHeader(base));
     client->sendRequest(preflight, [client, base, form, spec = std::move(spec),
                                     definition = std::move(definition), completion = std::move(completion)](
         drogon::ReqResult result, const drogon::HttpResponsePtr& response) mutable {
-        if (result != drogon::ReqResult::Ok || !response ||
-            (response->statusCode() != drogon::k403Forbidden && response->statusCode() != drogon::k200OK)) {
+        if (!verifiedLandingPage(result, response)) {
             completion({false, "qb_unexpected_service"}); return;
         }
         auto login = drogon::HttpRequest::newHttpRequest();
         login->setMethod(drogon::Post);
         login->setPath("/api/v2/auth/login");
-        login->addHeader("Host", "[::1]:8080");
+        login->addHeader("Host", hostHeader(base));
         login->addHeader("Content-Type", "application/x-www-form-urlencoded");
         login->addHeader("Referer", base + "/");
         login->setBody(form);
@@ -544,7 +572,7 @@ void QbWebClient::createMikanRule(QbMikanRuleSpec spec, ActionCompletion complet
             auto rules = drogon::HttpRequest::newHttpRequest();
             rules->setMethod(drogon::Get);
             rules->setPath("/api/v2/rss/rules");
-            rules->addHeader("Host", "[::1]:8080");
+            rules->addHeader("Host", hostHeader(base));
             rules->addHeader("Cookie", *cookie);
             rules->addHeader("Referer", base + "/");
             client->sendRequest(rules, [client, base, cookie = *cookie, spec = std::move(spec),
@@ -565,7 +593,7 @@ void QbWebClient::createMikanRule(QbMikanRuleSpec spec, ActionCompletion complet
                 auto setRule = drogon::HttpRequest::newHttpRequest();
                 setRule->setMethod(drogon::Post);
                 setRule->setPath("/api/v2/rss/setRule");
-                setRule->addHeader("Host", "[::1]:8080");
+                setRule->addHeader("Host", hostHeader(base));
                 setRule->addHeader("Content-Type", "application/x-www-form-urlencoded");
                 setRule->addHeader("Cookie", cookie);
                 setRule->addHeader("Referer", base + "/");

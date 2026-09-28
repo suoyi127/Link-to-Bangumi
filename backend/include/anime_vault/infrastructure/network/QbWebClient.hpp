@@ -29,11 +29,14 @@ struct QbMikanRuleSpec {
     std::string keyword;
     std::string savePath;
 };
+struct QbEndpoint { std::string address, hostHeader; int port{}; };
 
 class QbWebClient final {
 public:
     using Completion = std::function<void(QbStatus)>;
     QbWebClient(std::string baseUrl, std::string username, std::string password);
+    static QbEndpoint parseEndpoint(std::string_view baseUrl);
+    static bool looksLikeQbWebUi(std::string_view body);
     void inspect(Completion completion) const;
     using RssCompletion = std::function<void(QbMikanCatalog)>;
     void readMikanTitles(RssCompletion completion) const;

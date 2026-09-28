@@ -6,6 +6,29 @@
 
 using anime_vault::QbWebClient;
 
+TEST_CASE("qB endpoint accepts only explicit HTTP loopback addresses and ports") {
+    const auto ipv6 = QbWebClient::parseEndpoint("http://[::1]:8080");
+    REQUIRE(ipv6.address == "::1");
+    REQUIRE(ipv6.port == 8080);
+    REQUIRE(ipv6.hostHeader == "[::1]:8080");
+    const auto ipv4 = QbWebClient::parseEndpoint("http://127.0.0.1:8090");
+    REQUIRE(ipv4.address == "127.0.0.1");
+    REQUIRE(ipv4.port == 8090);
+    REQUIRE_THROWS(QbWebClient::parseEndpoint("http://localhost:8080"));
+    REQUIRE_THROWS(QbWebClient::parseEndpoint("http://192.168.1.2:8080"));
+    REQUIRE_THROWS(QbWebClient::parseEndpoint("http://user:pass@127.0.0.1:8080"));
+    REQUIRE_THROWS(QbWebClient::parseEndpoint("https://[::1]:8080"));
+    REQUIRE_THROWS(QbWebClient::parseEndpoint("http://[::1]:8080/path"));
+    REQUIRE_THROWS(QbWebClient::parseEndpoint("http://[::1]:8080?x=1"));
+    REQUIRE_THROWS(QbWebClient::parseEndpoint("http://[::1]:0"));
+    REQUIRE_THROWS(QbWebClient::parseEndpoint("http://127.0.0.1:65536"));
+}
+
+TEST_CASE("qB landing-page check rejects unrelated local services before login") {
+    REQUIRE(QbWebClient::looksLikeQbWebUi("<meta name=\"description\" content=\"qBittorrent WebUI\">"));
+    REQUIRE_FALSE(QbWebClient::looksLikeQbWebUi("<html>another local server</html>"));
+}
+
 TEST_CASE("qB 5.2 login accepts 204 with its port-specific session cookie") {
     REQUIRE(QbWebClient::loginCookie(204, "", "QBT_SID_8080=opaque; Path=/; HttpOnly") ==
         "QBT_SID_8080=opaque");
