@@ -79,5 +79,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create $env:GITHUB_REF_NAME $env:SETUP_PATH --title "Anime Vault $env:GITHUB_REF_NAME" --generate-notes
-          if ($LASTEXITCODE -ne 0) { throw 'GitHub Release creation failed' }
+          gh release view $env:GITHUB_REF_NAME --json tagName *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $env:GITHUB_REF_NAME $env:SETUP_PATH --clobber
+            if ($LASTEXITCODE -ne 0) { throw 'GitHub Release asset upload failed' }
+          } else {
+            gh release create $env:GITHUB_REF_NAME $env:SETUP_PATH --title "Anime Vault $env:GITHUB_REF_NAME" --generate-notes
+            if ($LASTEXITCODE -ne 0) { throw 'GitHub Release creation failed' }
+          }
