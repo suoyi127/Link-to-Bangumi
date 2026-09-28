@@ -78,7 +78,7 @@ npm.cmd --prefix frontend run build -- --configLoader runner
 npm.cmd --prefix frontend run dev
 ```
 
-打开 Vite 打印的本地地址。浏览器只通过同源 `/api` 和 `/health` 访问本机后端。默认 Bangumi 不启用；若要查询及刮削封面，在启动后端前设置包含开发者 ID 和应用名的 `ANIME_VAULT_BANGUMI_USER_AGENT`，例如 `your-id/AnimeVault/0.1 (Windows)`。Windows 版 Bangumi API 与图片请求遵循当前用户的系统代理设置并验证 HTTPS 证书；它们不经过 qB 的 RSS 代理桥。不要把凭据写进 `.env.example`；程序也不会自动加载 `.env`。
+打开 Vite 打印的本地地址。浏览器只通过同源 `/api` 和 `/health` 访问本机后端。初次可在“设置 → Bangumi 连接”中填写并测试 User-Agent，默认建议值为 `suoyi127/Link-to-Bangumi/0.1 (Windows) (https://github.com/suoyi127/Link-to-Bangumi)`；保存后搜索、绑定与封面请求立即使用它。也可在启动后端前设置 `ANIME_VAULT_BANGUMI_USER_AGENT` 作为回退值；页面保存配置优先，清除后恢复环境值。当前仅使用公开接口，不需要个人 Token。Windows 版 Bangumi API 与图片请求遵循当前用户的系统代理设置并验证 HTTPS 证书；它们不经过 qB 的 RSS 代理桥。不要把凭据写进 `.env.example`；程序也不会自动加载 `.env`。
 
 设置页显示实际生效路径和 Bangumi/qB 状态。保存的首选整理方式可用于界面偏好；`scanIntervalSeconds`、`qbWebUiUrl` 仍是预留偏好，不会启动调度或控制 qB 连接。`mpvExecutable` 是本机播放使用的可执行文件绝对路径：在番剧详情页点击某集的“用 mpv 播放”，后端按媒体 ID 校验路径并启动 mpv，不经网页串流；浏览器和后端须位于同一台电脑。当前机器的 `8080` 端口同时有 IPv4 和 IPv6 监听者，只有 IPv6 回环 `http://[::1]:8080` 指向 qB；程序的 qB 客户端固定使用此地址，避免把凭据发给另一个服务。设置 `ANIME_VAULT_QB_USERNAME` 与 `ANIME_VAULT_QB_PASSWORD` 后重启后端，设置页会显示只读连接诊断。不要把凭据写入仓库文件。
 
@@ -86,6 +86,6 @@ npm.cmd --prefix frontend run dev
 
 扫描到的实际文件名会自动创建本地番剧词条。若 Bangumi 已配置，完成 qB 来源扫描后会尝试为最多五个尚未绑定且未锁定的词条补充 Bangumi ID、别名和封面；只有唯一且高置信的候选才自动绑定，其余留待人工确认。RSS 文章标题始终不替代实际文件名解析。
 
-封面刮削使用 Bangumi 官方条目 API 提供的图片地址，不抓取 HTML。配置带有开发者 ID 的 `ANIME_VAULT_BANGUMI_USER_AGENT` 后，自动或手动绑定的番剧会尝试把封面缓存到数据目录的 `covers` 子目录；已绑定词条可在详情页点“刮削封面”重试。只接受 Bangumi 图片域名上的 HTTPS JPEG/PNG/WebP，图片上限为 5 MiB。页面通过同源 `/api/covers/...` 读取已缓存封面；抓取失败或 Bangumi 不可用不会改变原封面，也不影响本地媒体文件。未配置 User-Agent 时，已有缓存仍可读取，但不能进行在线刷新。
+封面刮削使用 Bangumi 官方条目 API 提供的图片地址，不抓取 HTML。在设置页保存带有开发者 ID 的 User-Agent（或设置 `ANIME_VAULT_BANGUMI_USER_AGENT` 环境变量）后，自动或手动绑定的番剧会尝试把封面缓存到数据目录的 `covers` 子目录；已绑定词条可在详情页点“刮削封面”重试。只接受 Bangumi 图片域名上的 HTTPS JPEG/PNG/WebP，图片上限为 5 MiB。页面通过同源 `/api/covers/...` 读取已缓存封面；抓取失败或 Bangumi 不可用不会改变原封面，也不影响本地媒体文件。未配置 User-Agent 时，已有缓存仍可读取，但不能进行在线刷新。
 
 交付核验见 [临时目录冒烟步骤](docs/disposable-smoke.md)。`compose.yaml` 仍为占位文件，不提供当前 Windows 本地启动方式。

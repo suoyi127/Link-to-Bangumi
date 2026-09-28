@@ -60,7 +60,7 @@ anime_vault_apply_warnings(anime_vault_bangumi_service)
 anime_vault_apply_sanitizers(anime_vault_bangumi_service)
 anime_vault_apply_lto(anime_vault_bangumi_service)
 
-add_library(anime_vault_bangumi_transport STATIC src/infrastructure/network/DrogonBangumiTransport.cpp src/infrastructure/network/DrogonCoverTransport.cpp src/infrastructure/network/WindowsSystemHttp.cpp src/infrastructure/network/QbWebClient.cpp src/infrastructure/network/QbConnectionManager.cpp)
+add_library(anime_vault_bangumi_transport STATIC src/infrastructure/network/DrogonBangumiTransport.cpp src/infrastructure/network/DrogonCoverTransport.cpp src/infrastructure/network/BangumiConnectionManager.cpp src/infrastructure/network/WindowsSystemHttp.cpp src/infrastructure/network/QbWebClient.cpp src/infrastructure/network/QbConnectionManager.cpp)
 target_include_directories(anime_vault_bangumi_transport PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(anime_vault_bangumi_transport PUBLIC cxx_std_20)
 target_link_libraries(anime_vault_bangumi_transport PUBLIC Drogon::Drogon nlohmann_json::nlohmann_json anime_vault_core anime_vault_bangumi_service)
@@ -76,6 +76,7 @@ add_library(anime_vault_api STATIC
   src/api/MediaController.cpp
   src/api/MediaService.cpp
   src/api/QbConfigController.cpp
+  src/api/BangumiConfigController.cpp
 )
 target_include_directories(anime_vault_api PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include

@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { Alert, Button, Descriptions, Input, InputNumber, List, Popconfirm, Space, Spin, Typography } from 'antd'
-import { addMikanFeed, createMikanRule, deleteQbConfig, getAuditLogs, getMikanFeeds, getQbConfig, getQbStatus, getSettings, putQbConfig, putQbDownloadDirectory, putSettings, testQbConfig } from '../api/client'
-import type { AuditLog, MikanFeeds, Preferences, QbConfig, QbConfigDraft, QbStatus, Settings } from '../api/types'
+import { addMikanFeed, createMikanRule, deleteBangumiConfig, deleteQbConfig, getAuditLogs, getBangumiConfig, getMikanFeeds, getQbConfig, getQbStatus, getSettings, putBangumiConfig, putQbConfig, putQbDownloadDirectory, putSettings, testBangumiConfig, testQbConfig } from '../api/client'
+import type { AuditLog, BangumiConfig, MikanFeeds, Preferences, QbConfig, QbConfigDraft, QbStatus, Settings } from '../api/types'
 
 const auditPageSize = 50
 const errorText = (error: unknown) => error instanceof Error ? error.message : '请求失败'
+const suggestedBangumiAgent = 'suoyi127/Link-to-Bangumi/0.1 (Windows) (https://github.com/suoyi127/Link-to-Bangumi)'
 
 export function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null)
@@ -20,6 +21,12 @@ export function SettingsPage() {
   const [qbTestBusy, setQbTestBusy] = useState(false)
   const [qbConfigError, setQbConfigError] = useState('')
   const [qbTestMessage, setQbTestMessage] = useState('')
+  const [bangumiConfig, setBangumiConfig] = useState<BangumiConfig | null>(null)
+  const [bangumiAgent, setBangumiAgent] = useState(suggestedBangumiAgent)
+  const [bangumiBusy, setBangumiBusy] = useState(false)
+  const [bangumiTesting, setBangumiTesting] = useState(false)
+  const [bangumiError, setBangumiError] = useState('')
+  const [bangumiTestMessage, setBangumiTestMessage] = useState('')
   const [mikanFeeds, setMikanFeeds] = useState<MikanFeeds | null>(null)
   const [mikanError, setMikanError] = useState('')
   const [feedUrl, setFeedUrl] = useState('')
@@ -46,6 +53,11 @@ export function SettingsPage() {
       setQbConfig(config)
       setQbDraft({ url: config.url, username: config.username, password: '' })
     }).catch((cause) => { if (active) setQbConfigError(errorText(cause)) })
+    void getBangumiConfig().then((config) => {
+      if (!active) return
+      setBangumiConfig(config)
+      setBangumiAgent(config.userAgent || suggestedBangumiAgent)
+    }).catch((cause) => { if (active) setBangumiError(errorText(cause)) })
     void getSettings().then((value) => {
       if (!active) return
       setSettings(value)
@@ -131,6 +143,39 @@ export function SettingsPage() {
     finally { setQbConfigBusy(false) }
   }
 
+  async function saveBangumiConnection() {
+    if (bangumiBusy) return
+    setBangumiBusy(true); setBangumiError(''); setBangumiTestMessage('')
+    try {
+      const updated = await putBangumiConfig(bangumiAgent)
+      setBangumiConfig(updated)
+      setSettings((previous) => previous && { ...previous, bangumiConfigured: updated.configured })
+    } catch (cause) { setBangumiError(errorText(cause)) }
+    finally { setBangumiBusy(false) }
+  }
+
+  async function testBangumiConnection() {
+    if (bangumiTesting) return
+    setBangumiTesting(true); setBangumiError(''); setBangumiTestMessage('')
+    try {
+      const result = await testBangumiConfig(bangumiAgent)
+      setBangumiTestMessage(result.connected ? '测试成功 · Bangumi 公共接口可访问' : `测试失败（${result.errorCode}）`)
+    } catch (cause) { setBangumiError(errorText(cause)) }
+    finally { setBangumiTesting(false) }
+  }
+
+  async function clearBangumiConnection() {
+    if (bangumiBusy) return
+    setBangumiBusy(true); setBangumiError(''); setBangumiTestMessage('')
+    try {
+      const updated = await deleteBangumiConfig()
+      setBangumiConfig(updated)
+      setBangumiAgent(updated.userAgent || suggestedBangumiAgent)
+      setSettings((previous) => previous && { ...previous, bangumiConfigured: updated.configured })
+    } catch (cause) { setBangumiError(errorText(cause)) }
+    finally { setBangumiBusy(false) }
+  }
+
   async function addFeed() {
     if (addingFeed) return
     setAddingFeed(true); setMikanError('')
@@ -188,7 +233,17 @@ export function SettingsPage() {
         <Button loading={qbTestBusy} disabled={!qbDraft.url || !qbDraft.username || (!qbDraft.password && qbConfig?.source !== 'saved')} onClick={() => void testQbConnection()}>测试 qB 连接</Button>
         {qbConfig?.source === 'saved' && <Popconfirm title="确认清除已保存的 qB Web UI 配置？" description="清除后会恢复启动环境配置（若有），不会更改 qB 的下载任务。" okText="确认清除" cancelText="取消" onConfirm={() => void clearQbConnection()}><Button danger loading={qbConfigBusy}>清除 qB 配置</Button></Popconfirm>}
       </Space>
-      <Alert type="info" message={settings.bangumiConfigured ? 'Bangumi 已配置（直接联网）' : 'Bangumi 未配置；本地浏览仍可用'} />
+      <Typography.Title level={4}>Bangumi 连接</Typography.Title>
+      <Typography.Text type="secondary">搜索、词条绑定和封面刮削直接访问 Bangumi。User-Agent 建议包含开发者 ID、应用版本和 GitHub 项目主页；目前仅用公开接口，不需要个人 Token。</Typography.Text>
+      <Typography.Text>{bangumiConfig?.source === 'saved' ? '已保存 Bangumi 配置' : bangumiConfig?.source === 'environment' ? '当前使用启动环境配置' : 'Bangumi 未配置；本地浏览仍可用'}</Typography.Text>
+      {bangumiError && <Alert type="error" message={bangumiError} />}
+      {bangumiTestMessage && <Alert type={bangumiTestMessage.startsWith('测试成功') ? 'success' : 'warning'} message={bangumiTestMessage} />}
+      <label>Bangumi User-Agent <Input aria-label="Bangumi User-Agent" value={bangumiAgent} onChange={(event) => setBangumiAgent(event.target.value)} maxLength={200} /></label>
+      <Space>
+        <Button loading={bangumiBusy} disabled={!bangumiAgent.trim()} onClick={() => void saveBangumiConnection()}>保存 Bangumi 配置</Button>
+        <Button loading={bangumiTesting} disabled={!bangumiAgent.trim()} onClick={() => void testBangumiConnection()}>测试 Bangumi 连接</Button>
+        {bangumiConfig?.source === 'saved' && <Popconfirm title="确认清除已保存的 Bangumi 配置？" description="清除后恢复启动环境配置（若有），不会删除已有封面。" okText="确认清除" cancelText="取消" onConfirm={() => void clearBangumiConnection()}><Button danger loading={bangumiBusy}>清除 Bangumi 配置</Button></Popconfirm>}
+      </Space>
       <Alert type={qbStatus?.connected ? 'success' : 'info'} message={qbStatus?.connected ? `qBittorrent 已连接 · ${qbStatus.version} · ${qbStatus.torrentCount} 个任务（${qbStatus.completedCount} 个已下载）` : settings.qbWebUiConfigured ? `qBittorrent 已配置，${qbStatus ? `连接失败（${qbStatus.errorCode}）` : '正在检查连接'}` : 'qBittorrent Web UI 未启用；qB 下载完成需手动确认'} />
       <Typography.Title level={4}>Mikan 订阅（由 qB 获取 RSS）</Typography.Title>
       {mikanFeeds && <Typography.Text>{mikanFeeds.feedCount} 个订阅 · {mikanFeeds.articleCount} 篇文章 · {mikanFeeds.pairCount} 组标题映射</Typography.Text>}

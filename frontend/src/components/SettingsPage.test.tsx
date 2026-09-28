@@ -15,9 +15,38 @@ const settings: Settings = {
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 beforeEach(() => {
   vi.spyOn(client, 'getQbConfig').mockResolvedValue({ url: 'http://[::1]:8080', username: '', source: 'none', configured: false })
+  vi.spyOn(client, 'getBangumiConfig').mockResolvedValue({ userAgent: '', source: 'none', configured: false })
   vi.stubGlobal('matchMedia', vi.fn().mockImplementation(() => ({ matches: false, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn() })))
   const computedStyle = window.getComputedStyle.bind(window)
   vi.spyOn(window, 'getComputedStyle').mockImplementation((element) => computedStyle(element))
+})
+
+it('tests and saves a Bangumi User-Agent containing the project homepage', async () => {
+  vi.spyOn(client, 'getSettings').mockResolvedValue(settings)
+  vi.spyOn(client, 'getAuditLogs').mockResolvedValue({ items: [], nextOffset: null })
+  const test = vi.spyOn(client, 'testBangumiConfig').mockResolvedValue({ connected: true, errorCode: '' })
+  const save = vi.spyOn(client, 'putBangumiConfig').mockResolvedValue({ userAgent: 'suoyi127/Link-to-Bangumi/0.1 (Windows) (https://github.com/suoyi127/Link-to-Bangumi)', source: 'saved', configured: true })
+  render(<SettingsPage />)
+  const agent = await screen.findByLabelText('Bangumi User-Agent')
+  expect((agent as HTMLInputElement).value).toContain('https://github.com/suoyi127/Link-to-Bangumi')
+  fireEvent.click(screen.getByRole('button', { name: '测试 Bangumi 连接' }))
+  await waitFor(() => expect(test).toHaveBeenCalledWith(expect.stringContaining('suoyi127/Link-to-Bangumi')))
+  fireEvent.click(screen.getByRole('button', { name: '保存 Bangumi 配置' }))
+  await waitFor(() => expect(save).toHaveBeenCalledOnce())
+  expect(await screen.findByText('已保存 Bangumi 配置')).toBeInTheDocument()
+})
+
+it('clears saved Bangumi configuration only after confirmation', async () => {
+  vi.spyOn(client, 'getSettings').mockResolvedValue({ ...settings, bangumiConfigured: true })
+  vi.spyOn(client, 'getAuditLogs').mockResolvedValue({ items: [], nextOffset: null })
+  vi.spyOn(client, 'getBangumiConfig').mockResolvedValue({ userAgent: 'saved/App/1.0', source: 'saved', configured: true })
+  const clear = vi.spyOn(client, 'deleteBangumiConfig').mockResolvedValue({ userAgent: '', source: 'none', configured: false })
+  render(<SettingsPage />)
+  fireEvent.click(await screen.findByRole('button', { name: '清除 Bangumi 配置' }))
+  expect(clear).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: '确认清除' }))
+  await waitFor(() => expect(clear).toHaveBeenCalledOnce())
+  expect(await screen.findByText(/Bangumi 未配置；本地浏览仍可用/)).toBeInTheDocument()
 })
 
 it('configures qB Web UI on the page without revealing a saved password', async () => {

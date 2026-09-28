@@ -1,6 +1,7 @@
 #include "anime_vault/api/HealthController.hpp"
 #include "anime_vault/api/MediaController.hpp"
 #include "anime_vault/api/QbConfigController.hpp"
+#include "anime_vault/api/BangumiConfigController.hpp"
 #include "anime_vault/api/MediaService.hpp"
 #include "anime_vault/infrastructure/database/SqliteDatabase.hpp"
 #include "anime_vault/infrastructure/database/SqliteMediaRepository.hpp"
@@ -12,6 +13,7 @@
 #include "anime_vault/infrastructure/network/QbWebClient.hpp"
 #include "anime_vault/infrastructure/network/QbConnectionManager.hpp"
 #include "anime_vault/infrastructure/network/DrogonCoverTransport.hpp"
+#include "anime_vault/infrastructure/network/BangumiConnectionManager.hpp"
 #include "anime_vault/infrastructure/ProcessLauncher.hpp"
 #include "anime_vault/services/PlaybackService.hpp"
 #include "anime_vault/services/RuntimePaths.hpp"
@@ -26,24 +28,6 @@
 #include <string>
 #include <memory>
 #include <optional>
-
-namespace {
-class OfflineBangumiTransport final : public anime_vault::BangumiTransport {
-public:
-    void search(std::string, Completion completion) override {
-        completion(std::nullopt, "bangumi_unconfigured");
-    }
-    void subject(std::int64_t, Completion completion) override {
-        completion(std::nullopt, "bangumi_unconfigured");
-    }
-};
-class OfflineCoverFetcher final : public anime_vault::CoverImageFetcher {
-public:
-    void fetch(std::string, Completion completion) override {
-        completion(std::nullopt, "bangumi_unconfigured");
-    }
-};
-}
 
 int main() {
     try {
@@ -79,19 +63,12 @@ int main() {
         anime_vault::OrganizationService organization(repository, source, imported, library);
         anime_vault::NativeProcessLauncher processLauncher;
         anime_vault::PlaybackService playback(repository, source, imported, library, processLauncher);
-        std::unique_ptr<anime_vault::BangumiTransport> bangumiTransport;
-        if (const char* agent = std::getenv("ANIME_VAULT_BANGUMI_USER_AGENT"); agent && *agent)
-            bangumiTransport = std::make_unique<anime_vault::DrogonBangumiTransport>(agent);
-        else
-            bangumiTransport = std::make_unique<OfflineBangumiTransport>();
-        auto bangumi = std::make_shared<anime_vault::BangumiService>(repository, *bangumiTransport);
-        std::unique_ptr<anime_vault::CoverImageFetcher> coverFetcher;
-        if (const char* agent = std::getenv("ANIME_VAULT_BANGUMI_USER_AGENT"); agent && *agent)
-            coverFetcher = std::make_unique<anime_vault::DrogonCoverTransport>(agent);
-        else
-            coverFetcher = std::make_unique<OfflineCoverFetcher>();
+        const char* configuredAgent = std::getenv("ANIME_VAULT_BANGUMI_USER_AGENT");
+        auto bangumiConnection = std::make_shared<anime_vault::BangumiConnectionManager>(
+            database, configuredAgent ? configuredAgent : "");
+        auto bangumi = std::make_shared<anime_vault::BangumiService>(repository, *bangumiConnection);
         auto covers = std::make_shared<anime_vault::CoverScraper>(
-            repository, bangumi, *coverFetcher, data);
+            repository, bangumi, *bangumiConnection, data);
         auto enricher = std::make_shared<anime_vault::AnimeEnricher>(repository, bangumi, covers);
         const auto environmentString = [](const char* name) {
             const char* value = std::getenv(name);
@@ -119,11 +96,12 @@ int main() {
         anime_vault::api::registerPlaybackEndpoint(repository, playback);
         anime_vault::api::registerManagementEndpoints(repository,
             {source, imported, library, data,
-             std::getenv("ANIME_VAULT_BANGUMI_USER_AGENT") &&
-             *std::getenv("ANIME_VAULT_BANGUMI_USER_AGENT"), qb->summary().configured,
+             bangumiConnection->summary().configured, qb->summary().configured,
              paths.qbConfigured, sourceOverride.has_value(),
-             [qb] { return qb->summary().configured; }});
+             [qb] { return qb->summary().configured; },
+             [bangumiConnection] { return bangumiConnection->summary().configured; }});
         anime_vault::api::registerQbConfigEndpoints(qb);
+        anime_vault::api::registerBangumiConfigEndpoints(bangumiConnection);
         anime_vault::api::registerAnimeEndpoints(repository, bangumi, covers);
         drogon::app().registerHandler("/api/qb/status", [qb](const drogon::HttpRequestPtr&,
             std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
