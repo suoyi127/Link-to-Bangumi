@@ -14,14 +14,29 @@ const media = (id: number): Media => ({ id, scanId: 1, sourcePath: `/source/${id
 const detail = (items: Media[], nextMediaOffset: number | null): AnimeDetail => ({ id: 7, displayTitle: '本地番剧', originalTitle: '', season: '', coverUrl: '', locked: false, aliases: ['别名甲'], media: items, nextMediaOffset })
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done }); return { promise, resolve } }
 
-it('shows the media title and episode instead of the source path', async () => {
+it('shows the canonical anime title and episode instead of the source path', async () => {
   const item = { ...media(3), title: '规范番剧名', episodeNumber: '03', filename: 'release.mkv', sourcePath: 'C:\\downloads\\release.mkv' }
   vi.spyOn(client, 'getAnimeDetail').mockResolvedValue(detail([item], null))
   vi.spyOn(client, 'getAuditLogs').mockResolvedValue({ items: [], nextOffset: null })
   render(<AnimeDetailPage animeId={7} onBack={vi.fn()} />)
-  expect(await screen.findByText('规范番剧名 [03]')).toBeInTheDocument()
+  expect(await screen.findByText('本地番剧 [03]')).toBeInTheDocument()
   expect(screen.getByText('release.mkv')).toBeInTheDocument()
   expect(screen.queryByText(item.sourcePath)).not.toBeInTheDocument()
+})
+
+it('uses the anime canonical title for romanized or alias media rows', async () => {
+  const canonical = '与奔驰于透明之夜的你，谈一场看不见的恋爱。'
+  const rows = [
+    { ...media(3), title: 'Toumei na Yoru ni Kakeru Kimi to', episodeNumber: '03', filename: 'roman-03.mkv' },
+    { ...media(4), title: '透明な夜に駆ける君と', episodeNumber: '04', filename: 'alias-04.mkv' },
+  ]
+  vi.spyOn(client, 'getAnimeDetail').mockResolvedValue({ ...detail(rows, null), displayTitle: canonical })
+  vi.spyOn(client, 'getAuditLogs').mockResolvedValue({ items: [], nextOffset: null })
+  render(<AnimeDetailPage animeId={7} onBack={vi.fn()} />)
+  expect(await screen.findByText(`${canonical} [03]`)).toBeInTheDocument()
+  expect(screen.getByText(`${canonical} [04]`)).toBeInTheDocument()
+  expect(screen.getByText('roman-03.mkv')).toBeInTheDocument()
+  expect(screen.getByText('alias-04.mkv')).toBeInTheDocument()
 })
 
 it('falls back to the anime title when the media title and episode are blank', async () => {
