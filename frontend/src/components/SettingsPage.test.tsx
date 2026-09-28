@@ -14,9 +14,43 @@ const settings: Settings = {
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 beforeEach(() => {
+  vi.spyOn(client, 'getQbConfig').mockResolvedValue({ url: 'http://[::1]:8080', username: '', source: 'none', configured: false })
   vi.stubGlobal('matchMedia', vi.fn().mockImplementation(() => ({ matches: false, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn() })))
   const computedStyle = window.getComputedStyle.bind(window)
   vi.spyOn(window, 'getComputedStyle').mockImplementation((element) => computedStyle(element))
+})
+
+it('configures qB Web UI on the page without revealing a saved password', async () => {
+  vi.spyOn(client, 'getSettings').mockResolvedValue(settings)
+  vi.spyOn(client, 'getAuditLogs').mockResolvedValue({ items: [], nextOffset: null })
+  vi.spyOn(client, 'getQbConfig').mockResolvedValue({ url: 'http://[::1]:8080', username: 'suyee', source: 'saved', configured: true })
+  vi.spyOn(client, 'getQbStatus').mockResolvedValue({ configured: true, connected: true, errorCode: '', version: '5.2', torrentCount: 1, completedCount: 1 })
+  vi.spyOn(client, 'getMikanFeeds').mockResolvedValue({ feedCount: 0, articleCount: 0, pairCount: 0, errorCode: '', feeds: [] })
+  const test = vi.spyOn(client, 'testQbConfig').mockResolvedValue({ configured: true, connected: true, errorCode: '', version: '5.2', torrentCount: 1, completedCount: 1 })
+  const save = vi.spyOn(client, 'putQbConfig').mockResolvedValue({ url: 'http://[::1]:8080', username: 'suyee', source: 'saved', configured: true })
+  render(<SettingsPage />)
+  expect(await screen.findByLabelText('qB Web UI 用户名')).toHaveValue('suyee')
+  expect(screen.getByLabelText('qB Web UI 密码')).toHaveValue('')
+  expect(screen.getByLabelText('qB Web UI 密码')).toHaveAttribute('type', 'password')
+  fireEvent.click(screen.getByRole('button', { name: '测试 qB 连接' }))
+  await waitFor(() => expect(test).toHaveBeenCalledWith({ url: 'http://[::1]:8080', username: 'suyee', password: '' }))
+  expect(await screen.findByText(/测试成功.*5.2/)).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '保存 qB 连接' }))
+  await waitFor(() => expect(save).toHaveBeenCalledWith({ url: 'http://[::1]:8080', username: 'suyee', password: '' }))
+  expect(screen.queryByText('stored-secret')).not.toBeInTheDocument()
+})
+
+it('clears saved qB Web UI configuration only after confirmation', async () => {
+  vi.spyOn(client, 'getSettings').mockResolvedValue(settings)
+  vi.spyOn(client, 'getAuditLogs').mockResolvedValue({ items: [], nextOffset: null })
+  vi.spyOn(client, 'getQbConfig').mockResolvedValue({ url: 'http://[::1]:8080', username: 'suyee', source: 'saved', configured: true })
+  const clear = vi.spyOn(client, 'deleteQbConfig').mockResolvedValue({ url: 'http://[::1]:8080', username: '', source: 'none', configured: false })
+  render(<SettingsPage />)
+  fireEvent.click(await screen.findByRole('button', { name: '清除 qB 配置' }))
+  expect(clear).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: '确认清除' }))
+  await waitFor(() => expect(clear).toHaveBeenCalledOnce())
+  expect(await screen.findByText(/尚未配置 qB Web UI/)).toBeInTheDocument()
 })
 
 it('shows immutable effective paths and honest inactive integration status, then saves only preferences', async () => {

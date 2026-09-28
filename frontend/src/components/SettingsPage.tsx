@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Alert, Button, Descriptions, Input, InputNumber, List, Popconfirm, Space, Spin, Typography } from 'antd'
-import { addMikanFeed, createMikanRule, getAuditLogs, getMikanFeeds, getQbStatus, getSettings, putQbDownloadDirectory, putSettings } from '../api/client'
-import type { AuditLog, MikanFeeds, Preferences, QbStatus, Settings } from '../api/types'
+import { addMikanFeed, createMikanRule, deleteQbConfig, getAuditLogs, getMikanFeeds, getQbConfig, getQbStatus, getSettings, putQbConfig, putQbDownloadDirectory, putSettings, testQbConfig } from '../api/client'
+import type { AuditLog, MikanFeeds, Preferences, QbConfig, QbConfigDraft, QbStatus, Settings } from '../api/types'
 
 const auditPageSize = 50
 const errorText = (error: unknown) => error instanceof Error ? error.message : '请求失败'
@@ -14,6 +14,12 @@ export function SettingsPage() {
   const [restartRequired, setRestartRequired] = useState(false)
   const [settingsError, setSettingsError] = useState('')
   const [qbStatus, setQbStatus] = useState<QbStatus | null>(null)
+  const [qbConfig, setQbConfig] = useState<QbConfig | null>(null)
+  const [qbDraft, setQbDraft] = useState<QbConfigDraft>({ url: 'http://[::1]:8080', username: '', password: '' })
+  const [qbConfigBusy, setQbConfigBusy] = useState(false)
+  const [qbTestBusy, setQbTestBusy] = useState(false)
+  const [qbConfigError, setQbConfigError] = useState('')
+  const [qbTestMessage, setQbTestMessage] = useState('')
   const [mikanFeeds, setMikanFeeds] = useState<MikanFeeds | null>(null)
   const [mikanError, setMikanError] = useState('')
   const [feedUrl, setFeedUrl] = useState('')
@@ -35,6 +41,11 @@ export function SettingsPage() {
 
   useEffect(() => {
     let active = true
+    void getQbConfig().then((config) => {
+      if (!active) return
+      setQbConfig(config)
+      setQbDraft({ url: config.url, username: config.username, password: '' })
+    }).catch((cause) => { if (active) setQbConfigError(errorText(cause)) })
     void getSettings().then((value) => {
       if (!active) return
       setSettings(value)
@@ -82,6 +93,44 @@ export function SettingsPage() {
     finally { setQbPathSaving(false) }
   }
 
+  async function saveQbConnection() {
+    if (qbConfigBusy) return
+    setQbConfigBusy(true); setQbConfigError(''); setQbTestMessage('')
+    try {
+      const updated = await putQbConfig(qbDraft)
+      setQbConfig(updated)
+      setQbDraft({ url: updated.url, username: updated.username, password: '' })
+      setSettings((previous) => previous && { ...previous, qbWebUiConfigured: updated.configured })
+      void getQbStatus().then(setQbStatus).catch((cause) => setQbConfigError(errorText(cause)))
+      void getMikanFeeds().then(setMikanFeeds).catch((cause) => setMikanError(errorText(cause)))
+    } catch (cause) { setQbConfigError(errorText(cause)) }
+    finally { setQbConfigBusy(false) }
+  }
+
+  async function testQbConnection() {
+    if (qbTestBusy) return
+    setQbTestBusy(true); setQbConfigError(''); setQbTestMessage('')
+    try {
+      const result = await testQbConfig(qbDraft)
+      setQbTestMessage(result.connected ? `测试成功 · qBittorrent ${result.version}` : `测试失败（${result.errorCode}）`)
+    } catch (cause) { setQbConfigError(errorText(cause)) }
+    finally { setQbTestBusy(false) }
+  }
+
+  async function clearQbConnection() {
+    if (qbConfigBusy) return
+    setQbConfigBusy(true); setQbConfigError(''); setQbTestMessage('')
+    try {
+      const updated = await deleteQbConfig()
+      setQbConfig(updated)
+      setQbDraft({ url: updated.url, username: updated.username, password: '' })
+      setSettings((previous) => previous && { ...previous, qbWebUiConfigured: updated.configured })
+      setQbStatus(null); setMikanFeeds(null)
+      if (updated.configured) void getQbStatus().then(setQbStatus).catch((cause) => setQbConfigError(errorText(cause)))
+    } catch (cause) { setQbConfigError(errorText(cause)) }
+    finally { setQbConfigBusy(false) }
+  }
+
   async function addFeed() {
     if (addingFeed) return
     setAddingFeed(true); setMikanError('')
@@ -126,6 +175,19 @@ export function SettingsPage() {
       <Button loading={qbPathSaving} disabled={settings.qbDownloadEnvironmentOverride} onClick={() => void saveQbPath()}>保存 qB 下载目录</Button>
       {settings.qbDownloadEnvironmentOverride && <Alert type="info" message="环境变量正在覆盖页面保存的 qB 下载目录；移除 ANIME_VAULT_SOURCE_DIR 后才能在此修改。" />}
       {qbPathPending && <Alert type="warning" message="qB 下载目录已保存，重启后端后生效。" />}
+      <Typography.Title level={4}>qB Web UI 连接</Typography.Title>
+      <Typography.Text type="secondary">仅支持本机回环地址，例如 http://[::1]:8080。密码保存在当前 Windows 用户的凭据管理器中，不会回显；已保存配置时留空可保持原密码。</Typography.Text>
+      {qbConfig?.source === 'saved' ? <Typography.Text>已保存 qB Web UI 配置</Typography.Text> : qbConfig?.source === 'environment' ? <Typography.Text>当前使用启动环境配置</Typography.Text> : <Typography.Text>尚未配置 qB Web UI</Typography.Text>}
+      {qbConfigError && <Alert type="error" message={qbConfigError} />}
+      {qbTestMessage && <Alert type={qbTestMessage.startsWith('测试成功') ? 'success' : 'warning'} message={qbTestMessage} />}
+      <label>qB Web UI 地址 <Input aria-label="qB Web UI 地址" value={qbDraft.url} onChange={(event) => setQbDraft({ ...qbDraft, url: event.target.value })} maxLength={64} placeholder="http://[::1]:8080" /></label>
+      <label>qB Web UI 用户名 <Input aria-label="qB Web UI 用户名" value={qbDraft.username} onChange={(event) => setQbDraft({ ...qbDraft, username: event.target.value })} maxLength={128} /></label>
+      <label>qB Web UI 密码 <Input.Password aria-label="qB Web UI 密码" value={qbDraft.password} onChange={(event) => setQbDraft({ ...qbDraft, password: event.target.value })} maxLength={512} autoComplete="new-password" /></label>
+      <Space>
+        <Button loading={qbConfigBusy} disabled={!qbDraft.url || !qbDraft.username || (!qbDraft.password && qbConfig?.source !== 'saved')} onClick={() => void saveQbConnection()}>保存 qB 连接</Button>
+        <Button loading={qbTestBusy} disabled={!qbDraft.url || !qbDraft.username || (!qbDraft.password && qbConfig?.source !== 'saved')} onClick={() => void testQbConnection()}>测试 qB 连接</Button>
+        {qbConfig?.source === 'saved' && <Popconfirm title="确认清除已保存的 qB Web UI 配置？" description="清除后会恢复启动环境配置（若有），不会更改 qB 的下载任务。" okText="确认清除" cancelText="取消" onConfirm={() => void clearQbConnection()}><Button danger loading={qbConfigBusy}>清除 qB 配置</Button></Popconfirm>}
+      </Space>
       <Alert type="info" message={settings.bangumiConfigured ? 'Bangumi 已配置（直接联网）' : 'Bangumi 未配置；本地浏览仍可用'} />
       <Alert type={qbStatus?.connected ? 'success' : 'info'} message={qbStatus?.connected ? `qBittorrent 已连接 · ${qbStatus.version} · ${qbStatus.torrentCount} 个任务（${qbStatus.completedCount} 个已下载）` : settings.qbWebUiConfigured ? `qBittorrent 已配置，${qbStatus ? `连接失败（${qbStatus.errorCode}）` : '正在检查连接'}` : 'qBittorrent Web UI 未启用；qB 下载完成需手动确认'} />
       <Typography.Title level={4}>Mikan 订阅（由 qB 获取 RSS）</Typography.Title>
@@ -148,7 +210,6 @@ export function SettingsPage() {
       <label>首选整理方式 <select aria-label="首选整理方式" value={draft.preferredOperation} onChange={(event) => setDraft({ ...draft, preferredOperation: event.target.value as Preferences['preferredOperation'] })}><option value="hardlink">硬链接</option><option value="copy">复制</option><option value="symlink">符号链接</option></select></label>
       <label>扫描间隔（预留，尚无自动扫描） <InputNumber aria-label="扫描间隔（秒）" min={60} max={86400} value={draft.scanIntervalSeconds} onChange={(value) => setDraft({ ...draft, scanIntervalSeconds: value ?? 3600 })} /></label>
         <label>mpv 可执行文件（本机播放） <Input aria-label="mpv 可执行文件" maxLength={1024} value={draft.mpvExecutable} onChange={(event) => setDraft({ ...draft, mpvExecutable: event.target.value })} /></label>
-      <label>qB Web UI 地址（旧偏好字段；本机连接固定使用 IPv6 回环） <Input aria-label="qB Web UI 地址" maxLength={2048} value={draft.qbWebUiUrl} onChange={(event) => setDraft({ ...draft, qbWebUiUrl: event.target.value })} /></label>
       <Button type="primary" loading={saving} onClick={() => void save()}>保存偏好</Button>
     </>}
     <Typography.Title level={4}>审计记录</Typography.Title>

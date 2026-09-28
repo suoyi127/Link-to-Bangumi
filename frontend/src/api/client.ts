@@ -1,4 +1,4 @@
-import type { Anime, AnimeDetail, AuditLog, BangumiSearch, Execution, InboxOrigin, InboxPage, Media, MetadataSync, MikanFeeds, Page, Preferences, Preview, QbAction, QbMikanRule, QbStatus, Scan, Settings } from './types'
+import type { Anime, AnimeDetail, AuditLog, BangumiSearch, Execution, InboxOrigin, InboxPage, Media, MetadataSync, MikanFeeds, Page, Preferences, Preview, QbAction, QbConfig, QbConfigDraft, QbMikanRule, QbStatus, Scan, Settings } from './types'
 
 export class ApiError extends Error {
   constructor(public code: string, public status: number, public requestId?: string) {
@@ -57,6 +57,10 @@ export const executeOrganization = (planId: number, idempotencyKey: string, qbDo
 export const getSettings = () => request<Settings>('/api/settings')
 export const putQbDownloadDirectory = (path: string) => request<Settings & { restartRequired: boolean }>('/api/settings/qb-download-directory', { ...json({ path }), method: 'PUT' })
 export const getQbStatus = () => request<QbStatus>('/api/qb/status')
+export const getQbConfig = () => request<QbConfig>('/api/qb/config')
+export const putQbConfig = (draft: QbConfigDraft) => request<QbConfig>('/api/qb/config', { ...json(draft), method: 'PUT' })
+export const testQbConfig = (draft: QbConfigDraft) => request<QbStatus>('/api/qb/config/test', json(draft))
+export const deleteQbConfig = () => request<QbConfig>('/api/qb/config', { method: 'DELETE' })
 export const getMikanFeeds = () => request<MikanFeeds>('/api/qb/rss')
 export const addMikanFeed = (url: string) => request<QbAction>('/api/qb/rss/feeds', json({ url }))
 export const createMikanRule = (rule: QbMikanRule) => request<QbAction>('/api/qb/rss/rules', json(rule))
