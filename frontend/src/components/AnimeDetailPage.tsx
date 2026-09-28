@@ -128,7 +128,11 @@ export function AnimeDetailPage({ animeId, onBack }: Props) {
       <Typography.Title level={4}>媒体文件</Typography.Title>
       {playError && <Alert type="error" message={playError} />}
       {playNotice && <Alert type="success" message={playNotice} />}
-      <List dataSource={media} locale={{ emptyText: '暂无媒体文件' }} renderItem={(item) => <List.Item key={item.id} actions={[<Button key="play" aria-label={`用 mpv 播放 ${item.filename}`} loading={playingId === item.id} disabled={playingId !== null && playingId !== item.id} onClick={() => void startPlayback(item)}>用 mpv 播放</Button>]}><Space direction="vertical"><Typography.Text>{item.filename}</Typography.Text><Typography.Text type="secondary">{item.episodeType} {item.episodeNumber} · {item.status} · {item.origin}</Typography.Text><Typography.Text copyable>{item.sourcePath}</Typography.Text></Space></List.Item>} />
+      <List dataSource={media} locale={{ emptyText: '暂无媒体文件' }} renderItem={(item) => {
+        const title = item.title.trim() || detail.displayTitle.trim() || item.filename
+        const episode = item.episodeNumber.trim()
+        return <List.Item key={item.id} actions={[<Button key="play" aria-label={`用 mpv 播放 ${item.filename}`} loading={playingId === item.id} disabled={playingId !== null && playingId !== item.id} onClick={() => void startPlayback(item)}>用 mpv 播放</Button>]}><Space direction="vertical"><Typography.Text strong>{title}{episode ? ` [${episode}]` : ''}</Typography.Text><Typography.Text type="secondary">{item.filename}</Typography.Text><Typography.Text type="secondary">{item.episodeType} {item.episodeNumber} · {item.status} · {item.origin}</Typography.Text></Space></List.Item>
+      }} />
       {nextMediaOffset !== null && <Button loading={moreBusy} onClick={() => void loadMore()}>加载更多媒体</Button>}
       <Typography.Title level={4}>Bangumi 绑定</Typography.Title>
       <Space.Compact><Input aria-label="Bangumi 关键词" value={query} onChange={(event) => setQuery(event.target.value)} /><Button onClick={() => void search()}>搜索 Bangumi</Button></Space.Compact>

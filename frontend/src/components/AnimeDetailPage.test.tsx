@@ -14,6 +14,25 @@ const media = (id: number): Media => ({ id, scanId: 1, sourcePath: `/source/${id
 const detail = (items: Media[], nextMediaOffset: number | null): AnimeDetail => ({ id: 7, displayTitle: '本地番剧', originalTitle: '', season: '', coverUrl: '', locked: false, aliases: ['别名甲'], media: items, nextMediaOffset })
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done }); return { promise, resolve } }
 
+it('shows the media title and episode instead of the source path', async () => {
+  const item = { ...media(3), title: '规范番剧名', episodeNumber: '03', filename: 'release.mkv', sourcePath: 'C:\\downloads\\release.mkv' }
+  vi.spyOn(client, 'getAnimeDetail').mockResolvedValue(detail([item], null))
+  vi.spyOn(client, 'getAuditLogs').mockResolvedValue({ items: [], nextOffset: null })
+  render(<AnimeDetailPage animeId={7} onBack={vi.fn()} />)
+  expect(await screen.findByText('规范番剧名 [03]')).toBeInTheDocument()
+  expect(screen.getByText('release.mkv')).toBeInTheDocument()
+  expect(screen.queryByText(item.sourcePath)).not.toBeInTheDocument()
+})
+
+it('falls back to the anime title when the media title and episode are blank', async () => {
+  vi.spyOn(client, 'getAnimeDetail').mockResolvedValue(detail([{ ...media(4), title: ' ', episodeNumber: ' ' }], null))
+  vi.spyOn(client, 'getAuditLogs').mockResolvedValue({ items: [], nextOffset: null })
+  render(<AnimeDetailPage animeId={7} onBack={vi.fn()} />)
+  await screen.findByText('4.mkv')
+  expect(screen.getAllByText('本地番剧')).toHaveLength(2)
+  expect(screen.queryByText('本地番剧 []')).not.toBeInTheDocument()
+})
+
 it('starts local mpv for the selected media ID and reports launch errors', async () => {
   vi.spyOn(client, 'getAnimeDetail').mockResolvedValue(detail([media(1), media(2)], null))
   vi.spyOn(client, 'getAuditLogs').mockResolvedValue({ items: [], nextOffset: null })
