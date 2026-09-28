@@ -39,7 +39,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'CTest failed' }
           npm.cmd --prefix frontend ci
           if ($LASTEXITCODE -ne 0) { throw 'npm ci failed' }
-          npm.cmd --prefix frontend test -- --run
+          npm.cmd --prefix frontend test -- --run --maxWorkers=1 --testTimeout=30000 --hookTimeout=30000
           if ($LASTEXITCODE -ne 0) { throw 'frontend tests failed' }
           npm.cmd --prefix frontend run lint
           if ($LASTEXITCODE -ne 0) { throw 'frontend lint failed' }
