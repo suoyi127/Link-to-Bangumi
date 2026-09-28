@@ -7,6 +7,7 @@ namespace anime_vault {
 
 // Shared exact-title key for matching, aliases and local lookups. An invalid or
 // overlong UTF-8 title has no key, so it cannot accidentally match another title.
+// 统一大小写、空白及常见标点以供匹配使用，不改写界面展示的原始标题。
 inline std::u32string normalizeTitle(std::string_view text) {
     std::u32string result;
     for (std::size_t i = 0; i < text.size();) {

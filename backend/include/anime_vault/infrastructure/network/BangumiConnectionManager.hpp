@@ -21,6 +21,7 @@ public:
     std::string code;
 };
 
+// 汇总 Bangumi 配置，并为条目查询与封面抓取提供统一传输实现。
 class BangumiConnectionManager final : public BangumiTransport, public CoverImageFetcher {
 public:
     BangumiConnectionManager(SqliteDatabase& database, std::string environmentUserAgent);

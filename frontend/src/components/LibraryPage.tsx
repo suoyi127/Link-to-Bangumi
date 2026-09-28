@@ -14,6 +14,7 @@ function Cover({ item }: { item: Anime }) {
 }
 
 export function LibraryPage({ onOpenAnime }: Props) {
+  // 番剧目录采用分页加载；文件列表、别名与操作入口放在详情页按需读取。
   const [view, setView] = useState<'grid' | 'list'>('grid')
   const [filter, setFilter] = useState('')
   const [items, setItems] = useState<Anime[]>([])

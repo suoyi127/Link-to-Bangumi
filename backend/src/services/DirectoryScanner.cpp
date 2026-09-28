@@ -51,10 +51,12 @@ std::vector<SourceFile> DirectoryScanner::scan(std::chrono::seconds stableFor,
     if (stableFor < std::chrono::seconds::zero()) {
         throw std::invalid_argument("stability window must not be negative");
     }
+    // 当前快照会替换上一轮快照；只有元数据连续稳定达到窗口后才交付文件。
     std::vector<SourceFile> files;
     std::map<fs::path, Snapshot> current;
     for (fs::recursive_directory_iterator iterator(root_), end; iterator != end; ++iterator) {
         const auto& entry = *iterator;
+        // 不跟随符号链接或 Windows 重解析点，避免扫描根目录之外的内容。
         if (entry.is_symlink() || isReparsePoint(entry.path())) {
             iterator.disable_recursion_pending();
             continue;

@@ -13,6 +13,7 @@ public:
     ~SqliteDatabase();
     SqliteDatabase(const SqliteDatabase&) = delete;
     SqliteDatabase& operator=(const SqliteDatabase&) = delete;
+    // 依次应用未执行的版本化迁移，使已有用户数据库可以升级。
     void migrate();
     int schemaVersion() const;
     sqlite3* handle() const noexcept { return db_; }

@@ -16,6 +16,7 @@ struct BangumiCandidate {
 
 struct RankedCandidates {
     std::vector<BangumiCandidate> items;
+    // 最高候选置信度足够且与其他结果有明显差距时才允许自动绑定。
     bool autoBindEligible{};
 };
 
@@ -31,6 +32,7 @@ struct BangumiMatchQuery {
     std::optional<int> episodeCount;
 };
 
+// 按标题、年份和集数对搜索结果排序，并判断是否适合无人工确认地绑定。
 RankedCandidates rankBangumiCandidates(const BangumiMatchQuery& query,
                                        const std::vector<BangumiSubject>& subjects);
 

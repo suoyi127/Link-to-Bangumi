@@ -7,6 +7,7 @@ export class ApiError extends Error {
   }
 }
 
+// 统一处理同源请求、API 错误对象和取消信号，页面组件只消费业务数据。
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response
   try { response = await fetch(path, { ...init, headers: { Accept: 'application/json', ...init?.headers } }) }

@@ -21,6 +21,7 @@ async function countAnime(signal?: AbortSignal) {
 }
 
 export function DashboardPage() {
+  // 仪表盘汇总健康状态与本地统计，扫描和元数据同步通过显式操作触发。
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')

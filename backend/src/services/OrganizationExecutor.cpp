@@ -53,6 +53,7 @@ fs::path canonicalRoot(const fs::path& input) {
 }
 
 void requireSafeDirectoryChain(const fs::path& root, const fs::path& path, bool create) {
+    // 逐级检查目标目录，拒绝链接/重解析点绕过词法路径的根目录限制。
     requireDirectory(root);
     if (!within(root, path)) throw OrganizationError("invalid_root");
     auto current = root;
@@ -162,6 +163,7 @@ ExecuteFileResult OrganizationExecutor::execute(const ExecuteFileRequest& reques
     } catch (const fs::filesystem_error&) {
         throw OrganizationError("invalid_root");
     }
+    // 同时约束规范化路径和物理路径，源文件不能通过链接逃出授权目录。
     if (!within(sourceRoot_, source) || !within(libraryRoot_, target) ||
         source == sourceRoot_ || target == libraryRoot_ || isLinkOrReparse(source))
         throw OrganizationError("invalid_root");
@@ -175,7 +177,7 @@ ExecuteFileResult OrganizationExecutor::execute(const ExecuteFileRequest& reques
         (error && error != std::errc::no_such_file_or_directory))
         throw OrganizationError("target_exists");
 
-    // Each operation creates a previously absent name; cleanup owns only that name.
+    // 先在目标目录创建唯一临时文件，再原子发布；清理逻辑只拥有本次随机临时名。
     fs::path temporary;
     bool created = false;
     for (int attempt = 0; attempt < 8; ++attempt) {

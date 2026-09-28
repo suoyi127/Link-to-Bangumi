@@ -19,6 +19,7 @@ public:
     std::string code;
 };
 
+// 管理设置页与环境变量的配置优先级，并热切换当前 qB 客户端。
 class QbConnectionManager final {
 public:
     QbConnectionManager(std::filesystem::path dataPath, QbConnectionConfig environment);

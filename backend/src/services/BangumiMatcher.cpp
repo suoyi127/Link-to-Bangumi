@@ -76,6 +76,7 @@ RankedCandidates rankBangumiCandidates(const BangumiMatchQuery& query,
         if (a.score != b.score) return a.score > b.score;
         return a.id < b.id;
     });
+    // 自动绑定需要高绝对分和足够的领先幅度，避免相似番名被静默绑错。
     if (!ranked.items.empty()) {
         const double runnerUp = ranked.items.size() > 1 ? ranked.items[1].score : 0.0;
         ranked.autoBindEligible = ranked.items[0].score >= 0.92 &&

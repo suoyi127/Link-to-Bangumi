@@ -8,6 +8,7 @@ const AnimeDetailPage = lazy(() => import('./components/AnimeDetailPage').then((
 const SettingsPage = lazy(() => import('./components/SettingsPage').then(({ SettingsPage }) => ({ default: SettingsPage })))
 
 const { Header, Sider, Content } = Layout
+// 页面按需加载；番剧详情作为媒体库子视图由 animeId 控制。
 const pages = [
   { key: 'dashboard', label: '仪表盘' },
   { key: 'inbox', label: '待整理' },

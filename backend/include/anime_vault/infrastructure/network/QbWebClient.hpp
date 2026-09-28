@@ -31,6 +31,7 @@ struct QbMikanRuleSpec {
 };
 struct QbEndpoint { std::string address, hostHeader; int port{}; };
 
+// qB Web API 适配器；连接地址限制为本机回环，避免凭据发往非本机服务。
 class QbWebClient final {
 public:
     using Completion = std::function<void(QbStatus)>;

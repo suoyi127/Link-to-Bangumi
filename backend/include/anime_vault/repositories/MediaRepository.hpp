@@ -130,6 +130,7 @@ private:
     std::string code_;
 };
 
+// 领域服务依赖的持久化边界；SQLite 实现与业务规则通过此接口解耦。
 class MediaRepository {
 public:
     virtual ~MediaRepository() = default;

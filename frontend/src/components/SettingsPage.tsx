@@ -8,6 +8,7 @@ const errorText = (error: unknown) => error instanceof Error ? error.message : '
 const suggestedBangumiAgent = 'suoyi127/Link-to-Bangumi/0.1 (Windows) (https://github.com/suoyi127/Link-to-Bangumi)'
 
 export function SettingsPage() {
+  // draft 与已保存设置分离，只有用户保存后才写入后端持久化偏好。
   const [settings, setSettings] = useState<Settings | null>(null)
   const [draft, setDraft] = useState<Preferences | null>(null)
   const [qbPath, setQbPath] = useState('')

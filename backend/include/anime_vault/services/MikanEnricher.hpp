@@ -13,6 +13,7 @@ struct MikanEnrichmentResult {
     std::string errorCode;
 };
 
+// 将 qB 返回的 Mikan 双语 RSS 标题应用为本地别名，不推断 RSS 未提供的翻译。
 class MikanEnricher final {
 public:
     using CatalogCompletion = std::function<void(MikanCatalog)>;

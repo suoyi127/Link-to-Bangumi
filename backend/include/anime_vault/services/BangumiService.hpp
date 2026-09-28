@@ -33,6 +33,7 @@ struct BangumiSubjectResult {
     std::string errorCode;
 };
 
+// 封装 Bangumi 查询、缓存与限流策略；真实网络传输由独立端口注入。
 class BangumiService final : public std::enable_shared_from_this<BangumiService> {
 public:
     using Clock = std::function<std::chrono::system_clock::time_point()>;

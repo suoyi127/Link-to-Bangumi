@@ -16,6 +16,7 @@ struct ExecuteOrganizationRequest {
     std::int64_t planId{};
     std::string idempotencyKey;
     bool confirmed{};
+    // qB 来源必须由用户确认下载完成；文件稳定性扫描不能替代 qB 完成状态。
     bool qbDownloadComplete{};
 };
 
@@ -39,6 +40,7 @@ class OrganizationService {
 public:
     OrganizationService(MediaRepository& repository, std::filesystem::path qbRoot,
                         std::filesystem::path importRoot, std::filesystem::path libraryRoot);
+    // 校验预览、确认与幂等键，再执行文件操作并记录任务状态。
     ExecuteOrganizationResult execute(const ExecuteOrganizationRequest& request);
 private:
     MediaRepository& repository_;

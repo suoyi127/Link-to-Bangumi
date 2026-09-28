@@ -23,6 +23,7 @@ public:
     PlaybackService(MediaRepository& repository, std::filesystem::path sourceRoot,
                     std::filesystem::path importRoot, std::filesystem::path libraryRoot,
                     ProcessLauncher& launcher);
+    // 根据媒体 ID 解析并校验真实文件，再将可执行文件和参数分开交给系统启动器。
     void play(std::int64_t mediaId, const std::string& mpvExecutable) const;
 private:
     MediaRepository& repository_;

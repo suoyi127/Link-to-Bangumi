@@ -7,6 +7,7 @@
 
 namespace anime_vault {
 struct MikanTitlePair {
+    // 仅在 RSS 明确包含双语标题时建立规范标题与别名的对应关系。
     std::string canonicalTitle;
     std::string alias;
     int episode{};

@@ -7,6 +7,7 @@
 
 namespace anime_vault {
 
+// Bangumi 网络能力的抽象端口，便于业务服务使用真实 HTTP 或测试桩。
 class BangumiTransport {
 public:
     struct Response { int status{}; std::string body; };

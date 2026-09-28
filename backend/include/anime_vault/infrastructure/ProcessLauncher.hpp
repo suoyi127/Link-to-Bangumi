@@ -6,6 +6,7 @@
 
 namespace anime_vault {
 
+// 启动器接收独立参数列表，避免业务逻辑通过拼接 shell 命令启动外部程序。
 class ProcessLauncher {
 public:
     virtual ~ProcessLauncher() = default;

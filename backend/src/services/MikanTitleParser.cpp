@@ -15,6 +15,7 @@ std::string trim(std::string value) {
 
 std::optional<MikanTitlePair> MikanTitleParser::parse(std::string_view articleTitle) {
     if (articleTitle.empty() || articleTitle.size() > 2048) return std::nullopt;
+    // 只识别明确的双语分隔和集数格式；无法可靠拆分时宁可不自动建立别名。
     static const std::regex pattern(
         R"(^\[[^\]]{1,100}\]\s*(.+?)\s+/\s+(.+?)\s+\[([0-9]{1,3})\](?:\[[^\]]*\])*\s*$)");
     static const std::regex dashedPattern(

@@ -8,6 +8,7 @@ const errorText = (error: unknown) => error instanceof Error ? error.message : '
 const mediaPageSize = 200
 
 export function AnimeDetailPage({ animeId, onBack }: Props) {
+  // 当前 animeId 是详情操作上下文，媒体分页、Bangumi 绑定与播放均围绕该条目执行。
   const [detail, setDetail] = useState<AnimeDetail | null>(null)
   const [media, setMedia] = useState<Media[]>([])
   const [nextMediaOffset, setNextMediaOffset] = useState<number | null>(null)

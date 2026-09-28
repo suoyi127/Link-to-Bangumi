@@ -31,6 +31,7 @@
 
 int main() {
     try {
+        // 先解析持久化与媒体目录，再组装服务；设置页保存的路径由仓库偏好提供。
         const auto environmentPath = [](const char* name, const std::filesystem::path& fallback) {
             const char* value = std::getenv(name);
             return std::filesystem::path(value && *value ? value : fallback);
@@ -90,6 +91,7 @@ int main() {
                 ? std::string{} : std::string("qb_download_dir_restart_required");
         };
         const auto port = anime_vault::api::resolveHealthPort(std::getenv("ANIME_VAULT_PORT"));
+        // HTTP 控制器只负责协议适配，扫描、整理、刮削等规则留在独立服务中。
         anime_vault::api::registerHealthEndpoint(
             anime_vault::api::resolveInstanceToken(std::getenv("ANIME_VAULT_INSTANCE_TOKEN")));
         anime_vault::api::registerMediaEndpoints(media, organization, enricher, mikanEnricher);

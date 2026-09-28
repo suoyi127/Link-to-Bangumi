@@ -20,6 +20,7 @@ std::string requestIdFor(const Request& request) {
         ? std::to_string(++requestSequence) : request->getHeader("X-Request-Id");
 }
 void deliver(Callback callback, const std::string& requestId, int status, Json::Value payload) {
+    // 所有 API 响应附带请求 ID；同时限制响应体，避免异常数据放大本机服务负载。
     if (payload.toStyledString().size() > 1024 * 1024) {
         status = 500;
         payload = Json::Value();

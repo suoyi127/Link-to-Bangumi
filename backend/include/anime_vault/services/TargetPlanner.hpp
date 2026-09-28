@@ -20,6 +20,7 @@ struct TargetPlan {
 class TargetPlanner {
 public:
     explicit TargetPlanner(std::filesystem::path libraryRoot);
+    // 只生成目标和冲突预览，不触碰文件；执行由后续确认流程负责。
     [[nodiscard]] TargetPlan preview(const SourceFile& source, std::string_view displayTitle,
                                      EpisodeType type, const EpisodeNumber& episode,
                                      std::string_view versionLabel = {}) const;

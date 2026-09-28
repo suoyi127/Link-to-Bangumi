@@ -31,6 +31,7 @@ ExecuteOrganizationResult OrganizationService::execute(const ExecuteOrganization
     if (!request.confirmed) throw OrganizationServiceError("confirmation_required");
     if (request.planId <= 0) throw OrganizationServiceError("invalid_plan_id");
     if (!validKey(request.idempotencyKey)) throw OrganizationServiceError("invalid_idempotency_key");
+    // 重试沿用幂等键返回原任务，避免一次确认被重复执行成多个文件操作。
     if (const auto previous = repository_.findOrganizationJobByKey(request.idempotencyKey)) {
         if (previous->planId != request.planId)
             throw OrganizationServiceError("idempotency_key_reused");
@@ -51,6 +52,7 @@ ExecuteOrganizationResult OrganizationService::execute(const ExecuteOrganization
     if (!plan) throw OrganizationServiceError("plan_not_found");
     const auto media = repository_.getMedia(plan->mediaFileId);
     if (!media) throw OrganizationServiceError("media_not_found");
+    // 两种来源使用各自的根目录；qB 源还要求用户显式确认下载已经完成。
     if (media->origin == "qb_download") {
         if (!request.qbDownloadComplete) throw OrganizationServiceError("qb_completion_required");
     } else if (media->origin != "external_import") {

@@ -11,6 +11,7 @@ namespace anime_vault {
 
 enum class EpisodeType { normal, sp, ova, ncop, nced, unknown };
 
+// 文件名解析的统一结果；confidence 表示识别可靠度，不代表标题翻译正确。
 struct ParseResult {
     std::string originalName;
     std::string title;

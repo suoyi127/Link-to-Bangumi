@@ -49,6 +49,7 @@ struct QbDownloadDirectoryRequest { std::string path; };
 QbDownloadDirectoryRequest parseQbDownloadDirectoryRequest(const Json::Value& body);
 UiPreferences parseUiPreferencesRequest(const Json::Value& body);
 Json::Value executeOrganizationJson(const ExecuteOrganizationResult& result);
+// HTTP 边界负责校验输入和序列化 DTO，业务规则由注入的服务执行。
 void registerManagementEndpoints(MediaRepository& repository, EffectiveSettings settings);
 void registerMediaEndpoints(MediaService& service, OrganizationService& organization,
                             std::shared_ptr<AnimeEnricher> enricher = {},

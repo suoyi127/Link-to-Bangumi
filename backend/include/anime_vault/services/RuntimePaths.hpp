@@ -25,6 +25,7 @@ public:
 
 std::filesystem::path defaultDataDirectory();
 std::filesystem::path defaultMediaDirectory();
+// 合并环境配置与持久化偏好，并校验来源、导入、媒体库之间的目录边界。
 RuntimePaths resolveRuntimePaths(std::filesystem::path data,
     std::filesystem::path imported, std::filesystem::path library,
     std::optional<std::filesystem::path> qbOverride, std::string_view storedQb);

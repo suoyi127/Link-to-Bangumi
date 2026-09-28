@@ -32,6 +32,7 @@ private:
 class OrganizationExecutor {
 public:
     OrganizationExecutor(std::filesystem::path sourceRoot, std::filesystem::path libraryRoot);
+    // 执行时再次校验根目录、来源快照和目标占用，防止预览后状态变化造成越界或覆盖。
     [[nodiscard]] ExecuteFileResult execute(const ExecuteFileRequest& request) const;
 
 private:

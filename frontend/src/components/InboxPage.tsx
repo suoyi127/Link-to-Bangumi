@@ -10,6 +10,7 @@ const episodeTypes = ['normal', 'sp', 'ova', 'ncop', 'nced']
 const executable = (plan: Preview | null) => !!plan && plan.conflicts.length === 0 && Number.isFinite(Date.parse(plan.expiresAt)) && Date.parse(plan.expiresAt) > Date.now()
 
 export function InboxPage({ onOpenAnime }: Props) {
+  // 分来源保留分页位置，避免在 qB 与外来导入标签间切换时互相覆盖列表状态。
   const [items, setItems] = useState<Media[]>([])
   const [origin, setOrigin] = useState<InboxOrigin>('qb_download')
   const [offsets, setOffsets] = useState<Record<InboxOrigin, number>>({ qb_download: 0, external_import: 0 })
@@ -29,6 +30,7 @@ export function InboxPage({ onOpenAnime }: Props) {
   const [qbComplete, setQbComplete] = useState(false)
   const [busy, setBusy] = useState(false)
   const [retry, setRetry] = useState(false)
+  // 序号令牌用于丢弃过期的异步搜索/预览结果，防止覆盖用户的新选择。
   const previewSequence = useRef(0)
   const selectionSequence = useRef(0)
   const searchSequence = useRef(0)
