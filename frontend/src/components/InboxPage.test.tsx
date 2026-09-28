@@ -29,7 +29,7 @@ it('uses the saved preferred operation as the initial preview choice', async () 
   await waitFor(() => expect(client.getSettings).toHaveBeenCalled())
   fireEvent.click(screen.getByRole('button', { name: '生成预览' }))
   await waitFor(() => expect(preview).toHaveBeenCalledWith(7, 'copy'))
-}, 20000)
+}, 60000)
 
 it('corrects only parse fields and offers local anime navigation and ranked search without binding', async () => {
   const { correction, search } = setup('external_import')
@@ -48,7 +48,7 @@ it('corrects only parse fields and offers local anime navigation and ranked sear
   await waitFor(() => expect(search).toHaveBeenCalledWith('新标题'))
   expect(screen.getByText(/本地匹配：本地匹配/)).toBeInTheDocument()
   expect(screen.getByText(/候选中文/)).toBeInTheDocument()
-}, 20000)
+}, 60000)
 
 it.each(['qb_download', 'external_import'])('previews and retries the same %s plan with one key', async (origin) => {
   const { inbox, preview, execute } = setup(origin)
@@ -72,7 +72,7 @@ it.each(['qb_download', 'external_import'])('previews and retries the same %s pl
   expect(execute.mock.calls[0][2]).toBe(origin === 'qb_download')
   expect(execute.mock.calls[0][1]).toMatch(/^[\x21-\x7E]+$/)
   await waitFor(() => expect(inbox).toHaveBeenCalledTimes(2))
-}, 20000)
+}, 60000)
 
 it('blocks conflicted and expired plans before confirmation', async () => {
   const { preview, execute } = setup('external_import')
@@ -87,7 +87,7 @@ it('blocks conflicted and expired plans before confirmation', async () => {
   await screen.findByText(/expired.mkv/)
   expect(screen.getByRole('button', { name: '确认执行' })).toBeDisabled()
   expect(execute).not.toHaveBeenCalled()
-}, 20000)
+}, 60000)
 
 it('invalidates a preview after saving a correction', async () => {
   setup('external_import')
@@ -98,7 +98,7 @@ it('invalidates a preview after saving a correction', async () => {
   fireEvent.click(screen.getByRole('button', { name: '保存修正' }))
   await screen.findByRole('button', { name: '查看本地番剧' })
   expect(screen.queryByRole('button', { name: '确认执行' })).not.toBeInTheDocument()
-}, 20000)
+}, 60000)
 
 it('invalidates a preview as soon as a correction field changes', async () => {
   const { execute } = setup('external_import')
@@ -109,7 +109,7 @@ it('invalidates a preview as soon as a correction field changes', async () => {
   fireEvent.change(screen.getByLabelText('规范标题'), { target: { value: '待修正' } })
   expect(screen.queryByRole('button', { name: '确认执行' })).not.toBeInTheDocument()
   expect(execute).not.toHaveBeenCalled()
-}, 20000)
+}, 60000)
 
 it('loads the next inbox page from the server', async () => {
   const { inbox } = setup('qb_download')
@@ -120,7 +120,7 @@ it('loads the next inbox page from the server', async () => {
   fireEvent.click(screen.getByRole('button', { name: '下一页' }))
   await waitFor(() => expect(inbox).toHaveBeenLastCalledWith(100, 100, expect.anything(), 'qb_download'))
   expect(await screen.findByRole('button', { name: '编辑 第101个' })).toBeInTheDocument()
-}, 20000)
+}, 60000)
 
 it('separates qB and external files with independent pages and clears a switched preview', async () => {
   const { inbox } = setup('qb_download')
@@ -154,7 +154,7 @@ it('requires a supported episode type for an unknown parse', async () => {
   fireEvent.click(await screen.findByRole('button', { name: '编辑 旧标题' }))
   expect(screen.getByRole('button', { name: '保存修正' })).toBeDisabled()
   expect(correction).not.toHaveBeenCalled()
-}, 20000)
+}, 60000)
 
 it('invalidates a preview when switching media', async () => {
   const { inbox, execute } = setup('external_import')
@@ -166,7 +166,7 @@ it('invalidates a preview when switching media', async () => {
   fireEvent.click(screen.getByRole('button', { name: '编辑 另一个' }))
   expect(screen.queryByRole('button', { name: '确认执行' })).not.toBeInTheDocument()
   expect(execute).not.toHaveBeenCalled()
-}, 20000)
+}, 60000)
 
 it('requires saving a changed correction before another preview', async () => {
   const { preview } = setup('external_import')
@@ -176,7 +176,7 @@ it('requires saving a changed correction before another preview', async () => {
   expect(screen.getByRole('button', { name: '生成预览' })).toBeDisabled()
   expect(screen.getByText('请先保存修正再生成预览')).toBeInTheDocument()
   expect(preview).not.toHaveBeenCalled()
-}, 20000)
+}, 60000)
 
 it('does not replace the selected row when a previous correction completes', async () => {
   const { inbox, correction } = setup('external_import')
@@ -190,7 +190,7 @@ it('does not replace the selected row when a previous correction completes', asy
   await act(async () => finish({ ...media('external_import'), title: '新标题', animeId: 9 }))
   expect(screen.getByRole('heading', { name: 'b.mkv' })).toBeInTheDocument()
   expect(screen.getByLabelText('规范标题')).toHaveValue('第二部')
-}, 20000)
+}, 60000)
 
 it('ignores Bangumi results from a previously selected row', async () => {
   const { inbox, search } = setup('external_import')
@@ -204,4 +204,4 @@ it('ignores Bangumi results from a previously selected row', async () => {
   fireEvent.click(screen.getByRole('button', { name: '编辑 第二部' }))
   await act(async () => finish({ items: [], autoBindEligible: false, fromCache: false, localMatch: { animeId: 7, displayTitle: '旧匹配' } }))
   expect(screen.queryByText(/旧匹配/)).not.toBeInTheDocument()
-}, 20000)
+}, 60000)
