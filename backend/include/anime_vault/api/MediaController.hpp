@@ -9,6 +9,7 @@
 
 #include <json/json.h>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -41,6 +42,7 @@ struct EffectiveSettings {
     bool qbConfigured{};
     bool qbDownloadConfigured{};
     bool qbDownloadEnvironmentOverride{};
+    std::function<bool()> qbConfiguredNow;
 };
 struct QbDownloadDirectoryRequest { std::string path; };
 QbDownloadDirectoryRequest parseQbDownloadDirectoryRequest(const Json::Value& body);

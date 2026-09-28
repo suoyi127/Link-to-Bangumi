@@ -309,7 +309,8 @@ void registerManagementEndpoints(MediaRepository& repository, EffectiveSettings 
         json["libraryPath"] = pathString(settings.libraryPath);
         json["dataPath"] = pathString(settings.dataPath);
         json["bangumiConfigured"] = settings.bangumiConfigured;
-        json["qbWebUiConfigured"] = settings.qbConfigured;
+        json["qbWebUiConfigured"] = settings.qbConfiguredNow
+            ? settings.qbConfiguredNow() : settings.qbConfigured;
         json["preferredOperation"] = preferences.preferredOperation;
         json["scanIntervalSeconds"] = preferences.scanIntervalSeconds;
         json["mpvExecutable"] = preferences.mpvExecutable;

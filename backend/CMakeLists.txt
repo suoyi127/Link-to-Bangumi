@@ -75,6 +75,7 @@ add_library(anime_vault_api STATIC
   src/api/HealthController.cpp
   src/api/MediaController.cpp
   src/api/MediaService.cpp
+  src/api/QbConfigController.cpp
 )
 target_include_directories(anime_vault_api PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include

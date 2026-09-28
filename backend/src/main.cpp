@@ -1,5 +1,6 @@
 #include "anime_vault/api/HealthController.hpp"
 #include "anime_vault/api/MediaController.hpp"
+#include "anime_vault/api/QbConfigController.hpp"
 #include "anime_vault/api/MediaService.hpp"
 #include "anime_vault/infrastructure/database/SqliteDatabase.hpp"
 #include "anime_vault/infrastructure/database/SqliteMediaRepository.hpp"
@@ -9,6 +10,7 @@
 #include "anime_vault/services/MikanEnricher.hpp"
 #include "anime_vault/infrastructure/network/DrogonBangumiTransport.hpp"
 #include "anime_vault/infrastructure/network/QbWebClient.hpp"
+#include "anime_vault/infrastructure/network/QbConnectionManager.hpp"
 #include "anime_vault/infrastructure/network/DrogonCoverTransport.hpp"
 #include "anime_vault/infrastructure/ProcessLauncher.hpp"
 #include "anime_vault/services/PlaybackService.hpp"
@@ -95,12 +97,13 @@ int main() {
             const char* value = std::getenv(name);
             return std::string(value ? value : "");
         };
-        auto qb = std::make_shared<anime_vault::QbWebClient>("http://[::1]:8080",
-            environmentString("ANIME_VAULT_QB_USERNAME"),
-            environmentString("ANIME_VAULT_QB_PASSWORD"));
+        auto qb = std::make_shared<anime_vault::QbConnectionManager>(data,
+            anime_vault::QbConnectionConfig{"http://[::1]:8080",
+                environmentString("ANIME_VAULT_QB_USERNAME"),
+                environmentString("ANIME_VAULT_QB_PASSWORD")});
         auto mikanEnricher = std::make_shared<anime_vault::MikanEnricher>(repository,
             [qb](anime_vault::MikanEnricher::CatalogCompletion completion) {
-                qb->readMikanTitles(std::move(completion));
+                qb->current()->readMikanTitles(std::move(completion));
             });
         const auto qbDownloadError = [&repository, source, configured = paths.qbConfigured,
                                       environmentOverride = sourceOverride.has_value()] {
@@ -117,12 +120,14 @@ int main() {
         anime_vault::api::registerManagementEndpoints(repository,
             {source, imported, library, data,
              std::getenv("ANIME_VAULT_BANGUMI_USER_AGENT") &&
-             *std::getenv("ANIME_VAULT_BANGUMI_USER_AGENT"), qb->configured(),
-             paths.qbConfigured, sourceOverride.has_value()});
+             *std::getenv("ANIME_VAULT_BANGUMI_USER_AGENT"), qb->summary().configured,
+             paths.qbConfigured, sourceOverride.has_value(),
+             [qb] { return qb->summary().configured; }});
+        anime_vault::api::registerQbConfigEndpoints(qb);
         anime_vault::api::registerAnimeEndpoints(repository, bangumi, covers);
         drogon::app().registerHandler("/api/qb/status", [qb](const drogon::HttpRequestPtr&,
             std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
-            qb->inspect([callback = std::move(callback)](anime_vault::QbStatus status) mutable {
+            qb->current()->inspect([callback = std::move(callback)](anime_vault::QbStatus status) mutable {
                 Json::Value payload;
                 payload["configured"] = status.configured;
                 payload["connected"] = status.connected;
@@ -135,7 +140,7 @@ int main() {
         }, {drogon::Get});
         drogon::app().registerHandler("/api/qb/rss", [qb](const drogon::HttpRequestPtr&,
             std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
-            qb->readMikanTitles([callback = std::move(callback)](anime_vault::QbMikanCatalog catalog) mutable {
+            qb->current()->readMikanTitles([callback = std::move(callback)](anime_vault::QbMikanCatalog catalog) mutable {
                 Json::Value payload;
                 payload["feedCount"] = catalog.feedCount;
                 payload["articleCount"] = catalog.articleCount;
@@ -185,7 +190,7 @@ int main() {
                 return;
             }
             const auto path = std::filesystem::absolute(source).u8string();
-            qb->addMikanFeedWithAutoRule((*body)["url"].asString(),
+            qb->current()->addMikanFeedWithAutoRule((*body)["url"].asString(),
                 std::string(reinterpret_cast<const char*>(path.data()), path.size()),
                 [callback = std::move(callback)](anime_vault::QbActionResult result) mutable {
                     Json::Value payload;
@@ -241,7 +246,7 @@ int main() {
                 (*body)["ruleName"].asString(), (*body)["feedUrl"].asString(),
                 (*body)["keyword"].asString(),
                 std::string(reinterpret_cast<const char*>(path.data()), path.size())};
-            qb->createMikanRule(std::move(spec),
+            qb->current()->createMikanRule(std::move(spec),
                 [callback = std::move(callback)](anime_vault::QbActionResult result) mutable {
                     Json::Value payload;
                     payload["success"] = result.success;
