@@ -12,6 +12,21 @@ bool validAgent(const std::string& value) {
     return !value.empty() && value.size() <= 200 &&
         std::all_of(value.begin(), value.end(), [](unsigned char ch) { return ch >= 0x20 && ch != 0x7f; });
 }
+std::string encodePathSegment(const std::string& value) {
+    static constexpr char hex[] = "0123456789ABCDEF";
+    std::string encoded;
+    for (unsigned char ch : value) {
+        if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+            (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' || ch == '.' || ch == '~')
+            encoded.push_back(static_cast<char>(ch));
+        else {
+            encoded.push_back('%');
+            encoded.push_back(hex[ch >> 4]);
+            encoded.push_back(hex[ch & 15]);
+        }
+    }
+    return encoded;
+}
 }
 
 DrogonBangumiTransport::DrogonBangumiTransport(std::string userAgent)
@@ -58,6 +73,14 @@ void DrogonBangumiTransport::search(std::string keyword, Completion completion) 
     request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
     request->setBody(nlohmann::json{{"keyword", std::move(keyword)},
                                      {"filter", {{"type", {2}}}}}.dump());
+    send(request, std::move(completion));
+}
+
+void DrogonBangumiTransport::searchAliases(std::string keyword, Completion completion) {
+    auto request = drogon::HttpRequest::newHttpRequest();
+    request->setMethod(drogon::Get);
+    request->setPath("/search/subject/" + encodePathSegment(keyword) + "?type=2&responseGroup=small");
+    request->setPathEncode(false);
     send(request, std::move(completion));
 }
 

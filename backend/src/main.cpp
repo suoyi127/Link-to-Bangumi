@@ -60,6 +60,7 @@ int main() {
         if (!paths.qbConfigured) std::filesystem::create_directories(source);
         anime_vault::api::MediaService media(repository,
             source, library, imported, paths.qbConfigured);
+        std::filesystem::create_directories(imported);
         std::filesystem::create_directories(library);
         anime_vault::OrganizationService organization(repository, source, imported, library);
         anime_vault::NativeProcessLauncher processLauncher;

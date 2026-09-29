@@ -8,6 +8,28 @@ afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 const media = (origin: string): Media => ({ id: 7, scanId: 1, sourcePath: '/source/a.mkv', filename: 'a.mkv', parsedTitle: 'Toumei na Yoru', title: '旧标题', season: '', episodeNumber: '1', episodeType: 'normal', sizeBytes: 1, status: 'inbox', origin, animeId: 3, confidence: 0.7 })
 
+it('offers folder import beside qB and external sources', async () => {
+  setup('folder_import')
+  render(<InboxPage onOpenAnime={vi.fn()} />)
+  expect(await screen.findByRole('tab', { name: '文件夹导入' })).toBeInTheDocument()
+})
+
+it('registers and scans a selected local folder in its own resource tab', async () => {
+  const { inbox } = setup('folder_import')
+  const folders = vi.spyOn(client, 'getFolderImports').mockResolvedValue({ items: [] })
+  const add = vi.spyOn(client, 'addFolderImport').mockResolvedValue({ id: 4, path: 'D:\\Anime' })
+  const scan = vi.spyOn(client, 'scanFolderImport').mockResolvedValue({ id: 9, source: 'folder_import', status: 'completed', discoveredCount: 1, processedCount: 1, errorCount: 0, errorSummary: '' })
+  render(<InboxPage onOpenAnime={vi.fn()} />)
+  fireEvent.click(screen.getByRole('tab', { name: '文件夹导入' }))
+  await waitFor(() => expect(folders).toHaveBeenCalled())
+  fireEvent.change(screen.getByLabelText('文件夹绝对路径'), { target: { value: 'D:\\Anime' } })
+  fireEvent.click(screen.getByRole('button', { name: '添加文件夹' }))
+  await waitFor(() => expect(add).toHaveBeenCalledWith('D:\\Anime'))
+  fireEvent.click(await screen.findByRole('button', { name: '扫描目录' }))
+  await waitFor(() => expect(scan).toHaveBeenCalledWith(4))
+  expect(inbox).toHaveBeenLastCalledWith(100, 0, undefined, 'folder_import')
+}, 30000)
+
 function setup(origin: string) {
   vi.stubGlobal('matchMedia', vi.fn().mockImplementation(() => ({ matches: false, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn() })))
   const getComputedStyle = window.getComputedStyle.bind(window)

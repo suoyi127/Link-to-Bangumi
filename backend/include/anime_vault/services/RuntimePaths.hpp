@@ -25,6 +25,8 @@ public:
 
 std::filesystem::path defaultDataDirectory();
 std::filesystem::path defaultMediaDirectory();
+// 将默认媒体根目录放在应用项目根下，不依赖 Windows 用户个人资料所在盘符。
+std::filesystem::path defaultMediaDirectory(const std::filesystem::path& applicationRoot);
 // 合并环境配置与持久化偏好，并校验来源、导入、媒体库之间的目录边界。
 RuntimePaths resolveRuntimePaths(std::filesystem::path data,
     std::filesystem::path imported, std::filesystem::path library,

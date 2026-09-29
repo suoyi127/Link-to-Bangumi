@@ -11,11 +11,15 @@ class SqliteMediaRepository final : public MediaRepository {
 public:
     explicit SqliteMediaRepository(SqliteDatabase& database) : database_(database) {}
     std::int64_t createScan(const ScanRecord& record) override;
+    FolderImportRecord addFolderImport(const std::string& rootPath) override;
+    std::vector<FolderImportRecord> listFolderImports() const override;
+    std::optional<FolderImportRecord> getFolderImport(std::int64_t id) const override;
     std::optional<ScanRecord> getScan(std::int64_t id) const override;
     void updateScan(const ScanRecord& record) override;
     std::int64_t insertMedia(const MediaRecord& record) override;
     void markMissingMedia(const std::string& origin,
-                          const std::vector<std::string>& observedPaths) override;
+                          const std::vector<std::string>& observedPaths,
+                          std::optional<std::int64_t> folderImportId = std::nullopt) override;
     std::optional<MediaRecord> getMedia(std::int64_t id) const override;
     void updateMediaParse(std::int64_t id, const std::string& episodeNumber,
                           const std::string& episodeType, double confidence) override;
@@ -46,9 +50,11 @@ public:
                                  std::int64_t requestStartedAt) override;
     std::vector<AnimeRecord> listAnime() const override;
     AnimePage listAnimePage(std::int64_t offset, int limit) const override;
+    std::vector<AnimeRecord> listAnimeForScan(std::int64_t scanId) const override;
     std::optional<AnimeRecord> getAnime(std::int64_t id, std::int64_t mediaOffset = 0,
                                         int mediaLimit = 50) const override;
-    AnimeRecord bindAnime(std::int64_t id, const BangumiSubject& subject) override;
+    AnimeRecord bindAnime(std::int64_t id, const BangumiSubject& subject,
+                          bool canonicalizeTitle = false) override;
     bool updateCoverIfBound(std::int64_t animeId, std::int64_t subjectId,
                             const std::string& localUrl) override;
     bool applyMikanAlias(const std::string& alias,

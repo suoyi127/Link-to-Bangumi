@@ -69,7 +69,8 @@ InboxPageHttpRequest parseInboxPageRequest(const Request& request) {
     dto.offset = pageNumber(request, "offset", 0, 0, 1'000'000);
     if (request->getParameters().contains("origin")) {
         dto.origin = request->getParameter("origin");
-        if (*dto.origin != "qb_download" && *dto.origin != "external_import")
+        if (*dto.origin != "qb_download" && *dto.origin != "external_import" &&
+            *dto.origin != "folder_import")
             throw ApiError(400, "invalid_origin", "invalid inbox origin");
     }
     return dto;
@@ -85,6 +86,30 @@ Json::Value scanJson(const ScanRecord& scan) {
     // Scanner exceptions may contain private paths; never return their raw text.
     json["errorSummary"] = scan.errorSummary.empty() ? "" : "scan_failed";
     return json;
+}
+Json::Value folderImportJson(const FolderImportRecord& folder) {
+    Json::Value json;
+    json["id"] = Json::Int64(folder.id);
+    json["path"] = folder.rootPath;
+    return json;
+}
+void triggerScanEnrichment(const std::shared_ptr<AnimeEnricher>& enricher,
+                           const std::shared_ptr<MikanEnricher>& mikanEnricher,
+                           std::optional<std::int64_t> scanId = std::nullopt,
+                           std::function<void()> completion = {}) {
+    // 所有扫描来源先尝试 Mikan 双语别名，再用规范标题匹配 Bangumi 与封面。
+    auto afterMikan = [enricher, scanId, completion = std::move(completion)](MikanEnrichmentResult) mutable {
+        if (enricher) {
+            auto finish = [completion = std::move(completion)](std::size_t) {
+                if (completion) completion();
+            };
+            if (scanId) enricher->runForScan(*scanId, std::move(finish));
+            else enricher->runOnce(5, std::move(finish));
+        }
+        else if (completion) completion();
+    };
+    if (mikanEnricher) mikanEnricher->runOnce(std::move(afterMikan));
+    else afterMikan({});
 }
 Json::Value mediaJson(const MediaRecord& media) {
     Json::Value json;
@@ -498,22 +523,61 @@ void registerMediaEndpoints(MediaService& service, OrganizationService& organiza
             if (!request->body().empty() || !request->getParameters().empty())
                 throw ApiError(400, "invalid_request", "scan takes no body or parameters");
             const auto scan = service.createScan();
-            if (scan.status == "completed") {
-                // qB RSS supplies aliases; Bangumi is queried only after local titles are normalized.
-                if (mikanEnricher) mikanEnricher->runOnce([enricher](MikanEnrichmentResult) {
-                    if (enricher) enricher->runOnce();
-                });
-                else if (enricher) enricher->runOnce();
-            }
+            if (scan.status == "completed") triggerScanEnrichment(enricher, mikanEnricher);
             return scanJson(scan);
         }, 201);
     }, {drogon::Post});
-    drogon::app().registerHandler("/api/imports/scan", [&service](const Request& request, Callback&& callback) {
+    drogon::app().registerHandler("/api/imports/scan", [&service, enricher, mikanEnricher](const Request& request, Callback&& callback) {
         respond(request, std::move(callback), [&] {
             if (!request->body().empty() || !request->getParameters().empty())
                 throw ApiError(400, "invalid_request", "import scan takes no body or parameters");
-            return scanJson(service.createImportScan());
+            const auto scan = service.createImportScan();
+            if (scan.status == "completed") triggerScanEnrichment(enricher, mikanEnricher);
+            return scanJson(scan);
         }, 201);
+    }, {drogon::Post});
+    drogon::app().registerHandler("/api/folder-imports", [&service](const Request& request, Callback&& callback) {
+        respond(request, std::move(callback), [&] {
+            if (!request->body().empty() || !request->getParameters().empty())
+                throw ApiError(400, "invalid_request", "folder list takes no body or parameters");
+            Json::Value result;
+            result["items"] = Json::Value(Json::arrayValue);
+            for (const auto& folder : service.listFolderImports())
+                result["items"].append(folderImportJson(folder));
+            return result;
+        });
+    }, {drogon::Get});
+    drogon::app().registerHandler("/api/folder-imports", [&service](const Request& request, Callback&& callback) {
+        respond(request, std::move(callback), [&] {
+            if (request->body().size() > 4096 || !request->getParameters().empty())
+                throw ApiError(400, "invalid_request", "invalid folder import request");
+            const auto body = request->getJsonObject();
+            if (!body || !body->isObject() || body->size() != 1 || !(*body)["path"].isString())
+                throw ApiError(400, "invalid_request", "path is required");
+            return folderImportJson(service.addFolderImport((*body)["path"].asString()));
+        }, 201);
+    }, {drogon::Post});
+    drogon::app().registerHandler("/api/folder-imports/{1}/scan", [&service, enricher, mikanEnricher](
+        const Request& request, Callback&& callback, std::string id) {
+        const auto requestId = requestIdFor(request);
+        try {
+            if (!request->body().empty() || !request->getParameters().empty())
+                throw ApiError(400, "invalid_request", "folder scan takes no body or parameters");
+            const auto scan = service.createFolderScan(parseId(id));
+            if (scan.status != "completed") {
+                deliver(std::move(callback), requestId, 201, scanJson(scan));
+                return;
+            }
+            // 前端等刮削回调结束后再刷新，避免仍看到扫描时的原始标题。
+            triggerScanEnrichment(enricher, mikanEnricher, scan.id,
+                [requestId, callback = std::move(callback), scan]() mutable {
+                    deliver(std::move(callback), requestId, 201, scanJson(scan));
+                });
+        } catch (const ApiError& error) {
+            deliver(std::move(callback), requestId, error.status, errorJson(error.code, error.what()));
+        } catch (const std::exception&) {
+            deliver(std::move(callback), requestId, 500, errorJson("internal_error", "internal error"));
+        }
     }, {drogon::Post});
     drogon::app().registerHandler("/api/scans/{1}", [&service](const Request& request, Callback&& callback, std::string id) {
         respond(request, std::move(callback), [&] { return scanJson(service.getScan(parseId(id))); });

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, Button, Checkbox, Input, Modal, Select, Space, Spin, Table, Tabs, Typography } from 'antd'
-import { correctMedia, executeOrganization, getInbox, getSettings, previewOrganization, searchBangumi } from '../api/client'
-import type { BangumiSearch, InboxOrigin, Media, Preferences, Preview } from '../api/types'
+import { addFolderImport, correctMedia, executeOrganization, getFolderImports, getInbox, getSettings, previewOrganization, scanFolderImport, searchBangumi } from '../api/client'
+import type { BangumiSearch, FolderImport, InboxOrigin, Media, Preferences, Preview } from '../api/types'
 
 type Props = { onOpenAnime: (id: number) => void }
 type Correction = Pick<Media, 'title' | 'season' | 'episodeNumber' | 'episodeType'>
@@ -10,10 +10,10 @@ const episodeTypes = ['normal', 'sp', 'ova', 'ncop', 'nced']
 const executable = (plan: Preview | null) => !!plan && plan.conflicts.length === 0 && Number.isFinite(Date.parse(plan.expiresAt)) && Date.parse(plan.expiresAt) > Date.now()
 
 export function InboxPage({ onOpenAnime }: Props) {
-  // 分来源保留分页位置，避免在 qB 与外来导入标签间切换时互相覆盖列表状态。
+  // 分来源保留分页位置，避免切换标签时互相覆盖列表状态。
   const [items, setItems] = useState<Media[]>([])
   const [origin, setOrigin] = useState<InboxOrigin>('qb_download')
-  const [offsets, setOffsets] = useState<Record<InboxOrigin, number>>({ qb_download: 0, external_import: 0 })
+  const [offsets, setOffsets] = useState<Record<InboxOrigin, number>>({ qb_download: 0, external_import: 0, folder_import: 0 })
   const offset = offsets[origin]
   const [nextOffset, setNextOffset] = useState<number | null>(null)
   const [total, setTotal] = useState(0)
@@ -29,6 +29,9 @@ export function InboxPage({ onOpenAnime }: Props) {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [qbComplete, setQbComplete] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [folders, setFolders] = useState<FolderImport[]>([])
+  const [folderPath, setFolderPath] = useState('')
+  const [folderBusy, setFolderBusy] = useState(false)
   const [retry, setRetry] = useState(false)
   // 序号令牌用于丢弃过期的异步搜索/预览结果，防止覆盖用户的新选择。
   const previewSequence = useRef(0)
@@ -44,6 +47,13 @@ export function InboxPage({ onOpenAnime }: Props) {
     finally { if (!signal?.aborted) setLoading(false) }
   }, [offset, origin])
   useEffect(() => { const controller = new AbortController(); void refresh(controller.signal); return () => controller.abort() }, [refresh])
+  useEffect(() => {
+    if (origin !== 'folder_import') return
+    let active = true
+    void getFolderImports().then((result) => { if (active) setFolders(result.items) })
+      .catch((cause) => { if (active) setError(errorText(cause)) })
+    return () => { active = false }
+  }, [origin])
   useEffect(() => {
     let active = true
     void getSettings().then((settings) => { if (active && !operationTouched.current) setOperation(settings.preferredOperation) }).catch(() => { /* hardlink remains the safe local default */ })
@@ -92,8 +102,32 @@ export function InboxPage({ onOpenAnime }: Props) {
     finally { setBusy(false) }
   }
 
+  async function registerFolder() {
+    const path = folderPath.trim()
+    if (!path) { setError('请输入本机文件夹的绝对路径'); return }
+    setFolderBusy(true); setError('')
+    try {
+      const folder = await addFolderImport(path)
+      setFolders((current) => current.some((item) => item.id === folder.id) ? current : [...current, folder])
+      setFolderPath('')
+    } catch (cause) { setError(errorText(cause)) }
+    finally { setFolderBusy(false) }
+  }
+
+  async function scanFolder(id: number) {
+    setFolderBusy(true); setError('')
+    try { await scanFolderImport(id); await refresh() }
+    catch (cause) { setError(errorText(cause)) }
+    finally { setFolderBusy(false) }
+  }
+
   return <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-    <Tabs activeKey={origin} onChange={(value) => changeOrigin(value as InboxOrigin)} items={[{ key: 'qb_download', label: 'qB 下载' }, { key: 'external_import', label: '外来导入' }]} />
+    <Tabs activeKey={origin} onChange={(value) => changeOrigin(value as InboxOrigin)} items={[{ key: 'qb_download', label: 'qB 下载' }, { key: 'external_import', label: '外来导入' }, { key: 'folder_import', label: '文件夹导入' }]} />
+    {origin === 'folder_import' && <Space direction="vertical" style={{ width: '100%' }}>
+      <Typography.Text type="secondary">扫描本机已有文件夹，不复制或移动原文件。请粘贴文件夹的绝对路径。</Typography.Text>
+      <Space.Compact style={{ width: '100%' }}><Input aria-label="文件夹绝对路径" placeholder="例如 D:\\番剧文件" value={folderPath} onChange={(event) => setFolderPath(event.target.value)} /><Button type="primary" loading={folderBusy} onClick={() => void registerFolder()}>添加文件夹</Button></Space.Compact>
+      {folders.map((folder) => <Space key={folder.id} wrap><Typography.Text>{folder.path}</Typography.Text><Button loading={folderBusy} onClick={() => void scanFolder(folder.id)}>扫描目录</Button></Space>)}
+    </Space>}
     <Button onClick={() => void refresh()} disabled={loading}>刷新</Button>
     {loading && <Spin aria-label="正在加载待整理文件" />}
     {error && !confirmOpen && <Alert type="error" showIcon message={error} />}

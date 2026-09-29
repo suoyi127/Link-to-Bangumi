@@ -2,12 +2,14 @@
 #include "anime_vault/api/MediaService.hpp"
 #include "anime_vault/infrastructure/database/SqliteDatabase.hpp"
 #include "anime_vault/infrastructure/database/SqliteMediaRepository.hpp"
+#include "anime_vault/services/MikanEnricher.hpp"
 
 #include <drogon/drogon.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <json/json.h>
 #include <sqlite3.h>
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <random>
@@ -20,6 +22,7 @@ namespace {
 struct OfflineTransport final : anime_vault::BangumiTransport {
     std::optional<Response> subjectResponse;
     void search(std::string, Completion completion) override { completion(std::nullopt, "offline"); }
+    void searchAliases(std::string, Completion completion) override { completion(std::nullopt, "offline"); }
     void subject(std::int64_t, Completion completion) override {
         completion(subjectResponse, subjectResponse ? "" : "offline");
     }
@@ -123,7 +126,16 @@ TEST_CASE("organization execution route confirms a disposable import plan") {
         media.sourceModifiedAt, utf8(target), "hardlink", "2099-01-01T00:00:00Z", "pending", "preview-http"});
     MediaService mediaService(repository, qb, library, imported);
     anime_vault::OrganizationService organization(repository, qb, imported, library);
-    registerMediaEndpoints(mediaService, organization);
+    std::atomic<int> mikanCalls{0};
+    auto mikanEnricher = std::make_shared<anime_vault::MikanEnricher>(repository,
+        [&mikanCalls](anime_vault::MikanEnricher::CatalogCompletion completion) {
+            ++mikanCalls;
+            std::thread([completion = std::move(completion)]() mutable {
+                std::this_thread::sleep_for(std::chrono::milliseconds(60));
+                completion({1, 1, {{"中文标题", "Roman Title", 3}}, ""});
+            }).detach();
+        });
+    registerMediaEndpoints(mediaService, organization, {}, mikanEnricher);
     OfflineTransport offlineTransport;
     auto bangumi = std::make_shared<anime_vault::BangumiService>(repository, offlineTransport);
     registerAnimeEndpoints(repository, bangumi);
@@ -158,6 +170,37 @@ TEST_CASE("organization execution route confirms a disposable import plan") {
     const auto invalidOrigin = inboxGet("/api/inbox?origin=invalid");
     REQUIRE(invalidOrigin->statusCode() == drogon::k400BadRequest);
     REQUIRE((*invalidOrigin->getJsonObject())["error"]["code"].asString() == "invalid_origin");
+    auto importScanRequest = drogon::HttpRequest::newHttpRequest();
+    importScanRequest->setMethod(drogon::Post);
+    importScanRequest->setPath("/api/imports/scan");
+    const auto [importScanResult, importScanResponse] = client->sendRequest(importScanRequest);
+    REQUIRE(importScanResult == drogon::ReqResult::Ok);
+    REQUIRE(importScanResponse->statusCode() == drogon::k201Created);
+    REQUIRE(mikanCalls == 1);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1100));
+    const auto folder = root / "selected";
+    fs::create_directory(folder);
+    { std::ofstream file(folder / "Roman Title - 01.mkv", std::ios::binary); file << "folder episode"; }
+    Json::Value folderBody;
+    folderBody["path"] = utf8(folder);
+    auto folderRequest = drogon::HttpRequest::newHttpJsonRequest(folderBody);
+    folderRequest->setMethod(drogon::Post);
+    folderRequest->setPath("/api/folder-imports");
+    const auto [folderResult, folderResponse] = client->sendRequest(folderRequest);
+    REQUIRE(folderResult == drogon::ReqResult::Ok);
+    REQUIRE(folderResponse->statusCode() == drogon::k201Created);
+    const auto folderId = (*folderResponse->getJsonObject())["id"].asInt64();
+    REQUIRE(folderId > 0);
+    REQUIRE((*inboxGet("/api/folder-imports")->getJsonObject())["items"].size() == 1);
+    auto folderScanRequest = drogon::HttpRequest::newHttpRequest();
+    folderScanRequest->setMethod(drogon::Post);
+    folderScanRequest->setPath("/api/folder-imports/" + std::to_string(folderId) + "/scan");
+    const auto [folderScanResult, folderScanResponse] = client->sendRequest(folderScanRequest);
+    REQUIRE(folderScanResult == drogon::ReqResult::Ok);
+    REQUIRE(folderScanResponse->statusCode() == drogon::k201Created);
+    REQUIRE((*inboxGet("/api/inbox?origin=folder_import")->getJsonObject())["total"].asInt64() == 1);
+    const auto folderPage = inboxGet("/api/inbox?origin=folder_import");
+    REQUIRE((*folderPage->getJsonObject())["items"][0]["title"].asString() == "中文标题");
     REQUIRE((*inboxGet("/api/inbox?limit=101")->getJsonObject())["error"]["code"].asString() == "invalid_page");
     REQUIRE((*inboxGet("/api/inbox?offset=-1")->getJsonObject())["error"]["code"].asString() == "invalid_page");
     Json::Value correction;
@@ -180,7 +223,7 @@ TEST_CASE("organization execution route confirms a disposable import plan") {
     const auto [correctionResult, correctionResponse] = client->sendRequest(localCorrection);
     REQUIRE(correctionResult == drogon::ReqResult::Ok);
     REQUIRE(correctionResponse->statusCode() == drogon::k200OK);
-    REQUIRE(repository.listAnime().size() == 1);
+    REQUIRE(repository.listAnime().size() == 2);
     auto post = [&](const Json::Value& body) {
         auto request = drogon::HttpRequest::newHttpJsonRequest(body);
         request->setMethod(drogon::Post);
@@ -287,7 +330,7 @@ TEST_CASE("organization execution route confirms a disposable import plan") {
     const auto [listResult, listResponse] = client->sendRequest(listRequest);
     REQUIRE(listResult == drogon::ReqResult::Ok);
     REQUIRE(listResponse->statusCode() == drogon::k200OK);
-    REQUIRE((*listResponse->getJsonObject())["items"].size() == 2);
+    REQUIRE((*listResponse->getJsonObject())["items"].size() == 3);
     REQUIRE((*listResponse->getJsonObject())["nextOffset"].isNull());
     listRequest->setPath("/api/anime?limit=100&offset=0");
     const auto [firstResult, firstResponse] = client->sendRequest(listRequest);

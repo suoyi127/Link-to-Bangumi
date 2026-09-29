@@ -1,5 +1,6 @@
 #include "anime_vault/services/BangumiService.hpp"
 #include "anime_vault/repositories/MediaRepository.hpp"
+#include "anime_vault/services/TitleNormalization.hpp"
 
 #include <nlohmann/json.hpp>
 #include <algorithm>
@@ -74,7 +75,74 @@ BangumiSubject parseSubject(const nlohmann::json& item) {
             }
         }
     }
+    if (item.contains("infobox") && item["infobox"].is_array()) {
+        for (const auto& field : item["infobox"]) {
+            if (!field.is_object() || field.value("key", "") != "别名" || !field.contains("value")) continue;
+            const auto add = [&subject](const nlohmann::json& value) {
+                if (value.is_string()) subject.aliases.push_back(boundedString(value, 500));
+                else if (value.is_object() && value.contains("v") && value["v"].is_string())
+                    subject.aliases.push_back(boundedString(value["v"], 500));
+            };
+            if (field["value"].is_array()) {
+                for (const auto& value : field["value"]) {
+                    if (subject.aliases.size() >= 64) break;
+                    add(value);
+                }
+            } else add(field["value"]);
+        }
+    }
     return subject;
+}
+
+std::optional<std::int64_t> uniqueLegacyId(const std::string& body) {
+    if (body.empty() || body.size() > kMaxBody) throw std::invalid_argument("invalid alias response size");
+    const auto document = nlohmann::json::parse(body);
+    if (!document.is_object() || !document.contains("results") || !document["results"].is_number_integer())
+        throw std::invalid_argument("invalid alias response");
+    const auto count = document["results"].get<int>();
+    if (count < 0) throw std::invalid_argument("invalid alias count");
+    if (count > 1) return std::int64_t{-1};
+    if (count == 0) return std::nullopt;
+    if (!document.contains("list") || !document["list"].is_array() || document["list"].size() != 1 ||
+        !document["list"][0].contains("id") || !document["list"][0]["id"].is_number_integer())
+        throw std::invalid_argument("invalid alias result");
+    const auto id = document["list"][0]["id"].get<std::int64_t>();
+    if (id <= 0) throw std::invalid_argument("invalid alias ID");
+    return id;
+}
+
+bool verifiedAlias(const std::string& title, const BangumiSubject& subject) {
+    const auto key = normalizeTitle(title);
+    if (key.size() < 12) return false;
+    const auto matches = [&key](const std::string& candidate) {
+        const auto alias = normalizeTitle(candidate);
+        if (alias == key) return true;
+        if (alias.size() >= key.size() && std::equal(key.begin(), key.end(), alias.begin())) return true;
+        // 罗马音转写中的一两个字母差异可以接受，但短名称不能模糊绑定。
+        if (key.size() < 24 || alias.size() + 2 < key.size() || key.size() + 2 < alias.size()) return false;
+        std::vector<std::size_t> previous(alias.size() + 1), current(alias.size() + 1);
+        for (std::size_t j = 0; j <= alias.size(); ++j) previous[j] = j;
+        for (std::size_t i = 1; i <= key.size(); ++i) {
+            current[0] = i;
+            for (std::size_t j = 1; j <= alias.size(); ++j)
+                current[j] = std::min({previous[j] + 1, current[j - 1] + 1,
+                    previous[j - 1] + (key[i - 1] == alias[j - 1] ? 0u : 1u)});
+            std::swap(previous, current);
+        }
+        return previous.back() <= 2;
+    };
+    if (matches(subject.name) || matches(subject.nameCn)) return true;
+    return std::any_of(subject.aliases.begin(), subject.aliases.end(), matches);
+}
+
+std::string distinctivePrefix(const std::string& title) {
+    if (title.size() < 30 || !std::all_of(title.begin(), title.end(),
+            [](unsigned char ch) { return ch < 0x80; })) return {};
+    std::size_t words = 0;
+    for (std::size_t i = 0; i < title.size(); ++i) {
+        if (title[i] == ' ' && ++words == 6 && i >= 24) return title.substr(0, i);
+    }
+    return {};
 }
 
 std::vector<BangumiSubject> parseSearchBody(const std::string& body) {
@@ -204,6 +272,44 @@ void BangumiService::subject(std::int64_t id, SubjectCompletion completion) {
             } catch (...) { finish({std::nullopt, "bangumi_bad_response"}); }
         });
     } catch (...) { finish({std::nullopt, "bangumi_unavailable"}); }
+}
+
+void BangumiService::aliasSubject(std::string title, SubjectCompletion completion) {
+    try { (void)normalizeQuery(title); }
+    catch (...) { completion({std::nullopt, "bangumi_invalid_query"}); return; }
+    auto self = shared_from_this();
+    auto finish = once<BangumiSubjectResult>(std::move(completion));
+    auto attempt = std::make_shared<std::function<void(std::string, bool)>>();
+    *attempt = [self, title, finish, weak = std::weak_ptr<std::function<void(std::string, bool)>>(attempt)]
+        (std::string keyword, bool retry) {
+        if (!self->allowRequest(self->clock_())) { finish({std::nullopt, "bangumi_rate_limited"}); return; }
+        try {
+            const auto next = weak.lock();
+            self->transport_.searchAliases(keyword,
+                [self, title, finish, next, retry](std::optional<BangumiTransport::Response> response, std::string) {
+                if (!response || retryable(response->status)) {
+                    finish({std::nullopt, "bangumi_unavailable"}); return;
+                }
+                if (response->status != 200) { finish({std::nullopt, "bangumi_http_error"}); return; }
+                std::optional<std::int64_t> id;
+                try { id = uniqueLegacyId(response->body); }
+                catch (...) { finish({std::nullopt, "bangumi_bad_response"}); return; }
+                if (id && *id < 0) { finish({std::nullopt, ""}); return; }
+                if (!id) {
+                    const auto prefix = retry ? distinctivePrefix(title) : std::string{};
+                    if (!prefix.empty() && prefix != title) {
+                        if (next) { (*next)(prefix, false); return; }
+                    }
+                    finish({std::nullopt, ""}); return;
+                }
+                self->subject(*id, [title, finish](BangumiSubjectResult result) {
+                    if (result.subject && !verifiedAlias(title, *result.subject)) result.subject.reset();
+                    finish(std::move(result));
+                });
+            });
+        } catch (...) { finish({std::nullopt, "bangumi_unavailable"}); }
+    };
+    (*attempt)(std::move(title), true);
 }
 
 } // namespace anime_vault

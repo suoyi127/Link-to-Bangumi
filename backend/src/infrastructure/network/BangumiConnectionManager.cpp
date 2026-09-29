@@ -104,6 +104,15 @@ void BangumiConnectionManager::search(std::string keyword, BangumiTransport::Com
     });
 }
 
+void BangumiConnectionManager::searchAliases(std::string keyword, BangumiTransport::Completion completion) {
+    std::shared_ptr<Active> snapshot;
+    { std::lock_guard lock(mutex_); snapshot = active_; }
+    if (!snapshot) { completion(std::nullopt, "bangumi_unconfigured"); return; }
+    snapshot->api->searchAliases(std::move(keyword), [snapshot, completion = std::move(completion)](auto response, auto error) mutable {
+        completion(std::move(response), std::move(error));
+    });
+}
+
 void BangumiConnectionManager::subject(std::int64_t id, BangumiTransport::Completion completion) {
     std::shared_ptr<Active> snapshot;
     { std::lock_guard lock(mutex_); snapshot = active_; }

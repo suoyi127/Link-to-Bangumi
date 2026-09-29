@@ -15,6 +15,7 @@ namespace fs = std::filesystem;
 namespace {
 struct OfflineTransport final : anime_vault::BangumiTransport {
     void search(std::string, Completion done) override { done(std::nullopt, "offline"); }
+    void searchAliases(std::string, Completion done) override { done(std::nullopt, "offline"); }
     void subject(std::int64_t, Completion done) override { done(std::nullopt, "offline"); }
 };
 }

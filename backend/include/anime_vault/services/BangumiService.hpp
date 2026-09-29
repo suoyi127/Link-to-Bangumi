@@ -42,6 +42,7 @@ public:
     BangumiService(MediaRepository& repository, BangumiTransport& transport,
                    Clock clock = [] { return std::chrono::system_clock::now(); });
     void search(BangumiMatchQuery query, SearchCompletion completion);
+    void aliasSubject(std::string title, SubjectCompletion completion);
     void subject(std::int64_t id, SubjectCompletion completion);
 private:
     bool allowRequest(std::chrono::system_clock::time_point now);

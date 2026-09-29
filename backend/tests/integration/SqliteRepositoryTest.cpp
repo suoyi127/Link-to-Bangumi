@@ -17,6 +17,37 @@ TEST_CASE("inbox continuation never exceeds the accepted offset range") {
     REQUIRE_FALSE(boundedInboxNextOffset(0, 100, false));
 }
 
+TEST_CASE("folder imports have a separate inbox origin") {
+    const auto path = std::filesystem::temp_directory_path() /
+        ("anime-vault-folder-origin-" + std::to_string(std::random_device{}()) + ".db");
+    struct Cleanup { std::filesystem::path path; ~Cleanup() { std::error_code ec; std::filesystem::remove(path, ec); } } cleanup{path};
+    SqliteDatabase db(path);
+    db.migrate();
+    SqliteMediaRepository repo(db);
+    REQUIRE(repo.listInboxPage(0, 100, "folder_import").total == 0);
+    const auto first = repo.addFolderImport("D:/folder-one");
+    const auto second = repo.addFolderImport("D:/folder-two");
+    REQUIRE(first.id != second.id);
+    REQUIRE(repo.addFolderImport("D:/folder-one").id == first.id);
+    REQUIRE(repo.listFolderImports().size() == 2);
+    const auto scan = repo.createScan({0, "folder_import", "completed"});
+    MediaRecord one{0, scan, "D:/folder-one/01.mkv", "01.mkv", "01", "normal", 10, "inbox", 1};
+    one.origin = "folder_import";
+    one.folderImportId = first.id;
+    const auto oneId = repo.insertMedia(one);
+    MediaRecord two{0, scan, "D:/folder-two/02.mkv", "02.mkv", "02", "normal", 10, "inbox", 1};
+    two.origin = "folder_import";
+    two.folderImportId = second.id;
+    const auto twoId = repo.insertMedia(two);
+    REQUIRE(repo.getMedia(oneId)->origin == "folder_import");
+    REQUIRE(repo.getMedia(twoId)->folderImportId == second.id);
+    REQUIRE(repo.listInboxPage(0, 100, "folder_import").total == 2);
+    REQUIRE(repo.listInboxPage(0, 100, "external_import").total == 0);
+    repo.markMissingMedia("folder_import", {}, first.id);
+    REQUIRE(repo.getMedia(oneId)->status == "missing");
+    REQUIRE(repo.getMedia(twoId)->status == "inbox");
+}
+
 TEST_CASE("scan and inbox records survive reopening a migrated database") {
     const auto path = std::filesystem::temp_directory_path() /
         ("anime-vault-sqlite-" + std::to_string(std::random_device{}()) + ".db");
@@ -24,7 +55,7 @@ TEST_CASE("scan and inbox records survive reopening a migrated database") {
     {
         SqliteDatabase db(path);
         db.migrate();
-        REQUIRE(db.schemaVersion() == 6);
+        REQUIRE(db.schemaVersion() == 7);
         SqliteMediaRepository repo(db);
         const auto scanId = repo.createScan({0, "D:/sample", "running", 1, 0, 0, ""});
         const auto mediaId = repo.insertMedia({0, scanId, "D:/sample/01.mkv", "01.mkv", "1.5", "normal", 1234, "inbox", 0.9});
@@ -77,7 +108,7 @@ TEST_CASE("scan and inbox records survive reopening a migrated database") {
     {
         SqliteDatabase db(path);
         db.migrate();
-        REQUIRE(db.schemaVersion() == 6);
+        REQUIRE(db.schemaVersion() == 7);
         SqliteMediaRepository repo(db);
         const auto scans = repo.listScans();
         const auto media = repo.listInbox();
@@ -106,9 +137,12 @@ TEST_CASE("schema migration six backfills parsed titles from existing correction
         "VALUES(1,'D:/old.mkv','old.mkv','1','normal',1,'inbox',1.0,'Previously Corrected');"
         "INSERT INTO media_file(scan_id,source_path,filename,episode_number,episode_type,size_bytes,status,confidence) "
         "VALUES(1,'D:/unparsed.mkv','unparsed.mkv','','unknown',1,'inbox',0.0);"
+        "DROP INDEX media_file_folder_import;"
+        "ALTER TABLE media_file DROP COLUMN folder_import_id;"
+        "DROP TABLE folder_import;"
         "ALTER TABLE media_file DROP COLUMN parsed_title; PRAGMA user_version=5;", nullptr, nullptr, nullptr) == SQLITE_OK);
     db.migrate();
-    REQUIRE(db.schemaVersion() == 6);
+    REQUIRE(db.schemaVersion() == 7);
     SqliteMediaRepository repo(db);
     const auto media = repo.getMedia(1);
     REQUIRE(media);

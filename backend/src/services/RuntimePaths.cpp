@@ -52,12 +52,12 @@ fs::path defaultDataDirectory() {
 }
 
 fs::path defaultMediaDirectory() {
-    auto profile = environmentPath("USERPROFILE", L"USERPROFILE");
-#ifndef _WIN32
-    if (profile.empty()) profile = environmentPath("HOME", L"HOME");
-#endif
-    if (!profile.empty()) return profile / "Videos" / "AnimeVault";
-    return defaultDataDirectory() / "Media";
+    const auto root = environmentPath("ANIME_VAULT_HOME", L"ANIME_VAULT_HOME");
+    return defaultMediaDirectory(root.empty() ? fs::current_path() : root);
+}
+
+fs::path defaultMediaDirectory(const fs::path& applicationRoot) {
+    return fs::absolute(applicationRoot).lexically_normal() / "Media";
 }
 
 RuntimePaths resolveRuntimePaths(fs::path data, fs::path imported, fs::path library,

@@ -61,6 +61,79 @@ TEST_CASE("download target validation pins the original qB source root") {
     }
 }
 
+TEST_CASE("registered folder scans stay separate and reconcile only their own missing files") {
+    namespace fs = std::filesystem;
+    const auto root = fs::temp_directory_path() /
+        ("anime-vault-folder-scan-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    struct Cleanup { fs::path path; ~Cleanup() { std::error_code error; fs::remove_all(path, error); } } cleanup{root};
+    const auto source = root / "qb", imported = root / "import", library = root / "library";
+    const auto first = root / "first", second = root / "second";
+    for (const auto& path : {source, imported, library, first, second}) fs::create_directories(path);
+    const auto pathText = [](const fs::path& path) {
+        const auto bytes = path.u8string();
+        return std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+    };
+    const auto firstVideo = first / "First Show - 01.mkv";
+    const auto secondVideo = second / "Second Show - 02.mkv";
+    { std::ofstream file(firstVideo); file << "first"; }
+    { std::ofstream file(secondVideo); file << "second"; }
+    anime_vault::SqliteDatabase db(root / "vault.db");
+    db.migrate();
+    anime_vault::SqliteMediaRepository repository(db);
+    anime_vault::api::MediaService service(repository, source, library, imported);
+    const auto folderOne = service.addFolderImport(pathText(first));
+    const auto folderTwo = service.addFolderImport(pathText(second));
+    REQUIRE(service.listFolderImports().size() == 2);
+    fs::create_directory(first / "nested");
+    REQUIRE_THROWS_AS(service.addFolderImport(pathText(first / "nested")), anime_vault::api::ApiError);
+    REQUIRE_THROWS_AS(service.addFolderImport(pathText(imported)), anime_vault::api::ApiError);
+    REQUIRE(service.createFolderScan(folderOne.id).processedCount == 1);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1100));
+    REQUIRE(service.createFolderScan(folderTwo.id).processedCount == 1);
+    REQUIRE(service.listInboxPage(0, 100, "folder_import").total == 2);
+    fs::remove(firstVideo);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1100));
+    REQUIRE(service.createFolderScan(folderOne.id).status == "completed");
+    const auto remaining = service.listInboxPage(0, 100, "folder_import");
+    REQUIRE(remaining.total == 1);
+    REQUIRE(remaining.items.front().sourcePath == pathText(fs::canonical(secondVideo)));
+    REQUIRE_NOTHROW(service.preview(remaining.items.front().id));
+    REQUIRE(fs::exists(secondVideo));
+}
+
+TEST_CASE("folder scan creates a scrapeable anime for a titled video without an episode") {
+    namespace fs = std::filesystem;
+    const auto root = fs::temp_directory_path() /
+        ("anime-vault-title-only-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    struct Cleanup { fs::path path; ~Cleanup() { std::error_code error; fs::remove_all(path, error); } } cleanup{root};
+    const auto source = root / "qb", imported = root / "import", library = root / "library", folder = root / "folder";
+    for (const auto& path : {source, imported, library, folder}) fs::create_directories(path);
+    { std::ofstream file(folder / fs::path(u8"进击的巨人.mp4")); file << "episode unknown"; }
+    { std::ofstream file(folder / "1731068423765.mp4"); file << "opaque filename"; }
+    anime_vault::SqliteDatabase db(root / "vault.db");
+    db.migrate();
+    anime_vault::SqliteMediaRepository repository(db);
+    anime_vault::api::MediaService service(repository, source, library, imported);
+    const auto folderId = service.addFolderImport([&] {
+        const auto bytes = folder.u8string();
+        return std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+    }()).id;
+    REQUIRE(service.createFolderScan(folderId).processedCount == 2);
+    const auto page = service.listInboxPage(0, 100, "folder_import");
+    REQUIRE(page.total == 2);
+    for (const auto& media : page.items) {
+        REQUIRE(media.episodeNumber.empty());
+        if (media.filename == "1731068423765.mp4") {
+            REQUIRE_FALSE(media.animeId);
+            REQUIRE(media.title.empty());
+        } else {
+            REQUIRE(media.animeId);
+            REQUIRE(media.title == "进击的巨人");
+            REQUIRE(repository.getAnime(*media.animeId)->displayTitle == "进击的巨人");
+        }
+    }
+}
+
 #ifdef ANIME_VAULT_STANDALONE_TEST_MAIN
 #include <catch2/catch_session.hpp>
 int main(int argc, char* argv[]) { return Catch::Session().run(argc, argv); }

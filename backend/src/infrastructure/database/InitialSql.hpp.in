@@ -5,3 +5,4 @@ inline constexpr const char* kSourceSnapshotSql = R"ANIME_VAULT_SQL(@ANIME_VAULT
 inline constexpr const char* kMediaOriginSql = R"ANIME_VAULT_SQL(@ANIME_VAULT_MEDIA_ORIGIN_SQL@)ANIME_VAULT_SQL";
 inline constexpr const char* kOrganizationExecutionSql = R"ANIME_VAULT_SQL(@ANIME_VAULT_ORGANIZATION_EXECUTION_SQL@)ANIME_VAULT_SQL";
 inline constexpr const char* kParsedTitleSql = R"ANIME_VAULT_SQL(@ANIME_VAULT_PARSED_TITLE_SQL@)ANIME_VAULT_SQL";
+inline constexpr const char* kFolderImportSql = R"ANIME_VAULT_SQL(@ANIME_VAULT_FOLDER_IMPORT_SQL@)ANIME_VAULT_SQL";

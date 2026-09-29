@@ -1,4 +1,4 @@
-import type { Anime, AnimeDetail, AuditLog, BangumiConfig, BangumiConnectionTest, BangumiSearch, Execution, InboxOrigin, InboxPage, Media, MetadataSync, MikanFeeds, Page, Preferences, Preview, QbAction, QbConfig, QbConfigDraft, QbMikanRule, QbStatus, Scan, Settings } from './types'
+import type { Anime, AnimeDetail, AuditLog, BangumiConfig, BangumiConnectionTest, BangumiSearch, Execution, FolderImport, InboxOrigin, InboxPage, Media, MetadataSync, MikanFeeds, Page, Preferences, Preview, QbAction, QbConfig, QbConfigDraft, QbMikanRule, QbStatus, Scan, Settings } from './types'
 
 export class ApiError extends Error {
   constructor(public code: string, public status: number, public requestId?: string) {
@@ -37,14 +37,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 const pageQuery = (limit: number, offset: number) => `?limit=${limit}&offset=${offset}`
 const json = (body: object): RequestInit => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
 export const getScans = (limit = 10, offset = 0, signal?: AbortSignal) => request<Page<Scan>>(`/api/scans${pageQuery(limit, offset)}`, { signal })
-async function startScan(path: string) {
+async function startScan(path: string, timeoutMs = 20_000) {
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 20_000)
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
   try { return await request<Scan>(path, { method: 'POST', signal: controller.signal }) }
   finally { clearTimeout(timer) }
 }
 export const startSourceScan = () => startScan('/api/scans')
 export const startImportScan = () => startScan('/api/imports/scan')
+export const getFolderImports = () => request<{ items: FolderImport[] }>('/api/folder-imports')
+export const addFolderImport = (path: string) => request<FolderImport>('/api/folder-imports', json({ path }))
+export const scanFolderImport = (id: number) => startScan(`/api/folder-imports/${id}/scan`, 120_000)
 export const getInbox = (limit = 100, offset = 0, signal?: AbortSignal, origin?: InboxOrigin) => request<InboxPage>(`/api/inbox${pageQuery(limit, offset)}${origin ? `&origin=${encodeURIComponent(origin)}` : ''}`, { signal })
 export const correctMedia = (id: number, correction: Pick<Media, 'title' | 'season' | 'episodeNumber' | 'episodeType'>) => request<Media>(`/api/inbox/${id}/parse`, json(correction))
 export const getAnime = (limit = 50, offset = 0, signal?: AbortSignal) => request<Page<Anime>>(`/api/anime${pageQuery(limit, offset)}`, { signal })

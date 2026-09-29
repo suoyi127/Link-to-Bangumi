@@ -33,7 +33,7 @@ TEST_CASE("confirmed organization is durable, idempotent and provenance-aware") 
     const auto modified = fs::last_write_time(source);
     SqliteDatabase db(root / "test.db");
     db.migrate();
-    REQUIRE(db.schemaVersion() == 6);
+    REQUIRE(db.schemaVersion() == 7);
     SqliteMediaRepository repo(db);
     const auto scan = repo.createScan({0, "qb_download", "completed"});
     MediaRecord media{0, scan, utf8(source), utf8(source.filename()), "1", "normal",
@@ -151,4 +151,35 @@ TEST_CASE("confirmed organization is durable, idempotent and provenance-aware") 
     REQUIRE(service.execute({importPlanId, "execution-import", true, false}).status == "completed");
     REQUIRE(fs::exists(importSource));
     REQUIRE(fs::exists(importTarget));
+}
+
+TEST_CASE("folder-import media organizes from its registered root without qB confirmation") {
+    const auto root = fs::canonical(fs::temp_directory_path()) /
+        ("anime-vault-folder-organize-" + std::to_string(std::random_device{}()));
+    struct Cleanup { fs::path path; ~Cleanup() { std::error_code ec; fs::remove_all(path, ec); } } cleanup{root};
+    const auto qb = root / "qb", imported = root / "import", folder = root / "folder", library = root / "library";
+    for (const auto& path : {qb, imported, folder, library}) fs::create_directories(path);
+    const auto source = folder / "Show 01.mkv";
+    { std::ofstream file(source); file << "episode"; }
+    SqliteDatabase db(root / "vault.db");
+    db.migrate();
+    SqliteMediaRepository repo(db);
+    const auto registration = repo.addFolderImport(utf8(fs::canonical(folder)));
+    const auto scan = repo.createScan({0, "folder_import", "completed"});
+    MediaRecord media{0, scan, utf8(fs::canonical(source)), utf8(source.filename()), "1", "normal",
+                      static_cast<std::int64_t>(fs::file_size(source)), "inbox", 1};
+    media.origin = "folder_import";
+    media.folderImportId = registration.id;
+    media.sourceModifiedAt = std::to_string(fs::last_write_time(source).time_since_epoch().count());
+    const auto id = repo.insertMedia(media);
+    const auto target = library / "Show" / "Show [01].mkv";
+    REQUIRE(fs::canonical(library) == library);
+    REQUIRE(fs::canonical(folder) == folder);
+    const auto plan = repo.insertPlan({0, id, media.sourcePath, media.sizeBytes, media.sourceModifiedAt,
+        utf8(target), "hardlink", "2099-01-01T00:00:00Z", "pending", "folder-preview"});
+    OrganizationService service(repo, qb, imported, library);
+    const auto result = service.execute({plan, "folder-execution", true, false});
+    REQUIRE(result.status == "completed");
+    REQUIRE(fs::exists(source));
+    REQUIRE(fs::exists(target));
 }

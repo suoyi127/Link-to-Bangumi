@@ -1,6 +1,6 @@
 namespace AnimeVault.Desktop;
 
-internal sealed record DesktopLayout(string BackendExecutable, string WebDirectory, string ProfileDirectory)
+internal sealed record DesktopLayout(string ApplicationRoot, string BackendExecutable, string WebDirectory, string ProfileDirectory)
 {
     internal static DesktopLayout Resolve(string baseDirectory)
     {
@@ -12,6 +12,6 @@ internal sealed record DesktopLayout(string BackendExecutable, string WebDirecto
         if (!File.Exists(index)) throw new FileNotFoundException("未找到前端页面；请重新安装 Anime Vault。", index);
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         if (string.IsNullOrWhiteSpace(localAppData)) throw new InvalidOperationException("无法定位用户数据目录。");
-        return new DesktopLayout(backend, web, Path.Combine(localAppData, "AnimeVault", "WebView2"));
+        return new DesktopLayout(root, backend, web, Path.Combine(localAppData, "AnimeVault", "WebView2"));
     }
 }

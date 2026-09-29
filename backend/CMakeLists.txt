@@ -7,13 +7,15 @@ file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/003_source_snapshot.sql" ANIME
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/004_media_origin.sql" ANIME_VAULT_MEDIA_ORIGIN_SQL)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/005_organization_execution.sql" ANIME_VAULT_ORGANIZATION_EXECUTION_SQL)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/006_parsed_title.sql" ANIME_VAULT_PARSED_TITLE_SQL)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/007_folder_import.sql" ANIME_VAULT_FOLDER_IMPORT_SQL)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/migrations/001_initial.sql"
   "${CMAKE_CURRENT_SOURCE_DIR}/migrations/002_media_correction.sql"
   "${CMAKE_CURRENT_SOURCE_DIR}/migrations/003_source_snapshot.sql"
   "${CMAKE_CURRENT_SOURCE_DIR}/migrations/004_media_origin.sql"
   "${CMAKE_CURRENT_SOURCE_DIR}/migrations/005_organization_execution.sql"
-  "${CMAKE_CURRENT_SOURCE_DIR}/migrations/006_parsed_title.sql")
+  "${CMAKE_CURRENT_SOURCE_DIR}/migrations/006_parsed_title.sql"
+  "${CMAKE_CURRENT_SOURCE_DIR}/migrations/007_folder_import.sql")
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/infrastructure/database/InitialSql.hpp.in"
   "${CMAKE_CURRENT_BINARY_DIR}/generated/InitialSql.hpp" @ONLY)
 

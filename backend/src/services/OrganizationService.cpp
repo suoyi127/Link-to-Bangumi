@@ -52,10 +52,10 @@ ExecuteOrganizationResult OrganizationService::execute(const ExecuteOrganization
     if (!plan) throw OrganizationServiceError("plan_not_found");
     const auto media = repository_.getMedia(plan->mediaFileId);
     if (!media) throw OrganizationServiceError("media_not_found");
-    // 两种来源使用各自的根目录；qB 源还要求用户显式确认下载已经完成。
+    // 各来源使用独立根目录；只有 qB 源要求确认下载已经完成。
     if (media->origin == "qb_download") {
         if (!request.qbDownloadComplete) throw OrganizationServiceError("qb_completion_required");
-    } else if (media->origin != "external_import") {
+    } else if (media->origin != "external_import" && media->origin != "folder_import") {
         throw OrganizationServiceError("invalid_origin");
     }
     if (plan->sourcePath != media->sourcePath || plan->sourceSize != media->sizeBytes ||
@@ -88,7 +88,17 @@ ExecuteOrganizationResult OrganizationService::execute(const ExecuteOrganization
         throw OrganizationServiceError("invalid_plan");
     }
     try {
-        const auto& sourceRoot = media->origin == "external_import" ? importRoot_ : qbRoot_;
+        fs::path sourceRoot = media->origin == "external_import" ? importRoot_ : qbRoot_;
+        if (media->origin == "folder_import") {
+            const auto folder = media->folderImportId
+                ? repository_.getFolderImport(*media->folderImportId) : std::nullopt;
+            if (!folder) throw OrganizationServiceError("invalid_origin");
+            sourceRoot = pathFromUtf8(folder->rootPath);
+            std::error_code error;
+            if (!fs::is_directory(sourceRoot, error) || error ||
+                fs::canonical(sourceRoot, error) != sourceRoot || error)
+                throw OrganizationServiceError("invalid_root");
+        }
         OrganizationExecutor executor(sourceRoot, libraryRoot_);
         const auto result = executor.execute({sourcePath, targetPath,
             static_cast<std::uintmax_t>(plan->sourceSize),

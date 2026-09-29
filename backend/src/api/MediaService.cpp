@@ -17,6 +17,10 @@ std::string utf8(const fs::path& path) {
     const auto bytes = path.u8string();
     return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
 }
+fs::path fromUtf8(const std::string& value) {
+    const auto* bytes = reinterpret_cast<const char8_t*>(value.data());
+    return fs::path(std::u8string_view(bytes, value.size()));
+}
 bool within(const fs::path& root, const fs::path& candidate) {
     auto parent = root.begin();
     auto child = candidate.begin();
@@ -160,6 +164,59 @@ ScanRecord MediaService::createImportScan(std::chrono::seconds stableFor) {
     return scanFrom(*importScanner_, "external_import", stableFor);
 }
 
+FolderImportRecord MediaService::addFolderImport(const std::string& path) {
+    const std::lock_guard lock(mutex_);
+    if (path.empty() || path.size() > 2048 || path.find('\0') != std::string::npos)
+        throw ApiError(400, "invalid_folder_path", "invalid folder path");
+    fs::path requested;
+    try { requested = fromUtf8(path); }
+    catch (const fs::filesystem_error&) {
+        throw ApiError(400, "invalid_folder_path", "invalid UTF-8 folder path");
+    }
+    if (!requested.is_absolute() || requested == requested.root_path())
+        throw ApiError(400, "invalid_folder_path", "absolute non-root folder required");
+    std::error_code error;
+    if (!fs::is_directory(requested, error) || error)
+        throw ApiError(409, "folder_unavailable", "folder is unavailable");
+    const auto root = fs::canonical(requested, error);
+    if (error || root == root.root_path())
+        throw ApiError(400, "invalid_folder_path", "invalid folder root");
+    const auto encoded = utf8(root);
+    if (encoded.size() > 2048) throw ApiError(400, "invalid_folder_path", "folder path is too long");
+    const auto folders = repository_.listFolderImports();
+    for (const auto& folder : folders) {
+        const auto existing = fromUtf8(folder.rootPath);
+        if (existing == root) return folder;
+        if (within(existing, root) || within(root, existing))
+            throw ApiError(409, "overlapping_roots", "folder imports must be separate");
+    }
+    for (const auto& protectedRoot : {sourceRequestedRoot_, importRoot_, libraryRoot_}) {
+        const auto resolved = canonicalConfiguredPath(protectedRoot);
+        if (within(resolved, root) || within(root, resolved))
+            throw ApiError(409, "overlapping_roots", "folder overlaps a managed source");
+    }
+    return repository_.addFolderImport(encoded);
+}
+
+std::vector<FolderImportRecord> MediaService::listFolderImports() const {
+    const std::lock_guard lock(mutex_);
+    return repository_.listFolderImports();
+}
+
+ScanRecord MediaService::createFolderScan(std::int64_t id) {
+    const std::lock_guard lock(mutex_);
+    const auto folder = repository_.getFolderImport(id);
+    if (!folder) throw ApiError(404, "folder_import_not_found", "folder import not found");
+    const auto root = fromUtf8(folder->rootPath);
+    std::error_code error;
+    if (!fs::is_directory(root, error) || error || fs::canonical(root, error) != root || error)
+        throw ApiError(409, "folder_unavailable", "folder import root is unavailable or changed");
+    enforceRateLimit();
+    DirectoryScanner scanner(root);
+    // 用户显式选择已有目录时立即读取，后续整理仍会核对文件大小与修改时间。
+    return scanFrom(scanner, "folder_import", std::chrono::seconds{0}, id);
+}
+
 void MediaService::validateSourceRoot() const {
     std::error_code error;
     const auto currentRoot = fs::canonical(sourceRequestedRoot_, error);
@@ -179,7 +236,8 @@ void MediaService::enforceRateLimit() {
 }
 
 ScanRecord MediaService::scanFrom(DirectoryScanner& scanner, const std::string& origin,
-                                  std::chrono::seconds stableFor) {
+                                  std::chrono::seconds stableFor,
+                                  std::optional<std::int64_t> folderImportId) {
     ScanRecord scan{0, origin, "running"};
     scan.id = repository_.createScan(scan);
     try {
@@ -199,9 +257,17 @@ ScanRecord MediaService::scanFrom(DirectoryScanner& scanner, const std::string& 
             media.confidence = parsed.confidence;
             media.sourceModifiedAt = std::to_string(file.modifiedAt.time_since_epoch().count());
             media.origin = origin;
+            media.folderImportId = folderImportId;
             const auto mediaId = repository_.insertMedia(media);
             const auto stored = repository_.getMedia(mediaId);
-            if (stored && stored->title.empty() && !parsed.title.empty() && parsed.episode) {
+            const bool titleOnlyFolderMedia = origin == "folder_import" && !parsed.episode &&
+                parsed.title.size() <= 200 &&
+                std::any_of(parsed.title.begin(), parsed.title.end(), [](unsigned char ch) {
+                    return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || ch >= 0x80;
+                });
+            // 无集数的命名文件仍可刮削番剧；集数保持空白，不自动猜测或整理。
+            if (stored && stored->title.empty() && !parsed.title.empty() &&
+                (parsed.episode || titleOnlyFolderMedia)) {
                 repository_.updateMediaCorrection(mediaId,
                     MediaCorrection{parsed.title,
                         parsed.season ? std::to_string(*parsed.season) : "",
@@ -213,7 +279,7 @@ ScanRecord MediaService::scanFrom(DirectoryScanner& scanner, const std::string& 
         // Reconcile against every observed video, including files not yet stable enough to import.
         std::vector<std::string> observedPaths;
         for (const auto& path : scanner.observedPaths()) observedPaths.push_back(utf8(path));
-        repository_.markMissingMedia(origin, observedPaths);
+        repository_.markMissingMedia(origin, observedPaths, folderImportId);
         scan.status = "completed";
     } catch (const std::exception& error) {
         scan.status = "failed";
@@ -289,7 +355,17 @@ PreviewResponse MediaService::preview(std::int64_t id, const std::string& operat
     if (!fs::is_regular_file(source) || fs::is_symlink(source))
         throw ApiError(409, "source_changed", "source missing or replaced");
     const auto canonical = fs::canonical(source);
-    const auto& expectedRoot = media->origin == "external_import" ? importRoot_ : sourceRoot_;
+    fs::path expectedRoot = media->origin == "external_import" ? importRoot_ : sourceRoot_;
+    if (media->origin == "folder_import") {
+        const auto folder = media->folderImportId
+            ? repository_.getFolderImport(*media->folderImportId) : std::nullopt;
+        if (!folder) throw ApiError(409, "folder_import_not_found", "folder import is unavailable");
+        expectedRoot = fromUtf8(folder->rootPath);
+        std::error_code error;
+        if (!fs::is_directory(expectedRoot, error) || error ||
+            fs::canonical(expectedRoot, error) != expectedRoot || error)
+            throw ApiError(409, "folder_unavailable", "folder import root changed");
+    }
     if (!within(fs::weakly_canonical(expectedRoot), canonical) || canonical != source)
         throw ApiError(409, "source_outside_root", "source is outside configured root");
     const auto size = fs::file_size(source);

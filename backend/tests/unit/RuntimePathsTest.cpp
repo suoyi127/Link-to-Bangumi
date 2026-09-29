@@ -8,6 +8,11 @@
 
 namespace fs = std::filesystem;
 
+TEST_CASE("default media directory is anchored under the application root") {
+    const auto root = fs::temp_directory_path() / "anime-vault-project-root";
+    REQUIRE(anime_vault::defaultMediaDirectory(root) == root / "Media");
+}
+
 TEST_CASE("runtime paths leave qB unconfigured until the user selects a directory") {
     const auto root = fs::temp_directory_path() /
         ("anime-vault-runtime-" + std::to_string(std::random_device{}()));

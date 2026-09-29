@@ -37,6 +37,7 @@ try {
     $nodeExe = (Get-Command node.exe -ErrorAction Stop).Source
     $env:ANIME_VAULT_PORT = "$BackendPort"
     $env:ANIME_VAULT_DEV_BACKEND_PORT = "$BackendPort"
+    $env:ANIME_VAULT_HOME = $repo
     if (-not $env:ANIME_VAULT_BANGUMI_USER_AGENT) {
         $env:ANIME_VAULT_BANGUMI_USER_AGENT = 'suoyi127/Link-to-Bangumi/0.1 (Windows)'
     }

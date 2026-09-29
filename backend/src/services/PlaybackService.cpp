@@ -39,10 +39,20 @@ void PlaybackService::play(std::int64_t mediaId, const std::string& mpvExecutabl
     if (ec) throw PlaybackError("mpv_not_found");
 
     const bool organized = !media->libraryPath.empty();
-    const fs::path& allowedRoot = organized ? libraryRoot_ :
+    fs::path allowedRoot = organized ? libraryRoot_ :
         media->origin == "qb_download" ? sourceRoot_ : importRoot_;
-    if (!organized && media->origin != "qb_download" && media->origin != "external_import")
+    if (!organized && media->origin != "qb_download" && media->origin != "external_import" &&
+        media->origin != "folder_import")
         throw PlaybackError("playback_origin_invalid");
+    if (!organized && media->origin == "folder_import") {
+        const auto folder = media->folderImportId
+            ? repository_.getFolderImport(*media->folderImportId) : std::nullopt;
+        if (!folder) throw PlaybackError("playback_origin_invalid");
+        allowedRoot = fromUtf8(folder->rootPath);
+        if (!fs::is_directory(allowedRoot, ec) || ec ||
+            fs::canonical(allowedRoot, ec) != allowedRoot || ec)
+            throw PlaybackError("playback_path_outside_root");
+    }
     const auto path = fromUtf8(organized ? media->libraryPath : media->sourcePath);
     if (!path.is_absolute() || !fs::is_regular_file(path, ec))
         throw PlaybackError("playback_file_missing");

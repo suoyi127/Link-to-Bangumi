@@ -28,6 +28,21 @@ void AnimeEnricher::runOnce(std::size_t limit, Completion completion) {
         }
     } catch (...) { if (completion) completion(0); return; }
 
+    runPending(std::move(pending), std::move(completion));
+}
+
+void AnimeEnricher::runForScan(std::int64_t scanId, Completion completion) {
+    if (!bangumi_ || scanId <= 0) { if (completion) completion(0); return; }
+    std::vector<AnimeRecord> pending;
+    try {
+        for (const auto& item : repository_.listAnimeForScan(scanId))
+            if (!item.bangumiSubjectId && !item.locked && !item.displayTitle.empty())
+                pending.push_back(item);
+    } catch (...) { if (completion) completion(0); return; }
+    runPending(std::move(pending), std::move(completion));
+}
+
+void AnimeEnricher::runPending(std::vector<AnimeRecord> pending, Completion completion) {
     struct Batch {
         std::vector<AnimeRecord> items;
         std::size_t index{};
@@ -47,25 +62,27 @@ void AnimeEnricher::runOnce(std::size_t limit, Completion completion) {
         const auto next = weakAdvance.lock();
         if (!next) return;
         const auto item = batch->items[batch->index++];
-        self->bangumi_->search({item.displayTitle}, [self, batch, next, id = item.id](BangumiSearchResult result) {
-            // Only an unambiguous top candidate may be bound automatically.
-            if (!result.errorCode.empty() || !result.candidates.autoBindEligible ||
-                result.candidates.items.empty()) { (*next)(); return; }
-            self->bangumi_->subject(result.candidates.items.front().id,
-                [self, batch, next, id](BangumiSubjectResult subject) {
-                    if (subject.subject && subject.errorCode.empty()) {
-                        try {
-                            const auto current = self->repository_.getAnime(id);
-                            if (current && !current->bangumiSubjectId && !current->locked) {
-                                self->repository_.bindAnime(id, *subject.subject);
-                                if (self->covers_ && !subject.subject->coverUrl.empty())
-                                    self->covers_->cacheSubject(id, *subject.subject);
-                                ++batch->bound;
-                            }
-                        } catch (...) { /* An ambiguous or changed binding remains for manual review. */ }
-                    }
-                    (*next)();
-                });
+        self->bangumi_->search({item.displayTitle}, [self, batch, next, item](BangumiSearchResult result) {
+            const auto bindVerified = [self, batch, next, id = item.id](BangumiSubjectResult subject) {
+                if (subject.subject && subject.errorCode.empty()) {
+                    try {
+                        const auto current = self->repository_.getAnime(id);
+                        if (current && !current->bangumiSubjectId && !current->locked) {
+                            self->repository_.bindAnime(id, *subject.subject, true);
+                            if (self->covers_ && !subject.subject->coverUrl.empty())
+                                self->covers_->cacheSubject(id, *subject.subject);
+                            ++batch->bound;
+                        }
+                    } catch (...) { /* 已变化或冲突的绑定交由用户确认。 */ }
+                }
+                (*next)();
+            };
+            // 正常标题匹配优先；只有没有可靠结果时才走 Bangumi 别名回退。
+            if (result.candidates.autoBindEligible && !result.candidates.items.empty()) {
+                self->bangumi_->subject(result.candidates.items.front().id, bindVerified);
+            } else if (!result.localMatch) {
+                self->bangumi_->aliasSubject(item.displayTitle, bindVerified);
+            } else (*next)();
         });
     };
     (*advance)();

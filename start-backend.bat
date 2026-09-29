@@ -17,6 +17,7 @@ exit /b 1
 
 :run
 pushd "%~dp0" || exit /b 1
+set "ANIME_VAULT_HOME=%~dp0"
 echo Starting backend: "%SERVER%"
 "%SERVER%"
 set "SERVER_EXIT=%ERRORLEVEL%"

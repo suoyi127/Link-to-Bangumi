@@ -9,6 +9,7 @@ try
     File.WriteAllText(Path.Combine(temporary, "web", "index.html"), "test");
 
     var layout = DesktopLayout.Resolve(temporary);
+    Require(layout.ApplicationRoot == temporary);
     Require(layout.BackendExecutable == Path.Combine(temporary, "backend", "anime_vault_server.exe"));
     Require(layout.WebDirectory == Path.Combine(temporary, "web"));
     Require(layout.ProfileDirectory.StartsWith(

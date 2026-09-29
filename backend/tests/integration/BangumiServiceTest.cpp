@@ -20,6 +20,9 @@ struct FakeTransport final : BangumiTransport {
     std::optional<Response> next{Response{200,
         R"({"data":[{"id":123,"type":2,"name":"Frieren","name_cn":"葬送的芙莉莲","date":"2023-09-29","eps":28,"images":{"large":"https://example.test/cover.jpg"}}]})"}};
     std::optional<Response> subjectNext;
+    std::optional<Response> aliasNext{Response{200, R"({"results":0,"list":[]})"}};
+    std::optional<Response> aliasPrefixNext;
+    std::vector<std::string> aliasQueries;
     void search(std::string, Completion completion) override {
         ++calls;
         if (throwOnSearch) throw std::runtime_error("transport exception with private details");
@@ -27,6 +30,11 @@ struct FakeTransport final : BangumiTransport {
         completion(next, next ? "" : "timeout");
     }
     void subject(std::int64_t, Completion completion) override { completion(subjectNext, subjectNext ? "" : "timeout"); }
+    void searchAliases(std::string keyword, Completion completion) override {
+        aliasQueries.push_back(std::move(keyword));
+        const auto& response = aliasQueries.size() > 1 && aliasPrefixNext ? aliasPrefixNext : aliasNext;
+        completion(response, response ? "" : "timeout");
+    }
 };
 struct TempDb {
     std::filesystem::path path = std::filesystem::temp_directory_path() /
@@ -113,6 +121,142 @@ TEST_CASE("automatic enrichment binds only a unique high confidence Bangumi matc
     REQUIRE(anime->bangumiSubjectId == 123);
     REQUIRE(anime->coverUrl == "https://example.test/cover.jpg");
     REQUIRE(bound == 1);
+}
+
+TEST_CASE("scan enrichment targets its own anime even when older unbound entries exceed the batch limit") {
+    TempDb temp;
+    SqliteDatabase db(temp.path);
+    db.migrate();
+    SqliteMediaRepository repo(db);
+    REQUIRE(sqlite3_exec(db.handle(),
+        "INSERT INTO scan_job(source,status) VALUES('folder_import','completed');"
+        "INSERT INTO anime(display_title) VALUES('Frieren');"
+        "INSERT INTO media_file(scan_id,anime_id,source_path,filename,size_bytes,status) "
+        "VALUES(1,1,'C:/folder/Frieren - 01.mkv','Frieren - 01.mkv',1,'inbox');"
+        "WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<6) "
+        "INSERT INTO anime(display_title) SELECT printf('Unrelated %d',x) FROM n;",
+        nullptr, nullptr, nullptr) == SQLITE_OK);
+    FakeTransport transport;
+    transport.subjectNext = FakeTransport::Response{200,
+        R"({"id":123,"type":2,"name":"Frieren","name_cn":"葬送的芙莉莲"})"};
+    auto bangumi = std::make_shared<BangumiService>(repo, transport);
+    auto enricher = std::make_shared<AnimeEnricher>(repo, bangumi);
+    std::size_t bound = 0;
+    enricher->runForScan(1, [&](std::size_t count) { bound = count; });
+    REQUIRE(bound == 1);
+    REQUIRE(repo.getAnime(1)->bangumiSubjectId == 123);
+    REQUIRE(transport.calls == 1);
+}
+
+TEST_CASE("automatic enrichment can bind a romanized title through a Bangumi alias") {
+    TempDb temp;
+    SqliteDatabase db(temp.path);
+    db.migrate();
+    SqliteMediaRepository repo(db);
+    REQUIRE(sqlite3_exec(db.handle(), "INSERT INTO anime(display_title) VALUES('Saijo no Osewa');",
+        nullptr, nullptr, nullptr) == SQLITE_OK);
+    FakeTransport transport;
+    transport.next = FakeTransport::Response{200, R"({"data":[]})"};
+    transport.aliasNext = FakeTransport::Response{200, R"({"results":1,"list":[{"id":602733}]})"};
+    transport.subjectNext = FakeTransport::Response{200,
+        R"({"id":602733,"type":2,"name":"Japanese title","name_cn":"才女的侍从","infobox":[{"key":"别名","value":[{"v":"Saijo no Osewa: Full Title"}]}]})"};
+    auto bangumi = std::make_shared<BangumiService>(repo, transport);
+    auto enricher = std::make_shared<AnimeEnricher>(repo, bangumi);
+    std::size_t bound = 0;
+    enricher->runOnce(1, [&](std::size_t count) { bound = count; });
+    const auto anime = repo.getAnime(1);
+    REQUIRE(anime);
+    REQUIRE(bound == 1);
+    REQUIRE(anime->bangumiSubjectId == 602733);
+    REQUIRE(anime->displayTitle == "才女的侍从");
+}
+
+TEST_CASE("Bangumi alias fallback rejects ambiguous and unrelated subjects") {
+    TempDb temp;
+    SqliteDatabase db(temp.path);
+    db.migrate();
+    SqliteMediaRepository repo(db);
+    REQUIRE(sqlite3_exec(db.handle(), "INSERT INTO anime(display_title) VALUES('Saijo no Osewa');",
+        nullptr, nullptr, nullptr) == SQLITE_OK);
+    FakeTransport transport;
+    transport.next = FakeTransport::Response{200, R"({"data":[]})"};
+    auto bangumi = std::make_shared<BangumiService>(repo, transport);
+    auto enricher = std::make_shared<AnimeEnricher>(repo, bangumi);
+    transport.aliasNext = FakeTransport::Response{200,
+        R"({"results":2,"list":[{"id":602733},{"id":123}]})"};
+    enricher->runOnce(1, [](std::size_t count) { REQUIRE(count == 0); });
+    REQUIRE_FALSE(repo.getAnime(1)->bangumiSubjectId);
+    transport.aliasNext = FakeTransport::Response{200,
+        R"({"results":1,"list":[{"id":602733}]})"};
+    transport.subjectNext = FakeTransport::Response{200,
+        R"({"id":602733,"type":2,"name":"Other","name_cn":"其他","infobox":[{"key":"别名","value":"Unrelated Show"}]})"};
+    enricher->runOnce(1, [](std::size_t count) { REQUIRE(count == 0); });
+    REQUIRE_FALSE(repo.getAnime(1)->bangumiSubjectId);
+}
+
+TEST_CASE("Bangumi alias fallback retries a long romanized prefix and accepts a minor spelling difference") {
+    TempDb temp;
+    SqliteDatabase db(temp.path);
+    db.migrate();
+    SqliteMediaRepository repo(db);
+    const std::string title = "Toumei na Yoru ni Kakeru Kimi to, Me ni Mienai Koi o Shita";
+    REQUIRE(sqlite3_exec(db.handle(), ("INSERT INTO anime(display_title) VALUES('" + title + "');").c_str(),
+        nullptr, nullptr, nullptr) == SQLITE_OK);
+    FakeTransport transport;
+    transport.next = FakeTransport::Response{200, R"({"data":[]})"};
+    transport.aliasNext = FakeTransport::Response{200, R"({"results":0,"list":[]})"};
+    transport.aliasPrefixNext = FakeTransport::Response{200,
+        R"({"results":1,"list":[{"id":607340}]})"};
+    transport.subjectNext = FakeTransport::Response{200,
+        R"({"id":607340,"type":2,"name":"Japanese title","name_cn":"与奔驰于透明之夜的你，谈一场看不见的恋爱。","infobox":[{"key":"别名","value":[{"v":"Toumei na Yoru ni Kakeru Kimi to, Me ni Mienai Koi wo Shita"}]}]})"};
+    auto bangumi = std::make_shared<BangumiService>(repo, transport);
+    auto enricher = std::make_shared<AnimeEnricher>(repo, bangumi);
+    enricher->runOnce(1, [](std::size_t count) { REQUIRE(count == 1); });
+    REQUIRE(transport.aliasQueries.size() == 2);
+    REQUIRE(transport.aliasQueries[0] == title);
+    REQUIRE(transport.aliasQueries[1] == "Toumei na Yoru ni Kakeru Kimi");
+    REQUIRE(repo.getAnime(1)->bangumiSubjectId == 607340);
+}
+
+TEST_CASE("automatic Bangumi binding does not replace a user-edited display title") {
+    TempDb temp;
+    SqliteDatabase db(temp.path);
+    db.migrate();
+    SqliteMediaRepository repo(db);
+    REQUIRE(sqlite3_exec(db.handle(),
+        "INSERT INTO anime(display_title) VALUES('Saijo no Osewa');"
+        "INSERT INTO anime_alias(anime_id,normalized_alias,source) VALUES(1,'mytitle','user');",
+        nullptr, nullptr, nullptr) == SQLITE_OK);
+    FakeTransport transport;
+    transport.next = FakeTransport::Response{200, R"({"data":[]})"};
+    transport.aliasNext = FakeTransport::Response{200,
+        R"({"results":1,"list":[{"id":602733}]})"};
+    transport.subjectNext = FakeTransport::Response{200,
+        R"({"id":602733,"type":2,"name":"Japanese title","name_cn":"才女的侍从","infobox":[{"key":"别名","value":"Saijo no Osewa"}]})"};
+    auto bangumi = std::make_shared<BangumiService>(repo, transport);
+    auto enricher = std::make_shared<AnimeEnricher>(repo, bangumi);
+    enricher->runOnce(1, [](std::size_t count) { REQUIRE(count == 1); });
+    REQUIRE(repo.getAnime(1)->displayTitle == "Saijo no Osewa");
+}
+
+TEST_CASE("automatic Bangumi binding preserves a title established by Mikan") {
+    TempDb temp;
+    SqliteDatabase db(temp.path);
+    db.migrate();
+    SqliteMediaRepository repo(db);
+    REQUIRE(sqlite3_exec(db.handle(),
+        "INSERT INTO anime(display_title) VALUES('Mikan 中文标题');"
+        "INSERT INTO anime_alias(anime_id,normalized_alias,source) VALUES(1,'romanalias','mikan');",
+        nullptr, nullptr, nullptr) == SQLITE_OK);
+    FakeTransport transport;
+    transport.next = FakeTransport::Response{200,
+        R"({"data":[{"id":602733,"type":2,"name":"Mikan 中文标题","name_cn":"Bangumi 中文标题"}]})"};
+    transport.subjectNext = FakeTransport::Response{200,
+        R"({"id":602733,"type":2,"name":"Mikan 中文标题","name_cn":"Bangumi 中文标题"})"};
+    auto bangumi = std::make_shared<BangumiService>(repo, transport);
+    auto enricher = std::make_shared<AnimeEnricher>(repo, bangumi);
+    enricher->runOnce(1, [](std::size_t count) { REQUIRE(count == 1); });
+    REQUIRE(repo.getAnime(1)->displayTitle == "Mikan 中文标题");
 }
 
 TEST_CASE("automatic enrichment leaves ambiguous titles unbound") {

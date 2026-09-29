@@ -46,10 +46,11 @@ int SqliteDatabase::schemaVersion() const {
 void SqliteDatabase::migrate() {
     std::lock_guard lock(mutex_);
     const int version = schemaVersion();
-    if (version > 6 || version < 0) throw std::runtime_error("unsupported schema version");
+    if (version > 7 || version < 0) throw std::runtime_error("unsupported schema version");
     const char* migrations[] = {kInitialSql, kCorrectionSql, kSourceSnapshotSql,
-                                kMediaOriginSql, kOrganizationExecutionSql, kParsedTitleSql};
-    for (int next = version + 1; next <= 6; ++next) {
+                                kMediaOriginSql, kOrganizationExecutionSql, kParsedTitleSql,
+                                kFolderImportSql};
+    for (int next = version + 1; next <= 7; ++next) {
         exec(db_, "BEGIN IMMEDIATE");
         try {
             exec(db_, migrations[next - 1]);

@@ -31,6 +31,8 @@ internal sealed class BackendSession : IDisposable
                 CreateNoWindow = true,
                 WindowStyle = ProcessWindowStyle.Hidden
             };
+            // 媒体目录跟随安装包根目录，避免数据仍落到用户 C 盘的 Videos。
+            startInfo.Environment["ANIME_VAULT_HOME"] = layout.ApplicationRoot;
             startInfo.Environment["ANIME_VAULT_PORT"] = port.ToString();
             startInfo.Environment["ANIME_VAULT_WEB_DIR"] = layout.WebDirectory;
             startInfo.Environment["ANIME_VAULT_INSTANCE_TOKEN"] = token;

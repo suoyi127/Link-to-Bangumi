@@ -38,6 +38,12 @@ struct MediaRecord {
     std::optional<std::int64_t> animeId;
     std::string parsedTitle;
     std::string libraryPath;
+    std::optional<std::int64_t> folderImportId;
+};
+
+struct FolderImportRecord {
+    std::int64_t id{};
+    std::string rootPath;
 };
 
 struct ScanPage { std::vector<ScanRecord> items; std::optional<std::int64_t> nextOffset; };
@@ -135,11 +141,15 @@ class MediaRepository {
 public:
     virtual ~MediaRepository() = default;
     virtual std::int64_t createScan(const ScanRecord& record) = 0;
+    virtual FolderImportRecord addFolderImport(const std::string& rootPath) = 0;
+    virtual std::vector<FolderImportRecord> listFolderImports() const = 0;
+    virtual std::optional<FolderImportRecord> getFolderImport(std::int64_t id) const = 0;
     virtual std::optional<ScanRecord> getScan(std::int64_t id) const = 0;
     virtual void updateScan(const ScanRecord& record) = 0;
     virtual std::int64_t insertMedia(const MediaRecord& record) = 0;
     virtual void markMissingMedia(const std::string& origin,
-                                  const std::vector<std::string>& observedPaths) = 0;
+                                  const std::vector<std::string>& observedPaths,
+                                  std::optional<std::int64_t> folderImportId = std::nullopt) = 0;
     virtual std::optional<MediaRecord> getMedia(std::int64_t id) const = 0;
     virtual void updateMediaParse(std::int64_t id, const std::string& episodeNumber,
                                   const std::string& episodeType, double confidence) = 0;
@@ -170,10 +180,12 @@ public:
                                          std::int64_t requestStartedAt) = 0;
     virtual std::vector<AnimeRecord> listAnime() const = 0;
     virtual AnimePage listAnimePage(std::int64_t offset, int limit) const = 0;
+    virtual std::vector<AnimeRecord> listAnimeForScan(std::int64_t scanId) const = 0;
     virtual std::optional<AnimeRecord> getAnime(std::int64_t id,
                                                 std::int64_t mediaOffset = 0,
                                                 int mediaLimit = 50) const = 0;
-    virtual AnimeRecord bindAnime(std::int64_t id, const BangumiSubject& subject) = 0;
+    virtual AnimeRecord bindAnime(std::int64_t id, const BangumiSubject& subject,
+                                  bool canonicalizeTitle = false) = 0;
     virtual bool updateCoverIfBound(std::int64_t animeId, std::int64_t subjectId,
                                     const std::string& localUrl) = 0;
     virtual bool applyMikanAlias(const std::string& alias,

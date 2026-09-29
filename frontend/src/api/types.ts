@@ -1,7 +1,8 @@
 // 分页约定：nextOffset 为 null 表示没有下一页。
 export type Page<T> = { items: T[]; nextOffset: number | null }
-// 明确区分 qB 与外来导入来源，以便界面和后端采用各自的处理约束。
-export type InboxOrigin = 'qb_download' | 'external_import'
+// 三种来源采用不同的扫描和路径校验边界。
+export type InboxOrigin = 'qb_download' | 'external_import' | 'folder_import'
+export type FolderImport = { id: number; path: string }
 export type InboxPage = Page<Media> & { total: number }
 export type Scan = { id: number; source: string; status: string; discoveredCount: number; processedCount: number; errorCount: number; errorSummary: string }
 export type Media = { id: number; scanId: number; sourcePath: string; filename: string; parsedTitle: string; title: string; season: string; episodeNumber: string; episodeType: string; sizeBytes: number; status: string; origin: string; animeId: number | null; confidence: number; bangumiSubjectId?: number }

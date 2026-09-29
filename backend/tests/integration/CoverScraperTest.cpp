@@ -22,6 +22,9 @@ struct FakeBangumi final : BangumiTransport {
     void search(std::string, Completion completion) override {
         completion(Response{200, R"({"data":[{"id":123,"type":2,"name":"Show","images":{"large":"https://lain.bgm.tv/pic/cover/l/a.jpg"}}]})"}, "");
     }
+    void searchAliases(std::string, Completion completion) override {
+        completion(Response{200, R"({"results":0,"list":[]})"}, "");
+    }
     void subject(std::int64_t, Completion completion) override { completion(Response{200, body}, ""); }
 };
 struct FakeImage final : CoverImageFetcher {

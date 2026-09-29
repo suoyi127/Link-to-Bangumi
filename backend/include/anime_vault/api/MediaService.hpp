@@ -38,6 +38,9 @@ public:
     ScanRecord createScan(std::chrono::seconds stableFor = std::chrono::seconds{60});
     void validateQbSourceReady() const;
     ScanRecord createImportScan(std::chrono::seconds stableFor = std::chrono::seconds{60});
+    FolderImportRecord addFolderImport(const std::string& path);
+    std::vector<FolderImportRecord> listFolderImports() const;
+    ScanRecord createFolderScan(std::int64_t id);
     ScanRecord getScan(std::int64_t id) const;
     std::vector<MediaRecord> listInbox() const;
     InboxPage listInboxPage(std::int64_t offset, int limit,
@@ -60,7 +63,8 @@ private:
     std::chrono::steady_clock::time_point lastScan_{};
     mutable std::mutex mutex_;
     ScanRecord scanFrom(DirectoryScanner& scanner, const std::string& origin,
-                        std::chrono::seconds stableFor);
+                        std::chrono::seconds stableFor,
+                        std::optional<std::int64_t> folderImportId = std::nullopt);
     void enforceRateLimit();
     void validateSourceRoot() const;
 };

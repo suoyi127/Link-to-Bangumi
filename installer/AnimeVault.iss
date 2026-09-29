@@ -41,6 +41,10 @@ Source: "{#PackageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 Source: "{#PrereqDir}\vc_redist.x64.exe"; Flags: dontcopy
 Source: "{#PrereqDir}\MicrosoftEdgeWebview2Setup.exe"; Flags: dontcopy
 
+[Dirs]
+Name: "{app}\Media\Import"; Permissions: users-modify
+Name: "{app}\Media\Library"; Permissions: users-modify
+
 [Icons]
 Name: "{autoprograms}\Anime Vault"; Filename: "{app}\AnimeVault.exe"
 Name: "{autodesktop}\Anime Vault"; Filename: "{app}\AnimeVault.exe"; Tasks: desktopicon

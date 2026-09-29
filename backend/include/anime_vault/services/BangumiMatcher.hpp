@@ -24,6 +24,7 @@ struct BangumiSubject {
     std::int64_t id{};
     std::string name, nameCn, date, coverUrl;
     int episodeCount{}, type{};
+    std::vector<std::string> aliases;
 };
 
 struct BangumiMatchQuery {

@@ -39,6 +39,8 @@ struct Fixture {
         const auto scan = repository->createScan({0, utf8(path.parent_path()), "completed", 1, 1, 0, ""});
         MediaRecord media{0, scan, utf8(path), utf8(path.filename()), "1", "normal", 4, "inbox", 1};
         media.origin = origin;
+        if (origin == "folder_import")
+            media.folderImportId = repository->addFolderImport(utf8(fs::canonical(path.parent_path()))).id;
         return repository->insertMedia(media);
     }
 };
@@ -85,5 +87,37 @@ TEST_CASE("playback rejects unknown, escaped, and missing files without launchin
     requireCode([&] { service.play(999999, utf8(fixture.mpv)); }, "media_not_found");
     requireCode([&] { service.play(outsideId, utf8(fixture.mpv)); }, "playback_path_outside_root");
     requireCode([&] { service.play(missingId, utf8(fixture.mpv)); }, "playback_file_missing");
+    REQUIRE(launcher.calls == 0);
+}
+
+TEST_CASE("playback accepts a file within its registered folder import") {
+    Fixture fixture;
+    const auto folder = fixture.root / "selected";
+    fs::create_directory(folder);
+    const auto video = folder / "episode.mkv";
+    { std::ofstream file(video); file << "data"; }
+    const auto id = fixture.add(fs::canonical(video), "folder_import");
+    RecordingLauncher launcher;
+    PlaybackService service(*fixture.repository, fixture.source, fixture.imported, fixture.library, launcher);
+    service.play(id, utf8(fixture.mpv));
+    REQUIRE(launcher.calls == 1);
+    REQUIRE(launcher.arguments.back() == utf8(fs::canonical(video)));
+}
+
+TEST_CASE("playback rejects a folder-import file outside its registered root") {
+    Fixture fixture;
+    const auto folder = fixture.root / "selected";
+    fs::create_directory(folder);
+    const auto outside = fixture.root / "outside.mkv";
+    { std::ofstream file(outside); file << "data"; }
+    const auto registered = fixture.repository->addFolderImport(utf8(fs::canonical(folder)));
+    const auto scan = fixture.repository->createScan({0, "folder_import", "completed"});
+    MediaRecord media{0, scan, utf8(fs::canonical(outside)), utf8(outside.filename()), "1", "normal", 4, "inbox", 1};
+    media.origin = "folder_import";
+    media.folderImportId = registered.id;
+    const auto id = fixture.repository->insertMedia(media);
+    RecordingLauncher launcher;
+    PlaybackService service(*fixture.repository, fixture.source, fixture.imported, fixture.library, launcher);
+    requireCode([&] { service.play(id, utf8(fixture.mpv)); }, "playback_path_outside_root");
     REQUIRE(launcher.calls == 0);
 }
