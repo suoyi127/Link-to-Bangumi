@@ -10,8 +10,7 @@ internal sealed record DesktopLayout(string ApplicationRoot, string BackendExecu
         var index = Path.Combine(web, "index.html");
         if (!File.Exists(backend)) throw new FileNotFoundException("未找到后端程序；请重新安装 Anime Vault。", backend);
         if (!File.Exists(index)) throw new FileNotFoundException("未找到前端页面；请重新安装 Anime Vault。", index);
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        if (string.IsNullOrWhiteSpace(localAppData)) throw new InvalidOperationException("无法定位用户数据目录。");
-        return new DesktopLayout(root, backend, web, Path.Combine(localAppData, "AnimeVault", "WebView2"));
+        // 数据与浏览器配置统一跟随安装目录；安装器仅为 Data 授予写权限。
+        return new DesktopLayout(root, backend, web, Path.Combine(root, "Data", "WebView2"));
     }
 }

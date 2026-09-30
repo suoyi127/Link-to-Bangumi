@@ -12,8 +12,7 @@ try
     Require(layout.ApplicationRoot == temporary);
     Require(layout.BackendExecutable == Path.Combine(temporary, "backend", "anime_vault_server.exe"));
     Require(layout.WebDirectory == Path.Combine(temporary, "web"));
-    Require(layout.ProfileDirectory.StartsWith(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), StringComparison.OrdinalIgnoreCase));
+    Require(layout.ProfileDirectory == Path.Combine(temporary, "Data", "WebView2"));
 
     File.Delete(Path.Combine(temporary, "web", "index.html"));
     RequireThrows(() => DesktopLayout.Resolve(temporary));

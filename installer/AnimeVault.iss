@@ -42,6 +42,7 @@ Source: "{#PrereqDir}\vc_redist.x64.exe"; Flags: dontcopy
 Source: "{#PrereqDir}\MicrosoftEdgeWebview2Setup.exe"; Flags: dontcopy
 
 [Dirs]
+Name: "{app}\Data"; Permissions: users-modify; Flags: uninsneveruninstall
 Name: "{app}\Media\Import"; Permissions: users-modify
 Name: "{app}\Media\Library"; Permissions: users-modify
 

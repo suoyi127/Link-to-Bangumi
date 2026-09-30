@@ -56,7 +56,7 @@ Link to Bangumi 是面向 Windows 的本地资源管理工具，将番剧、小�
 
 - 设置页集中管理 Bangumi 连接、qB Web UI、下载目录、播放器和小说阅读器／导入。
 - 安装版通过 WebView2 显示界面并自动启动后端；开发模式支持一条脚本启动前后端。
-- 媒体库和外来导入目录跟随项目或安装目录，数据库与封面缓存使用当前用户的本地应用数据目录。
+- 安装版的媒体库、外来导入目录及数据目录均跟随安装位置；数据库、封面和 WebView2 缓存统一保存在 `<安装目录>\Data`。开发启动仍沿用现有数据目录配置。
 
 ### 当前边界
 
@@ -76,9 +76,18 @@ Link to Bangumi 是面向 Windows 的本地资源管理工具，将番剧、小�
 | qB 下载来源 | 未配置，须在设置页选择已有目录 | `ANIME_VAULT_SOURCE_DIR` |
 | 外来导入暂存（程序自动创建，初始为空） | `<项目或安装目录>\Media\Import` | `ANIME_VAULT_HOME`、`ANIME_VAULT_IMPORT_DIR` |
 | 整理目标媒体库 | `<项目或安装目录>\Media\Library` | `ANIME_VAULT_HOME`、`ANIME_VAULT_LIBRARY_DIR` |
-| SQLite 数据 | `%LOCALAPPDATA%\AnimeVault` | `ANIME_VAULT_DATA_DIR` |
+| 安装版数据库、封面与 WebView2 缓存 | `<安装目录>\Data` | 桌面启动器自动配置 |
+| 开发模式 SQLite 数据 | `%LOCALAPPDATA%\AnimeVault` | `ANIME_VAULT_DATA_DIR` |
 
-开发启动脚本将“项目目录”设为仓库根目录；安装版使用安装时选择的应用目录，因此媒体文件夹会跟随安装位置，而不再创建到用户的 `Videos` 目录。安装器仅为 `Media\Import` 和 `Media\Library` 授予普通用户写权限。数据库、封面缓存和 WebView2 用户配置仍放在 `%LOCALAPPDATA%`；qB 下载来源始终由用户在设置页单独选择。
+开发启动脚本将“项目目录”设为仓库根目录；安装版使用安装时选择的应用目录，因此媒体文件夹会跟随安装位置，而不再创建到用户的 `Videos` 目录。安装器仅为 `Data`、`Media\Import` 和 `Media\Library` 授予普通用户写权限。安装版的数据库、封面缓存和 WebView2 用户配置统一放在 `<安装目录>\Data`；qB 下载来源始终由用户在设置页单独选择。
+
+### 旧版数据迁移与备份
+
+此前发布的安装包使用 `%LOCALAPPDATA%\AnimeVault`，本次源码修改不会自动更新已安装程序，需使用包含该改动的新安装包。切换数据目录不会自动搬移或删除旧数据。
+
+迁移时先退出所有 Anime Vault 实例并确认后端已停止，备份旧目录，再将旧目录中的内容（包括 `anime-vault.db`、可能存在的 `.db-wal`／`.db-shm`、`covers` 和 `WebView2`）复制到空的 `<安装目录>\Data`。若新目录已有数据库，不要直接覆盖，应先备份并选择需要保留的数据。重新打开应用后核对词条和设置。qB 密码仍由当前 Windows 用户的凭据管理器保存，不在该目录中。
+
+备份时同样先退出应用，复制整个 `Data` 目录。该目录不包含媒体文件本体，也不会在卸载时主动清理；更换安装目录时需自行迁移数据，不会自动跟随。
 
 首次使用时，程序会在项目/安装目录下创建 `Media\Import` 与 `Media\Library`。在设置页填写已有的 qB 下载目录并保存，然后重启后端；更改目录不会移动或删除原文件。未配置或所选目录不可用时，qB 扫描与 Mikan 自动下载创建不可用，外来导入和本地浏览仍可使用。
 
@@ -111,7 +120,7 @@ Anime Vault 从实际下载到本机的媒体文件名解析番剧标题、集�
 3. 从开始菜单打开 **Anime Vault**，应用会自动启动后端并显示界面。
 4. 在“设置”中配置 Bangumi 和 qB Web UI；需要 qB 下载时再选择自己的下载目录，保存后按页面提示重启应用。
 
-安装版无需 PowerShell 或开发工具。`Media\Import` 和 `Media\Library` 跟随安装目录，数据库和封面缓存位于 `%LOCALAPPDATA%\AnimeVault`。卸载不会删除用户媒体或该数据目录。安装包尚未签名，Windows 可能显示 SmartScreen 提示，请核对下载来源。
+安装版无需 PowerShell 或开发工具。`Media\Import`、`Media\Library` 和 `Data` 均跟随安装目录；数据库和封面缓存位于 `Data`，WebView2 用户配置位于 `Data\WebView2`。卸载不会主动删除用户媒体或数据目录。安装包尚未签名，Windows 可能显示 SmartScreen 提示，请核对下载来源。
 
 ### 开发者：一次启动前后端（推荐）
 
