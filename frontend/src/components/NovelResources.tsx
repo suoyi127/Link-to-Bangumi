@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Alert, Button, Input, List, Popconfirm, Space, Spin, Table, Typography } from 'antd'
 import { editNovel, editNovelFile, getNovels, removeUnavailableNovel, scrapeNovel, searchNovelBangumi } from '../api/client'
 import type { NovelCandidate, NovelFile, NovelWork } from '../api/types'
@@ -14,13 +14,15 @@ export function NovelResources() {
   const [query, setQuery] = useState('')
   const [subjectId, setSubjectId] = useState('')
   const [candidates, setCandidates] = useState<NovelCandidate[]>([])
+  const loadSequence = useRef(0)
   async function load(signal?: AbortSignal) {
+    const sequence = ++loadSequence.current
     setLoading(true)
-    try { const result = await getNovels(signal); if (!signal?.aborted) setItems(result.items) }
-    catch (e) { if (!signal?.aborted) setError(e instanceof Error ? e.message : '加载失败') }
-    finally { if (!signal?.aborted) setLoading(false) }
+    try { const result = await getNovels(signal); if (!signal?.aborted && sequence === loadSequence.current) { setItems(result.items); setSelected((previous) => previous && result.items.some((item) => item.id === previous.id) ? previous : null) } }
+    catch (e) { if (!signal?.aborted && sequence === loadSequence.current) setError(e instanceof Error ? e.message : '加载失败') }
+    finally { if (!signal?.aborted && sequence === loadSequence.current) setLoading(false) }
   }
-  useEffect(() => { const controller = new AbortController(); void load(controller.signal); return () => controller.abort() }, [])
+  useEffect(() => { const requests = loadSequence; const controller = new AbortController(); void load(controller.signal); return () => { requests.current++; controller.abort() } }, [])
   async function action(task: () => Promise<void>) {
     if (busy) return
     setBusy(true); setError(''); setMessage('')
@@ -42,6 +44,8 @@ export function NovelResources() {
       { title: '操作', render: (_, w: NovelWork) => <Button disabled={busy} aria-label={`编辑 ${w.title}`} onClick={() => { setSelected({ ...w }); setTarget('work'); setQuery(w.title); setSubjectId(''); setCandidates([]); setMessage('') }}>编辑</Button> },
       { title: '清理', render: (_, w: NovelWork) => w.files.every((f) => f.missing) ? <Popconfirm title={`删除「${w.title}」词条？`} description="删除作品、卷记录及绑定信息，不会删除磁盘文件。重新扫描存在的文件可再次导入。" okText="确认删除" cancelText="取消" disabled={busy} onConfirm={() => action(async () => {
         await removeUnavailableNovel(w.id)
+        // 删除成功后作废之前的刷新，避免其旧快照重新写回已清理的记录。
+        loadSequence.current++; setLoading(false)
         setItems((old) => old.filter((v) => v.id !== w.id))
         if (selected?.id === w.id) { setSelected(null); setTarget('work'); setCandidates([]) }
         setMessage('小说词条已删除，磁盘文件未改动。')

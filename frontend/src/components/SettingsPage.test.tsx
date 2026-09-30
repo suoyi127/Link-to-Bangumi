@@ -12,7 +12,7 @@ const settings: Settings = {
   qbDownloadEnvironmentOverride: false,
 }
 
-afterEach(() => { cleanup(); vi.restoreAllMocks() })
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 beforeEach(() => {
   vi.spyOn(client, 'getPlayers').mockResolvedValue({ selectedId: 'mpv', items: [{ id: 'mpv', name: 'mpv', executable: '', available: false }, { id: 'system', name: '系统默认播放器', executable: '', available: true }] })
   vi.spyOn(client, 'getQbConfig').mockResolvedValue({ url: 'http://[::1]:8080', username: '', source: 'none', configured: false })
@@ -111,6 +111,32 @@ it('saves a user-selected qB download directory and asks for a restart', async (
   fireEvent.click(screen.getByRole('button', { name: '保存 qB 下载目录' }))
   await waitFor(() => expect(save).toHaveBeenCalledWith('X:/chosen'))
   expect(await screen.findByText(/重启后端后生效/)).toBeInTheDocument()
+})
+
+it('requests desktop restart after saving the qB directory successfully', async () => {
+  const postMessage = vi.fn()
+  vi.stubGlobal('chrome', { webview: { postMessage } })
+  vi.spyOn(client, 'getSettings').mockResolvedValue(settings)
+  vi.spyOn(client, 'getAuditLogs').mockResolvedValue({ items: [], nextOffset: null })
+  vi.spyOn(client, 'putQbDownloadDirectory').mockResolvedValue({ ...settings, qbDownloadDirectory: 'X:/chosen', restartRequired: true })
+  render(<SettingsPage />)
+  fireEvent.change(await screen.findByLabelText('qB 下载目录'), { target: { value: 'X:/chosen' } })
+  fireEvent.click(screen.getByRole('button', { name: '保存 qB 下载目录' }))
+  await waitFor(() => expect(postMessage).toHaveBeenCalledExactlyOnceWith({ command: 'restart-backend' }))
+  expect(await screen.findByText(/正在自动重启后端/)).toBeInTheDocument()
+})
+
+it('does not request desktop restart when saving the qB directory fails', async () => {
+  const postMessage = vi.fn()
+  vi.stubGlobal('chrome', { webview: { postMessage } })
+  vi.spyOn(client, 'getSettings').mockResolvedValue(settings)
+  vi.spyOn(client, 'getAuditLogs').mockResolvedValue({ items: [], nextOffset: null })
+  vi.spyOn(client, 'putQbDownloadDirectory').mockRejectedValue(new Error('目录无效'))
+  render(<SettingsPage />)
+  fireEvent.change(await screen.findByLabelText('qB 下载目录'), { target: { value: 'X:/missing' } })
+  fireEvent.click(screen.getByRole('button', { name: '保存 qB 下载目录' }))
+  expect(await screen.findByText('目录无效')).toBeInTheDocument()
+  expect(postMessage).not.toHaveBeenCalled()
 })
 
 it('keeps Mikan download actions disabled while a saved directory awaits restart', async () => {

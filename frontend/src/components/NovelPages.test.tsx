@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import * as client from '../api/client'
 import { NovelLibraryPage } from './NovelLibraryPage'
@@ -75,4 +75,19 @@ it('updates missing volumes on window focus without leaving the novel detail', a
   await waitFor(() => expect(screen.getAllByRole('button', { name: '阅读' })[0]).toBeDisabled())
   expect(get).toHaveBeenCalledTimes(2)
   expect(screen.getByRole('heading', { name: '卷与文件' })).toBeInTheDocument()
+})
+
+it('does not restore deleted novel volumes from an older refresh response', async () => {
+  let resolveOld!: (value: { items: typeof work[] }) => void
+  vi.spyOn(client, 'getNovels').mockResolvedValueOnce({ items: [work] })
+    .mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve }))
+    .mockResolvedValue({ items: [] })
+  render(<NovelLibraryPage />)
+  fireEvent.click(await screen.findByRole('button', { name: '查看 中文小说' }))
+  fireEvent.click(screen.getByRole('button', { name: '刷新小说库' }))
+  fireEvent(window, new Event('focus'))
+  await waitFor(() => expect(screen.queryByRole('heading', { name: '卷与文件' })).not.toBeInTheDocument())
+  await act(async () => resolveOld({ items: [work] }))
+  expect(screen.queryByRole('heading', { name: '卷与文件' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '查看 中文小说' })).not.toBeInTheDocument()
 })

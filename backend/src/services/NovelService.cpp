@@ -6,6 +6,7 @@
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <memory>
+#include <fstream>
 #include <regex>
 #include <set>
 #ifdef _WIN32
@@ -83,6 +84,7 @@ std::vector<NovelSource> NovelService::sources() const {
 }
 std::vector<NovelWork> NovelService::list() const {
     std::lock_guard lock(db_.mutex());
+    std::vector<std::int64_t> absentFiles;
     auto stmt = prepare(db_.handle(), "SELECT id,title,author,summary,subject_id,manual_metadata,cover IS NOT NULL FROM novel_work ORDER BY title,id");
     std::vector<NovelWork> out; int state;
     while ((state = sqlite3_step(stmt.get())) == SQLITE_ROW) {
@@ -93,11 +95,17 @@ std::vector<NovelWork> NovelService::list() const {
         sqlite3_bind_int64(files.get(), 1, w.id); int fileState;
         while ((fileState = sqlite3_step(files.get())) == SQLITE_ROW) {
             NovelFile f; f.id = sqlite3_column_int64(files.get(), 0); f.workId = w.id; f.path = text(files.get(), 1); f.label = text(files.get(), 2);
-            // 重扫标记不能代表当前状态；仅核对已登记路径，不删除记录或重新刮削。
+            // 重扫标记不能代表当前状态；核对已登记路径，不改动磁盘文件或重新刮削。
             std::error_code pathError;
             const auto path = fromUtf8(f.path);
             const auto status = fs::symlink_status(path, pathError);
-            f.missing = pathError || !fs::is_regular_file(status) || !safePath(path);
+            // 逐卷校验文件本身，不依赖父目录是否存在或其中是否有其他小说。
+            f.missing = pathError || !fs::is_regular_file(status) || !safePath(path) ||
+                !std::ifstream(path, std::ios::binary).is_open();
+            if (f.missing) {
+                absentFiles.push_back(f.id);
+                continue;
+            }
             if (sqlite3_column_type(files.get(), 4) != SQLITE_NULL) f.subjectId = sqlite3_column_int64(files.get(), 4);
             f.hasCover = sqlite3_column_int(files.get(), 5) != 0; w.files.push_back(std::move(f));
         }
@@ -105,6 +113,16 @@ std::vector<NovelWork> NovelService::list() const {
         out.push_back(std::move(w));
     }
     if (state != SQLITE_DONE) throw NovelError("novel_storage_error");
+    if (!absentFiles.empty()) {
+        auto begin = prepare(db_.handle(), "BEGIN IMMEDIATE"); done(begin);
+        try {
+            auto remove = prepare(db_.handle(), "DELETE FROM novel_file WHERE id=?");
+            for (const auto id : absentFiles) {
+                sqlite3_reset(remove.get()); sqlite3_bind_int64(remove.get(), 1, id); done(remove);
+            }
+            auto commit = prepare(db_.handle(), "COMMIT"); done(commit);
+        } catch (...) { sqlite3_exec(db_.handle(), "ROLLBACK", nullptr, nullptr, nullptr); throw; }
+    }
     return out;
 }
 NovelWork NovelService::get(std::int64_t id) const {

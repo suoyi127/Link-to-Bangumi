@@ -4,6 +4,7 @@ import { addMikanFeed, createMikanRule, deleteBangumiConfig, deleteQbConfig, get
 import type { AuditLog, BangumiConfig, MikanFeeds, Preferences, QbConfig, QbConfigDraft, QbStatus, Settings } from '../api/types'
 import { PlayerSettings } from './PlayerSettings'
 import { NovelSettings } from './NovelSettings'
+import { requestDesktopRestart } from '../api/desktop'
 import type { ReactNode } from 'react'
 
 function SettingsSection({ title, wide = false, children }: { title: string; wide?: boolean; children: ReactNode }) {
@@ -21,6 +22,7 @@ export function SettingsPage() {
   const [qbPath, setQbPath] = useState('')
   const [qbPathSaving, setQbPathSaving] = useState(false)
   const [restartRequired, setRestartRequired] = useState(false)
+  const [desktopRestarting, setDesktopRestarting] = useState(false)
   const [settingsError, setSettingsError] = useState('')
   const [qbStatus, setQbStatus] = useState<QbStatus | null>(null)
   const [qbConfig, setQbConfig] = useState<QbConfig | null>(null)
@@ -102,13 +104,14 @@ export function SettingsPage() {
   }
 
   async function saveQbPath() {
-    if (qbPathSaving) return
+    if (qbPathSaving || desktopRestarting) return
     setQbPathSaving(true); setSettingsError('')
     try {
       const updated = await putQbDownloadDirectory(qbPath.trim())
       setSettings(updated)
       setQbPath(updated.qbDownloadDirectory)
       setRestartRequired(updated.restartRequired)
+      setDesktopRestarting(requestDesktopRestart(updated.restartRequired))
     } catch (cause) { setSettingsError(errorText(cause)) }
     finally { setQbPathSaving(false) }
   }
@@ -226,7 +229,7 @@ export function SettingsPage() {
       <Typography.Text type="secondary">仅识别你选择的 qB 下载目录；外来导入与媒体库保持独立。修改目录不会移动或删除已有文件。</Typography.Text>
       <Button loading={qbPathSaving} disabled={settings.qbDownloadEnvironmentOverride} onClick={() => void saveQbPath()}>保存 qB 下载目录</Button>
       {settings.qbDownloadEnvironmentOverride && <Alert type="info" message="环境变量正在覆盖页面保存的 qB 下载目录；移除 ANIME_VAULT_SOURCE_DIR 后才能在此修改。" />}
-      {qbPathPending && <Alert type="warning" message="qB 下载目录已保存，重启后端后生效。" />}
+      {qbPathPending && <Alert type="warning" message={desktopRestarting ? 'qB 下载目录已保存，正在自动重启后端并刷新页面…' : 'qB 下载目录已保存，重启后端后生效。'} />}
       </SettingsSection>
       <SettingsSection title="qB Web UI 连接">
       <Typography.Text type="secondary">仅支持本机回环地址，例如 http://[::1]:8080。密码保存在当前 Windows 用户的凭据管理器中，不会回显；已保存配置时留空可保持原密码。</Typography.Text>

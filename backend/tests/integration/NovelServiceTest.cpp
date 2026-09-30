@@ -6,6 +6,7 @@
 #include <fstream>
 #include <random>
 #include <algorithm>
+#include <sqlite3.h>
 
 using namespace anime_vault;
 namespace fs = std::filesystem;
@@ -31,23 +32,43 @@ TEST_CASE("Deleting a novel requires all files to be unavailable and keeps sourc
     fs::rename(fixture.root / "books" / "Book Vol.02.txt", fixture.root / "saved.txt");
     service.removeUnavailableWork(work.id);
     REQUIRE(service.list().empty());
+    sqlite3_stmt* remainingFiles = nullptr;
+    REQUIRE(sqlite3_prepare_v2(db.handle(), "SELECT COUNT(*) FROM novel_file", -1, &remainingFiles, nullptr) == SQLITE_OK);
+    const std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> remainingGuard(remainingFiles, sqlite3_finalize);
+    REQUIRE(sqlite3_step(remainingFiles) == SQLITE_ROW);
+    REQUIRE(sqlite3_column_int(remainingFiles, 0) == 0);
     REQUIRE(fs::exists(fixture.root / "saved.txt"));
     REQUIRE_THROWS_AS(service.removeUnavailableWork(work.id), NovelError);
 }
-TEST_CASE("Novel listing detects deleted files and restored files without importing again") {
+TEST_CASE("Novel listing cleans unavailable volumes without removing the novel work") {
     NovelFixture fixture; fixture.file("Book.txt");
     SqliteDatabase db(fixture.root / "test.db"); db.migrate(); NovelService service(db);
     service.importPath(fixture.root / "books" / "Book.txt");
     const auto id = service.list().front().id;
     fs::remove(fixture.root / "books" / "Book.txt");
-    REQUIRE(service.get(id).files.front().missing);
+    REQUIRE(service.get(id).files.empty());
     fixture.file("Book.txt");
+    service.importPath(fixture.root / "books" / "Book.txt");
     REQUIRE_FALSE(service.get(id).files.front().missing);
     ReaderLauncher launcher; service.read(service.get(id).files.front().id, launcher);
     REQUIRE(launcher.args.size() == 1);
     fs::remove(fixture.root / "books" / "Book.txt"); fs::remove(fixture.root / "books");
-    REQUIRE(service.get(id).files.front().missing);
+    REQUIRE(service.get(id).files.empty());
     REQUIRE(service.get(id).title == "Book");
+}
+TEST_CASE("Novel volume cleanup is independent of other books in the same root") {
+    NovelFixture fixture;
+    fixture.file("Story Vol.01.txt"); fixture.file("Story Vol.02.txt"); fixture.file("Other.txt");
+    SqliteDatabase db(fixture.root / "test.db"); db.migrate(); NovelService service(db);
+    service.importPath(fixture.root / "books");
+    fs::remove(fixture.root / "books" / "Story Vol.02.txt");
+    const auto works = service.list();
+    REQUIRE(works.size() == 2);
+    const auto story = std::find_if(works.begin(), works.end(), [](const auto& work) { return work.title == "Story"; });
+    REQUIRE(story != works.end());
+    REQUIRE(story->files.size() == 1);
+    REQUIRE(story->files.front().label == "Story Vol.01");
+    REQUIRE(fs::exists(fixture.root / "books" / "Other.txt"));
 }
 TEST_CASE("Novel import groups volumes without modifying source files") {
     NovelFixture fixture; fixture.file("Story Vol.01.epub"); fixture.file("Story Vol.02.txt"); fixture.file("ignored.mkv");
@@ -65,13 +86,13 @@ TEST_CASE("Novel import groups volumes without modifying source files") {
     fs::remove(fixture.root / "books" / "Story Vol.02.txt");
     service.importPath(fixture.root / "books");
     const auto files = service.list().front().files;
-    REQUIRE(std::count_if(files.begin(), files.end(), [](const auto& f) { return f.missing; }) == 1);
+    REQUIRE(files.size() == 1);
+    REQUIRE_FALSE(files.front().missing);
     ReaderLauncher launcher;
     const auto available = std::find_if(files.begin(), files.end(), [](const auto& f) { return !f.missing; });
     service.read(available->id, launcher);
     REQUIRE(launcher.args.size() == 1);
-    const auto missing = std::find_if(files.begin(), files.end(), [](const auto& f) { return f.missing; });
-    REQUIRE_THROWS_AS(service.read(missing->id, launcher), NovelError);
+    REQUIRE_THROWS_AS(service.read(work.files.back().id, launcher), NovelError);
 }
 TEST_CASE("Novel file import preserves binding and manual metadata on rescan") {
     NovelFixture fixture; fixture.file("Book.pdf");

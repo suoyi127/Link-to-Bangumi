@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Alert, Button, Card, Input, List, Space, Spin, Tag, Typography } from 'antd'
 import { getNovels, readNovel } from '../api/client'
 import type { NovelWork } from '../api/types'
@@ -11,13 +11,24 @@ export function NovelLibraryPage() {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const loadSequence = useRef(0)
   async function load(signal?: AbortSignal, quiet = false) {
+    const sequence = ++loadSequence.current
     if (!quiet) setLoading(true)
-    try { const result = await getNovels(signal); if (!signal?.aborted) { setItems(result.items); if (!quiet) setError('') } }
-    catch (e) { if (!signal?.aborted && !quiet) setError(e instanceof Error ? e.message : '加载失败') }
-    finally { if (!signal?.aborted) setLoading(false) }
+    try {
+      const result = await getNovels(signal)
+      if (!signal?.aborted && sequence === loadSequence.current) {
+        // 删除后清空失效详情，只允许最新响应更新列表，防止旧请求复活卷信息。
+        setItems(result.items)
+        setSelected((id) => id !== null && result.items.some((item) => item.id === id) ? id : null)
+        if (!quiet) setError('')
+      }
+    }
+    catch (e) { if (!signal?.aborted && sequence === loadSequence.current && !quiet) setError(e instanceof Error ? e.message : '加载失败') }
+    finally { if (!signal?.aborted && sequence === loadSequence.current) setLoading(false) }
   }
   useEffect(() => {
+    const requests = loadSequence
     let controller = new AbortController()
     void load(controller.signal)
     // 后台更新保留详情和阅读提示；页面离开时取消请求，避免旧结果回写。
@@ -28,7 +39,7 @@ export function NovelLibraryPage() {
     const timer = window.setInterval(refresh, 5000)
     window.addEventListener('focus', refresh)
     document.addEventListener('visibilitychange', refresh)
-    return () => { controller.abort(); window.clearInterval(timer); window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh) }
+    return () => { requests.current++; controller.abort(); window.clearInterval(timer); window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh) }
   }, [])
   const work = items.find((item) => item.id === selected)
   async function read(id: number) {

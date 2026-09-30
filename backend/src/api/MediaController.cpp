@@ -1,4 +1,5 @@
 #include "anime_vault/api/MediaController.hpp"
+#include "anime_vault/api/LocalRequest.hpp"
 #include "anime_vault/api/MediaService.hpp"
 #include "anime_vault/services/RuntimePaths.hpp"
 #include "anime_vault/services/PlayerCatalog.hpp"
@@ -251,8 +252,7 @@ void registerPlaybackEndpoint(MediaRepository& repository, PlaybackService& play
     }, {drogon::Get});
     drogon::app().registerHandler("/api/players", [&repository, playerJson](const Request& request, Callback&& callback) {
         respond(request, std::move(callback), [&] {
-            const auto origin = request->getHeader("Origin");
-            if ((!origin.empty() && !playbackOriginAllowed(origin)) || request->getHeader("Sec-Fetch-Site") == "cross-site")
+            if (!localRequestAllowed(request))
                 throw ApiError(403, "playback_origin_forbidden", "players requires a local page");
             const auto body = request->getJsonObject();
             if (!request->getParameters().empty() || request->body().size() > 2048 || !body ||
@@ -283,9 +283,7 @@ void registerPlaybackEndpoint(MediaRepository& repository, PlaybackService& play
         respond(request, std::move(callback), [&] {
             if (!request->getParameters().empty() || request->body().size() > 128)
                 throw ApiError(400, "invalid_request", "invalid playback request");
-            const auto origin = request->getHeader("Origin");
-            if ((!origin.empty() && !playbackOriginAllowed(origin)) ||
-                request->getHeader("Sec-Fetch-Site") == "cross-site")
+            if (!localRequestAllowed(request))
                 throw ApiError(403, "playback_origin_forbidden", "playback requires a local page");
             const auto dto = parsePlayMediaRequest(rawId);
             const auto preferences = repository.getUiPreferences();

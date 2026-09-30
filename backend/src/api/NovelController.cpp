@@ -1,4 +1,5 @@
 #include "anime_vault/api/NovelController.hpp"
+#include "anime_vault/api/LocalRequest.hpp"
 #include <drogon/drogon.h>
 #include <atomic>
 #include <set>
@@ -19,9 +20,7 @@ void failure(Callback callback, const std::string& code, int status = 400) {
     Json::Value j; j["error"]["code"] = code; j["error"]["message"] = code; reply(std::move(callback), j, status);
 }
 bool local(const Request& r) {
-    if (r->getHeader("sec-fetch-site") == "cross-site") return false;
-    const auto origin = r->getHeader("origin");
-    return origin.empty() || origin == "http://127.0.0.1:5173" || origin == "http://localhost:5173" || origin == "http://127.0.0.1:8848" || origin == "http://localhost:8848";
+    return localRequestAllowed(r);
 }
 const Json::Value& body(const Request& request, const std::set<std::string>& fields) {
     if (!local(request)) throw NovelError("cross_site_request_forbidden");

@@ -1,4 +1,5 @@
 #include "anime_vault/api/GameController.hpp"
+#include "anime_vault/api/LocalRequest.hpp"
 #include <drogon/drogon.h>
 #include <atomic>
 #include <set>
@@ -25,9 +26,8 @@ void error(Callback callback, const std::exception& error) {
     const auto* known = dynamic_cast<const GameError*>(&error); failure(std::move(callback), known ? known->code : "game_storage_error");
 }
 const Json::Value& body(const Request& request, const std::set<std::string>& fields) {
-    const auto origin = request->getHeader("origin");
     // 运行 EXE 与记录修改仅接受本机前端请求，确认字段由明确的用户操作提交。
-    if (request->getHeader("sec-fetch-site") == "cross-site" || (!origin.empty() && origin != "http://127.0.0.1:5173" && origin != "http://localhost:5173" && origin != "http://127.0.0.1:8848" && origin != "http://localhost:8848")) throw GameError("cross_site_request_forbidden");
+    if (!localRequestAllowed(request)) throw GameError("cross_site_request_forbidden");
     if (request->body().size() > 28000) throw GameError("request_too_large");
     const auto json = request->getJsonObject(); if (!json || !json->isObject()) throw GameError("invalid_request");
     for (const auto& name : json->getMemberNames()) if (!fields.contains(name)) throw GameError("invalid_request");

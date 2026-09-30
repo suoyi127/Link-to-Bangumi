@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
@@ -8,6 +9,7 @@ internal sealed class MainForm : Form
 {
     private readonly WebView2 browser = new() { Dock = DockStyle.Fill };
     private BackendSession? backend;
+    private bool restarting;
     private readonly CancellationTokenSource closing = new();
 
     internal MainForm()
@@ -37,7 +39,7 @@ internal sealed class MainForm : Form
             await browser.EnsureCoreWebView2Async(environment);
             browser.CoreWebView2.NavigationStarting += (_, args) =>
             {
-                if (IsSameOrigin(args.Uri, backend.Origin)) return;
+                if (backend is not null && IsSameOrigin(args.Uri, backend.Origin)) return;
                 args.Cancel = true;
                 OpenExternal(args.Uri);
             };
@@ -45,6 +47,20 @@ internal sealed class MainForm : Form
             {
                 args.Handled = true;
                 OpenExternal(args.Uri);
+            };
+            browser.CoreWebView2.WebMessageReceived += async (_, args) =>
+            {
+                // 仅接受当前本机页面的固定指令，忽略外部页面及任意命令参数。
+                if (backend is null || restarting || !IsSameOrigin(args.Source, backend.Origin)) return;
+                try
+                {
+                    using var message = JsonDocument.Parse(args.WebMessageAsJson);
+                    if (message.RootElement.ValueKind != JsonValueKind.Object ||
+                        !message.RootElement.TryGetProperty("command", out var command) ||
+                        command.ValueKind != JsonValueKind.String || command.GetString() != "restart-backend") return;
+                }
+                catch (JsonException) { return; }
+                await RestartBackendAsync(layout);
             };
             browser.Source = backend.Origin;
         }
@@ -58,6 +74,25 @@ internal sealed class MainForm : Form
                 "启动失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
             Close();
         }
+    }
+
+    private async Task RestartBackendAsync(DesktopLayout layout)
+    {
+        restarting = true;
+        try
+        {
+            backend?.Dispose();
+            backend = null;
+            backend = await BackendSession.StartAsync(layout, closing.Token);
+            browser.Source = backend.Origin;
+        }
+        catch (OperationCanceledException) when (closing.IsCancellationRequested) { }
+        catch (Exception error)
+        {
+            MessageBox.Show(this, $"目录已保存，但后端重启失败：{error.Message}\n请关闭并重新打开应用。",
+                "重启失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        finally { restarting = false; }
     }
 
     private static bool IsSameOrigin(string raw, Uri origin) =>
