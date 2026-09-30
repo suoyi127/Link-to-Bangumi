@@ -6,3 +6,6 @@ inline constexpr const char* kMediaOriginSql = R"ANIME_VAULT_SQL(@ANIME_VAULT_ME
 inline constexpr const char* kOrganizationExecutionSql = R"ANIME_VAULT_SQL(@ANIME_VAULT_ORGANIZATION_EXECUTION_SQL@)ANIME_VAULT_SQL";
 inline constexpr const char* kParsedTitleSql = R"ANIME_VAULT_SQL(@ANIME_VAULT_PARSED_TITLE_SQL@)ANIME_VAULT_SQL";
 inline constexpr const char* kFolderImportSql = R"ANIME_VAULT_SQL(@ANIME_VAULT_FOLDER_IMPORT_SQL@)ANIME_VAULT_SQL";
+inline constexpr const char* kNovelSql = R"ANIME_VAULT_SQL(@ANIME_VAULT_NOVEL_SQL@)ANIME_VAULT_SQL";
+inline constexpr const char* kGameSql = R"ANIME_VAULT_SQL(@ANIME_VAULT_GAME_SQL@)ANIME_VAULT_SQL";
+inline constexpr const char* kGameVndbSql = R"ANIME_VAULT_SQL(@ANIME_VAULT_GAME_VNDB_SQL@)ANIME_VAULT_SQL";

@@ -84,11 +84,37 @@ void DrogonBangumiTransport::searchAliases(std::string keyword, Completion compl
     send(request, std::move(completion));
 }
 
+void DrogonBangumiTransport::searchBooks(std::string keyword, Completion completion) {
+    auto request = drogon::HttpRequest::newHttpRequest();
+    request->setMethod(drogon::Post);
+    request->setPath("/v0/search/subjects?limit=20");
+    request->setPathEncode(false);
+    request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+    // 小说必须走书籍过滤，不能沿用动画查询的 type=2。
+    request->setBody(nlohmann::json{{"keyword", std::move(keyword)}, {"filter", {{"type", {1}}}}}.dump());
+    send(request, std::move(completion));
+}
+
 void DrogonBangumiTransport::subject(std::int64_t id, Completion completion) {
     if (id <= 0) { completion(std::nullopt, "invalid_subject_id"); return; }
     auto request = drogon::HttpRequest::newHttpRequest();
     request->setMethod(drogon::Get);
     request->setPath("/v0/subjects/" + std::to_string(id));
+    send(request, std::move(completion));
+}
+void DrogonBangumiTransport::searchGames(std::string keyword, Completion completion) {
+    auto request = drogon::HttpRequest::newHttpRequest();
+    request->setMethod(drogon::Post); request->setPath("/v0/search/subjects?limit=20"); request->setPathEncode(false);
+    request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+    // 游戏类型为 4，避免搜索到同名动画或小说。
+    request->setBody(nlohmann::json{{"keyword", std::move(keyword)}, {"filter", {{"type", {4}}}}}.dump());
+    send(request, std::move(completion));
+}
+
+void DrogonBangumiTransport::calendar(Completion completion) {
+    auto request = drogon::HttpRequest::newHttpRequest();
+    request->setMethod(drogon::Get);
+    request->setPath("/calendar");
     send(request, std::move(completion));
 }
 

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, Button, Checkbox, Input, Modal, Select, Space, Spin, Table, Tabs, Typography } from 'antd'
 import { addFolderImport, correctMedia, executeOrganization, getFolderImports, getInbox, getSettings, previewOrganization, scanFolderImport, searchBangumi } from '../api/client'
 import type { BangumiSearch, FolderImport, InboxOrigin, Media, Preferences, Preview } from '../api/types'
+import { NovelResources } from './NovelResources'
+import { GameResources } from './GamePages'
 
 type Props = { onOpenAnime: (id: number) => void }
 type Correction = Pick<Media, 'title' | 'season' | 'episodeNumber' | 'episodeType'>
@@ -10,6 +12,11 @@ const episodeTypes = ['normal', 'sp', 'ova', 'ncop', 'nced']
 const executable = (plan: Preview | null) => !!plan && plan.conflicts.length === 0 && Number.isFinite(Date.parse(plan.expiresAt)) && Date.parse(plan.expiresAt) > Date.now()
 
 export function InboxPage({ onOpenAnime }: Props) {
+  const [kind, setKind] = useState('video')
+  return <Space direction="vertical" size="middle" style={{ width: '100%' }}><Tabs activeKey={kind} onChange={setKind} items={[{ key: 'video', label: '番剧资源' }, { key: 'novel', label: '小说资源' }, { key: 'game', label: '游戏资源' }]} />{kind === 'video' ? <VideoInboxPage onOpenAnime={onOpenAnime} /> : kind === 'novel' ? <NovelResources /> : <GameResources />}</Space>
+}
+
+function VideoInboxPage({ onOpenAnime }: Props) {
   // 分来源保留分页位置，避免切换标签时互相覆盖列表状态。
   const [items, setItems] = useState<Media[]>([])
   const [origin, setOrigin] = useState<InboxOrigin>('qb_download')
@@ -121,7 +128,7 @@ export function InboxPage({ onOpenAnime }: Props) {
     finally { setFolderBusy(false) }
   }
 
-  return <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+  return <Space className="resource-page" direction="vertical" size="middle" style={{ width: '100%' }}>
     <Tabs activeKey={origin} onChange={(value) => changeOrigin(value as InboxOrigin)} items={[{ key: 'qb_download', label: 'qB 下载' }, { key: 'external_import', label: '外来导入' }, { key: 'folder_import', label: '文件夹导入' }]} />
     {origin === 'folder_import' && <Space direction="vertical" style={{ width: '100%' }}>
       <Typography.Text type="secondary">扫描本机已有文件夹，不复制或移动原文件。请粘贴文件夹的绝对路径。</Typography.Text>
@@ -138,7 +145,7 @@ export function InboxPage({ onOpenAnime }: Props) {
       { title: '操作', render: (_, item: Media) => <Button onClick={() => choose(item)} aria-label={`编辑 ${item.title}`}>编辑与整理</Button> },
     ]} />
     <Space><Typography.Text>共 {total} 条</Typography.Text><Button disabled={loading || offset === 0} onClick={() => changePage(Math.max(0, offset - 100))}>上一页</Button><Button disabled={loading || nextOffset === null} onClick={() => changePage(nextOffset!)}>下一页</Button></Space>
-    {selected && correction && <Space direction="vertical" style={{ width: '100%' }}>
+    {selected && correction && <Space className="resource-editor" direction="vertical" style={{ width: '100%' }}>
       <Typography.Title level={5}>{selected.filename}</Typography.Title>
       <Typography.Text>识别标题：{selected.parsedTitle}</Typography.Text>
       <Input aria-label="规范标题" value={correction.title} onChange={(event) => editCorrection('title', event.target.value)} />

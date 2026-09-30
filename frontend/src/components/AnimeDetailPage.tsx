@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Alert, Button, Descriptions, Input, List, Modal, Space, Spin, Typography } from 'antd'
 import { bindBangumi, getAnimeDetail, getAuditLogs, playMedia, refreshAnimeCover, searchBangumi } from '../api/client'
 import type { AnimeDetail, AuditLog, BangumiCandidate, BangumiSearch, Media } from '../api/types'
+import { PlaybackPlayerSelect } from './PlaybackPlayerSelect'
 
 type Props = { animeId: number; onBack: () => void }
 const errorText = (error: unknown) => error instanceof Error ? error.message : '请求失败'
@@ -26,6 +27,7 @@ export function AnimeDetailPage({ animeId, onBack }: Props) {
   const [playingId, setPlayingId] = useState<number | null>(null)
   const [playError, setPlayError] = useState('')
   const [playNotice, setPlayNotice] = useState('')
+  const [playerId, setPlayerId] = useState('')
   const generation = useRef(0)
   const searchGeneration = useRef(0)
   const mediaGeneration = useRef(0)
@@ -42,6 +44,7 @@ export function AnimeDetailPage({ animeId, onBack }: Props) {
     const searchRef = searchGeneration
     const mediaRef = mediaGeneration
     const current = ++generationRef.current
+    setPlayerId('')
     searchRef.current++
     mediaRef.current++
     setDetail(null); setMedia([]); setAudits([]); setMoreBusy(false); setBinding(false); setRefreshingCover(false); setCoverError(''); setPlayingId(null); setPlayError(''); setPlayNotice(''); setResults(null); setCandidate(null); setError(''); setRemoteError(''); setLoading(true)
@@ -103,8 +106,8 @@ export function AnimeDetailPage({ animeId, onBack }: Props) {
     const current = generation.current
     setPlayingId(item.id); setPlayError(''); setPlayNotice('')
     try {
-      await playMedia(item.id)
-      if (current === generation.current) setPlayNotice(`已启动本机 mpv：${item.filename}`)
+      const result = playerId ? await playMedia(item.id, playerId) : await playMedia(item.id)
+      if (current === generation.current) setPlayNotice(`已启动${result.playerName || '所选播放器'}：${item.filename}`)
     } catch (cause) {
       if (current === generation.current) setPlayError(errorText(cause))
     } finally {
@@ -112,7 +115,7 @@ export function AnimeDetailPage({ animeId, onBack }: Props) {
     }
   }
 
-  return <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+  return <Space className="detail-page" direction="vertical" size="middle" style={{ width: '100%' }}>
     <Button onClick={onBack}>返回番剧库</Button>
     {error && <Alert type="error" message={error} />}
     {loading && <Spin aria-label="正在加载详情" />}
@@ -127,13 +130,14 @@ export function AnimeDetailPage({ animeId, onBack }: Props) {
         { key: 'aliases', label: '别名', children: detail.aliases.length ? detail.aliases.join('、') : '无' },
       ]} />
       <Typography.Title level={4}>媒体文件</Typography.Title>
+      <PlaybackPlayerSelect value={playerId} onChange={setPlayerId} />
       {playError && <Alert type="error" message={playError} />}
       {playNotice && <Alert type="success" message={playNotice} />}
       <List dataSource={media} locale={{ emptyText: '暂无媒体文件' }} renderItem={(item) => {
         // One anime can contain releases whose parsed titles are romanized aliases.
         const title = detail.displayTitle.trim() || item.title.trim() || item.filename
         const episode = item.episodeNumber.trim()
-        return <List.Item key={item.id} actions={[<Button key="play" aria-label={`用 mpv 播放 ${item.filename}`} loading={playingId === item.id} disabled={playingId !== null && playingId !== item.id} onClick={() => void startPlayback(item)}>用 mpv 播放</Button>]}><Space direction="vertical"><Typography.Text strong>{title}{episode ? ` [${episode}]` : ''}</Typography.Text><Typography.Text type="secondary">{item.filename}</Typography.Text><Typography.Text type="secondary">{item.episodeType} {item.episodeNumber} · {item.status} · {item.origin}</Typography.Text></Space></List.Item>
+        return <List.Item key={item.id} actions={[<Button key="play" aria-label={`播放 ${item.filename}`} loading={playingId === item.id} disabled={playingId !== null && playingId !== item.id} onClick={() => void startPlayback(item)}>播放</Button>]}><Space direction="vertical"><Typography.Text strong>{title}{episode ? ` [${episode}]` : ''}</Typography.Text><Typography.Text type="secondary">{item.filename}</Typography.Text><Typography.Text type="secondary">{item.episodeType} {item.episodeNumber} · {item.status} · {item.origin}</Typography.Text></Space></List.Item>
       }} />
       {nextMediaOffset !== null && <Button loading={moreBusy} onClick={() => void loadMore()}>加载更多媒体</Button>}
       <Typography.Title level={4}>Bangumi 绑定</Typography.Title>

@@ -2,6 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import { Alert, Button, Descriptions, Input, InputNumber, List, Popconfirm, Space, Spin, Typography } from 'antd'
 import { addMikanFeed, createMikanRule, deleteBangumiConfig, deleteQbConfig, getAuditLogs, getBangumiConfig, getMikanFeeds, getQbConfig, getQbStatus, getSettings, putBangumiConfig, putQbConfig, putQbDownloadDirectory, putSettings, testBangumiConfig, testQbConfig } from '../api/client'
 import type { AuditLog, BangumiConfig, MikanFeeds, Preferences, QbConfig, QbConfigDraft, QbStatus, Settings } from '../api/types'
+import { PlayerSettings } from './PlayerSettings'
+import { NovelSettings } from './NovelSettings'
+import type { ReactNode } from 'react'
+
+function SettingsSection({ title, wide = false, children }: { title: string; wide?: boolean; children: ReactNode }) {
+  return <section className={`settings-section${wide ? ' wide' : ''}`} aria-label={title}><Space direction="vertical" size="middle" style={{ width: '100%' }}><Typography.Title level={4}>{title}</Typography.Title>{children}</Space></section>
+}
 
 const auditPageSize = 50
 const errorText = (error: unknown) => error instanceof Error ? error.message : '请求失败'
@@ -204,12 +211,11 @@ export function SettingsPage() {
     finally { setCreatingRule(false) }
   }
 
-  return <Space direction="vertical" size="large" style={{ width: '100%' }}>
-    <Typography.Title level={3}>设置</Typography.Title>
+  return <Space className="settings-page" direction="vertical" size="large" style={{ width: '100%' }}>
     {settingsError && <Alert type="error" message={settingsError} />}
     {!settings && !settingsError && <Spin aria-label="正在加载设置" />}
-    {settings && draft && <>
-      <Typography.Title level={4}>生效路径</Typography.Title>
+    {settings && draft && <div className="settings-grid">
+      <SettingsSection title="生效路径" wide>
       <Descriptions bordered column={1} items={[
         { key: 'source', label: '当前 qB 下载目录', children: settings.qbDownloadConfigured ? settings.sourcePath : '尚未配置 qB 下载目录' },
         { key: 'import', label: '外来导入目录', children: settings.importPath },
@@ -221,7 +227,8 @@ export function SettingsPage() {
       <Button loading={qbPathSaving} disabled={settings.qbDownloadEnvironmentOverride} onClick={() => void saveQbPath()}>保存 qB 下载目录</Button>
       {settings.qbDownloadEnvironmentOverride && <Alert type="info" message="环境变量正在覆盖页面保存的 qB 下载目录；移除 ANIME_VAULT_SOURCE_DIR 后才能在此修改。" />}
       {qbPathPending && <Alert type="warning" message="qB 下载目录已保存，重启后端后生效。" />}
-      <Typography.Title level={4}>qB Web UI 连接</Typography.Title>
+      </SettingsSection>
+      <SettingsSection title="qB Web UI 连接">
       <Typography.Text type="secondary">仅支持本机回环地址，例如 http://[::1]:8080。密码保存在当前 Windows 用户的凭据管理器中，不会回显；已保存配置时留空可保持原密码。</Typography.Text>
       {qbConfig?.source === 'saved' ? <Typography.Text>已保存 qB Web UI 配置</Typography.Text> : qbConfig?.source === 'environment' ? <Typography.Text>当前使用启动环境配置</Typography.Text> : <Typography.Text>尚未配置 qB Web UI</Typography.Text>}
       {qbConfigError && <Alert type="error" message={qbConfigError} />}
@@ -234,7 +241,8 @@ export function SettingsPage() {
         <Button loading={qbTestBusy} disabled={!qbDraft.url || !qbDraft.username || (!qbDraft.password && qbConfig?.source !== 'saved')} onClick={() => void testQbConnection()}>测试 qB 连接</Button>
         {qbConfig?.source === 'saved' && <Popconfirm title="确认清除已保存的 qB Web UI 配置？" description="清除后会恢复启动环境配置（若有），不会更改 qB 的下载任务。" okText="确认清除" cancelText="取消" onConfirm={() => void clearQbConnection()}><Button danger loading={qbConfigBusy}>清除 qB 配置</Button></Popconfirm>}
       </Space>
-      <Typography.Title level={4}>Bangumi 连接</Typography.Title>
+      </SettingsSection>
+      <SettingsSection title="Bangumi 连接">
       <Typography.Text type="secondary">搜索、词条绑定和封面刮削直接访问 Bangumi。User-Agent 建议包含开发者 ID、应用版本和 GitHub 项目主页；目前仅用公开接口，不需要个人 Token。</Typography.Text>
       <Typography.Text>{bangumiConfig?.source === 'saved' ? '已保存 Bangumi 配置' : bangumiConfig?.source === 'environment' ? '当前使用启动环境配置' : 'Bangumi 未配置；本地浏览仍可用'}</Typography.Text>
       {bangumiError && <Alert type="error" message={bangumiError} />}
@@ -245,8 +253,9 @@ export function SettingsPage() {
         <Button loading={bangumiTesting} disabled={!bangumiAgent.trim()} onClick={() => void testBangumiConnection()}>测试 Bangumi 连接</Button>
         {bangumiConfig?.source === 'saved' && <Popconfirm title="确认清除已保存的 Bangumi 配置？" description="清除后恢复启动环境配置（若有），不会删除已有封面。" okText="确认清除" cancelText="取消" onConfirm={() => void clearBangumiConnection()}><Button danger loading={bangumiBusy}>清除 Bangumi 配置</Button></Popconfirm>}
       </Space>
+      </SettingsSection>
+      <SettingsSection title="Mikan 订阅（由 qB 获取 RSS）" wide>
       <Alert type={qbStatus?.connected ? 'success' : 'info'} message={qbStatus?.connected ? `qBittorrent 已连接 · ${qbStatus.version} · ${qbStatus.torrentCount} 个任务（${qbStatus.completedCount} 个已下载）` : settings.qbWebUiConfigured ? `qBittorrent 已配置，${qbStatus ? `连接失败（${qbStatus.errorCode}）` : '正在检查连接'}` : 'qBittorrent Web UI 未启用；qB 下载完成需手动确认'} />
-      <Typography.Title level={4}>Mikan 订阅（由 qB 获取 RSS）</Typography.Title>
       {mikanFeeds && <Typography.Text>{mikanFeeds.feedCount} 个订阅 · {mikanFeeds.articleCount} 篇文章 · {mikanFeeds.pairCount} 组标题映射</Typography.Text>}
       {mikanFeeds?.errorCode && <Alert type="warning" message={mikanFeeds.errorCode} />}
       {mikanError && <Alert type="warning" message={mikanError} />}
@@ -262,15 +271,22 @@ export function SettingsPage() {
       <Popconfirm title="确认创建自动下载规则？" description={`启用后 qB 可能立即下载已发布的匹配条目，保存到 ${settings.sourcePath}。`} okText="确认创建" cancelText="取消" onConfirm={() => void addRule()}>
         <Button loading={creatingRule} disabled={!settings.qbWebUiConfigured || !settings.qbDownloadConfigured || qbPathPending || !ruleName.trim() || !ruleFeedUrl.trim() || !ruleKeyword.trim()}>创建自动下载规则</Button>
       </Popconfirm>
-      <Typography.Title level={4}>偏好</Typography.Title>
+      </SettingsSection>
+      <SettingsSection title="偏好">
       <label>首选整理方式 <select aria-label="首选整理方式" value={draft.preferredOperation} onChange={(event) => setDraft({ ...draft, preferredOperation: event.target.value as Preferences['preferredOperation'] })}><option value="hardlink">硬链接</option><option value="copy">复制</option><option value="symlink">符号链接</option></select></label>
       <label>扫描间隔（预留，尚无自动扫描） <InputNumber aria-label="扫描间隔（秒）" min={60} max={86400} value={draft.scanIntervalSeconds} onChange={(value) => setDraft({ ...draft, scanIntervalSeconds: value ?? 3600 })} /></label>
-        <label>mpv 可执行文件（本机播放） <Input aria-label="mpv 可执行文件" maxLength={1024} value={draft.mpvExecutable} onChange={(event) => setDraft({ ...draft, mpvExecutable: event.target.value })} /></label>
       <Button type="primary" loading={saving} onClick={() => void save()}>保存偏好</Button>
-    </>}
-    <Typography.Title level={4}>审计记录</Typography.Title>
+      </SettingsSection>
+      <div className="settings-section"><PlayerSettings /></div>
+      <div className="settings-section wide"><NovelSettings /></div>
+    </div>}
+    <details className="settings-section" aria-label="审计记录">
+    <summary style={{ cursor: 'pointer', fontSize: 16, fontWeight: 600 }}>审计记录</summary>
+    <Space direction="vertical" size="middle" style={{ width: '100%', marginTop: 16 }}>
     {auditError && <Alert type="error" message={auditError} />}
     {auditLoading ? <Spin aria-label="正在加载审计记录" /> : <List dataSource={audit} locale={{ emptyText: '暂无审计记录' }} renderItem={(item) => <List.Item>{item.createdAt} · {item.action} · {item.entityType} #{item.entityId}</List.Item>} />}
     <Space><Button aria-label="上一页审计" disabled={auditLoading || auditOffset === 0} onClick={() => setAuditOffset(Math.max(0, auditOffset - auditPageSize))}>上一页</Button><Button aria-label="下一页审计" disabled={auditLoading || nextAuditOffset === null} onClick={() => { if (nextAuditOffset !== null) setAuditOffset(nextAuditOffset) }}>下一页</Button></Space>
+    </Space>
+    </details>
   </Space>
 }

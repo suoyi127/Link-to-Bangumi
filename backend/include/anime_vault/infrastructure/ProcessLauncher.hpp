@@ -12,12 +12,16 @@ public:
     virtual ~ProcessLauncher() = default;
     virtual bool launch(const std::filesystem::path& executable,
                         const std::vector<std::string>& arguments) = 0;
+    virtual bool openDefault(const std::filesystem::path&) { return false; }
+    virtual bool launchInDirectory(const std::filesystem::path& executable, const std::vector<std::string>& arguments, const std::filesystem::path&) { return launch(executable, arguments); }
 };
 
 class NativeProcessLauncher final : public ProcessLauncher {
 public:
     bool launch(const std::filesystem::path& executable,
                 const std::vector<std::string>& arguments) override;
+    bool openDefault(const std::filesystem::path& file) override;
+    bool launchInDirectory(const std::filesystem::path& executable, const std::vector<std::string>& arguments, const std::filesystem::path& directory) override;
 };
 
 } // namespace anime_vault

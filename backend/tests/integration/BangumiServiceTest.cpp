@@ -1,5 +1,6 @@
 #include "anime_vault/services/BangumiService.hpp"
 #include "anime_vault/services/AnimeEnricher.hpp"
+#include "anime_vault/services/BangumiCalendarService.hpp"
 #include "anime_vault/infrastructure/database/SqliteDatabase.hpp"
 #include "anime_vault/infrastructure/database/SqliteMediaRepository.hpp"
 
@@ -23,6 +24,12 @@ struct FakeTransport final : BangumiTransport {
     std::optional<Response> aliasNext{Response{200, R"({"results":0,"list":[]})"}};
     std::optional<Response> aliasPrefixNext;
     std::vector<std::string> aliasQueries;
+    int calendarCalls{};
+    std::optional<Response> calendarNext;
+    void calendar(Completion completion) override {
+        ++calendarCalls;
+        completion(calendarNext, calendarNext ? "" : "offline");
+    }
     void search(std::string, Completion completion) override {
         ++calls;
         if (throwOnSearch) throw std::runtime_error("transport exception with private details");
@@ -56,6 +63,63 @@ TEST_CASE("Bangumi subject lookup rejects a response for a different requested I
     REQUIRE(result);
     REQUIRE(result->errorCode == "bangumi_bad_response");
     REQUIRE_FALSE(result->subject);
+}
+
+TEST_CASE("calendar intersects all local pages by subject ID and rechecks media on cache reads") {
+    TempDb temp;
+    SqliteDatabase db(temp.path);
+    db.migrate();
+    SqliteMediaRepository repo(db);
+    REQUIRE(sqlite3_exec(db.handle(),
+        "INSERT INTO anime(display_title,bangumi_subject_id) VALUES('Local show',123);"
+        "INSERT INTO media_file(anime_id,source_path,filename,size_bytes,status) VALUES(1,'C:/test/show.mkv','show.mkv',1,'inbox');"
+        "INSERT INTO anime(display_title,bangumi_subject_id) VALUES('Metadata only',789);"
+        "WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<201) "
+        "INSERT INTO anime(display_title) SELECT printf('Other %d',x) FROM n;",
+        nullptr, nullptr, nullptr) == SQLITE_OK);
+    FakeTransport transport;
+    transport.calendarNext = FakeTransport::Response{200,
+        R"([{"weekday":{"id":1},"items":[{"id":123,"type":2},{"id":123,"type":2},{"id":789,"type":2}]},{"weekday":{"id":2},"items":[{"id":999,"type":2}]}])"};
+    auto service = std::make_shared<BangumiCalendarService>(repo, transport);
+    std::optional<AnimeCalendarResult> result;
+    service->get([&](AnimeCalendarResult value) { result = std::move(value); });
+    REQUIRE(result->errorCode.empty());
+    REQUIRE(result->days[0].items.size() == 1);
+    REQUIRE(result->days[0].items[0].id == 1);
+    REQUIRE(result->days[1].items.empty());
+    REQUIRE(result->days[6].weekday == 7);
+    REQUIRE_FALSE(result->fromCache);
+    REQUIRE(sqlite3_exec(db.handle(), "UPDATE media_file SET status='missing' WHERE anime_id=1;",
+        nullptr, nullptr, nullptr) == SQLITE_OK);
+    service->get([&](AnimeCalendarResult value) { result = std::move(value); });
+    REQUIRE(result->fromCache);
+    REQUIRE(result->days[0].items.empty());
+    REQUIRE(transport.calendarCalls == 1);
+}
+
+TEST_CASE("calendar uses recent stale data on failure but rejects invalid weekdays and ancient caches") {
+    TempDb temp;
+    SqliteDatabase db(temp.path);
+    db.migrate();
+    SqliteMediaRepository repo(db);
+    FakeTransport transport;
+    transport.calendarNext = FakeTransport::Response{200, R"([{"weekday":{"id":3},"items":[]}])"};
+    auto now = std::chrono::system_clock::time_point{std::chrono::seconds{1000000}};
+    auto service = std::make_shared<BangumiCalendarService>(repo, transport, [&] { return now; });
+    std::optional<AnimeCalendarResult> result;
+    service->get([&](AnimeCalendarResult value) { result = std::move(value); });
+    REQUIRE(result->errorCode.empty());
+    now += std::chrono::hours{7};
+    transport.calendarNext = FakeTransport::Response{200, R"([{"weekday":{"id":8},"items":[]}])"};
+    service->get([&](AnimeCalendarResult value) { result = std::move(value); });
+    REQUIRE(result->stale);
+    REQUIRE(result->errorCode == "bangumi_calendar_bad_response");
+    REQUIRE(result->days[2].weekday == 3);
+    now += std::chrono::hours{24 * 8};
+    transport.calendarNext.reset();
+    service->get([&](AnimeCalendarResult value) { result = std::move(value); });
+    REQUIRE_FALSE(result->stale);
+    REQUIRE(result->errorCode == "bangumi_calendar_unavailable");
 }
 
 TEST_CASE("local bound title resolves before Bangumi transport") {

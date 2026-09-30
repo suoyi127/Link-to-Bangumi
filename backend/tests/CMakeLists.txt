@@ -1,4 +1,14 @@
 find_package(Catch2 3 CONFIG REQUIRED)
+add_executable(anime_vault_game_tests integration/GameServiceTest.cpp)
+target_link_libraries(anime_vault_game_tests PRIVATE anime_vault_bangumi_service Catch2::Catch2WithMain)
+target_compile_features(anime_vault_game_tests PRIVATE cxx_std_20)
+add_test(NAME GameService COMMAND anime_vault_game_tests)
+
+add_executable(anime_vault_novel_tests integration/NovelServiceTest.cpp)
+target_link_libraries(anime_vault_novel_tests PRIVATE anime_vault_bangumi_service Catch2::Catch2WithMain)
+target_compile_features(anime_vault_novel_tests PRIVATE cxx_std_20)
+anime_vault_apply_warnings(anime_vault_novel_tests)
+add_test(NAME NovelService COMMAND anime_vault_novel_tests)
 
 add_executable(anime_vault_runtime_paths_tests unit/RuntimePathsTest.cpp)
 target_link_libraries(anime_vault_runtime_paths_tests PRIVATE anime_vault_core anime_vault_storage Catch2::Catch2WithMain)

@@ -76,9 +76,9 @@ export function DashboardPage() {
   }
 
   const failed = data?.scans.filter((scan) => scan.errorCount > 0 || scan.status === 'failed') ?? []
-  return <Space direction="vertical" size="large" style={{ width: '100%' }}>
+  return <Space className="dashboard-page" direction="vertical" size="large" style={{ width: '100%' }}>
     <HealthStatus />
-    <Row gutter={16}>
+    <Row gutter={[16, 16]}>
       <Col xs={24} sm={12}><Card><Statistic title="待整理文件" value={data?.inboxCount ?? '—'} /></Card></Col>
       <Col xs={24} sm={12}><Card><Statistic title="番剧标题" value={data?.animeCount ?? '—'} /></Card></Col>
     </Row>

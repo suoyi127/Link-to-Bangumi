@@ -16,6 +16,13 @@ public:
     virtual void search(std::string keyword, Completion completion) = 0;
     virtual void searchAliases(std::string keyword, Completion completion) = 0;
     virtual void subject(std::int64_t id, Completion completion) = 0;
+    virtual void searchBooks(std::string, Completion completion) {
+        completion(std::nullopt, "bangumi_book_search_unavailable");
+    }
+    virtual void calendar(Completion completion) {
+        completion(std::nullopt, "bangumi_calendar_unavailable");
+    }
+    virtual void searchGames(std::string, Completion completion) { completion(std::nullopt, "bangumi_game_search_unavailable"); }
 };
 
 } // namespace anime_vault

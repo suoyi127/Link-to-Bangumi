@@ -55,7 +55,7 @@ TEST_CASE("scan and inbox records survive reopening a migrated database") {
     {
         SqliteDatabase db(path);
         db.migrate();
-        REQUIRE(db.schemaVersion() == 7);
+        REQUIRE(db.schemaVersion() == 10);
         SqliteMediaRepository repo(db);
         const auto scanId = repo.createScan({0, "D:/sample", "running", 1, 0, 0, ""});
         const auto mediaId = repo.insertMedia({0, scanId, "D:/sample/01.mkv", "01.mkv", "1.5", "normal", 1234, "inbox", 0.9});
@@ -108,7 +108,7 @@ TEST_CASE("scan and inbox records survive reopening a migrated database") {
     {
         SqliteDatabase db(path);
         db.migrate();
-        REQUIRE(db.schemaVersion() == 7);
+        REQUIRE(db.schemaVersion() == 10);
         SqliteMediaRepository repo(db);
         const auto scans = repo.listScans();
         const auto media = repo.listInbox();
@@ -140,9 +140,10 @@ TEST_CASE("schema migration six backfills parsed titles from existing correction
         "DROP INDEX media_file_folder_import;"
         "ALTER TABLE media_file DROP COLUMN folder_import_id;"
         "DROP TABLE folder_import;"
+        "DROP TABLE game_resource; DROP TABLE novel_file; DROP TABLE novel_work; DROP TABLE novel_source;"
         "ALTER TABLE media_file DROP COLUMN parsed_title; PRAGMA user_version=5;", nullptr, nullptr, nullptr) == SQLITE_OK);
     db.migrate();
-    REQUIRE(db.schemaVersion() == 7);
+    REQUIRE(db.schemaVersion() == 10);
     SqliteMediaRepository repo(db);
     const auto media = repo.getMedia(1);
     REQUIRE(media);

@@ -1,4 +1,5 @@
 #include "anime_vault/services/PlaybackService.hpp"
+#include "anime_vault/services/PlayerCatalog.hpp"
 
 #include <algorithm>
 #include <system_error>
@@ -26,17 +27,21 @@ PlaybackService::PlaybackService(MediaRepository& repository, fs::path sourceRoo
       importRoot_(std::move(importRoot)), libraryRoot_(std::move(libraryRoot)),
       launcher_(launcher) {}
 
-void PlaybackService::play(std::int64_t mediaId, const std::string& mpvExecutable) const {
+void PlaybackService::play(std::int64_t mediaId, const std::string& mpvExecutable, const std::string& playerType) const {
     if (mediaId <= 0) throw PlaybackError("invalid_media_id");
+    if (!validPlayerType(playerType)) throw PlaybackError("invalid_player");
     const auto media = repository_.getMedia(mediaId);
     if (!media) throw PlaybackError("media_not_found");
-    if (mpvExecutable.empty()) throw PlaybackError("mpv_not_configured");
-    const auto executable = fromUtf8(mpvExecutable);
     std::error_code ec;
-    if (!executable.is_absolute() || !fs::is_regular_file(executable, ec))
-        throw PlaybackError("mpv_not_found");
-    const auto resolvedExecutable = fs::canonical(executable, ec);
-    if (ec) throw PlaybackError("mpv_not_found");
+    fs::path resolvedExecutable;
+    if (playerType != "system") {
+        if (mpvExecutable.empty()) throw PlaybackError(playerType == "mpv" ? "mpv_not_configured" : "player_not_configured");
+        const auto executable = fromUtf8(mpvExecutable);
+        if (!validPlayerExecutable(mpvExecutable))
+            throw PlaybackError(playerType == "mpv" ? "mpv_not_found" : "player_not_found");
+        resolvedExecutable = fs::canonical(executable, ec);
+        if (ec) throw PlaybackError("player_not_found");
+    }
 
     const bool organized = !media->libraryPath.empty();
     fs::path allowedRoot = organized ? libraryRoot_ :
@@ -61,10 +66,20 @@ void PlaybackService::play(std::int64_t mediaId, const std::string& mpvExecutabl
     const auto canonicalRoot = fs::canonical(allowedRoot, ec);
     if (ec || !within(canonicalRoot, canonicalPath))
         throw PlaybackError("playback_path_outside_root");
-    // The `--` boundary prevents a filename beginning with '-' from becoming an mpv option.
-    if (!launcher_.launch(resolvedExecutable,
-                          {"--save-position-on-quit", "--", toUtf8(canonicalPath)}))
-        throw PlaybackError("mpv_launch_failed");
+    auto extension = canonicalPath.extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    const std::vector<std::string> formats{".mkv", ".mp4", ".avi", ".mov", ".webm", ".m4v", ".ts", ".m2ts", ".wmv", ".flv", ".mpg", ".mpeg", ".ogm"};
+    if (std::find(formats.begin(), formats.end(), extension) == formats.end())
+        throw PlaybackError("playback_format_unsupported");
+    if (playerType == "system") {
+        if (!launcher_.openDefault(canonicalPath)) throw PlaybackError("player_launch_failed");
+        return;
+    }
+    // 固定参数配置；临时选择只改变播放器，不允许网页提交命令行。
+    std::vector<std::string> arguments{toUtf8(canonicalPath)};
+    if (playerType == "mpv") arguments = {"--save-position-on-quit", "--", toUtf8(canonicalPath)};
+    if (!launcher_.launch(resolvedExecutable, arguments))
+        throw PlaybackError(playerType == "mpv" ? "mpv_launch_failed" : "player_launch_failed");
 }
 
 } // namespace anime_vault

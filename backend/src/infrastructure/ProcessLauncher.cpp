@@ -3,6 +3,8 @@
 #ifdef _WIN32
 #define NOMINMAX
 #include <windows.h>
+#include <shellapi.h>
+#include <objbase.h>
 #else
 #include <spawn.h>
 extern char** environ;
@@ -44,6 +46,10 @@ std::wstring quote(const std::wstring& value) {
 
 bool NativeProcessLauncher::launch(const std::filesystem::path& executable,
                                    const std::vector<std::string>& arguments) {
+    return launchInDirectory(executable, arguments, {});
+}
+bool NativeProcessLauncher::launchInDirectory(const std::filesystem::path& executable,
+    const std::vector<std::string>& arguments, const std::filesystem::path& directory) {
 #ifdef _WIN32
     std::wstring command = quote(executable.wstring());
     for (const auto& argument : arguments) {
@@ -55,13 +61,14 @@ bool NativeProcessLauncher::launch(const std::filesystem::path& executable,
     startup.cb = sizeof(startup);
     PROCESS_INFORMATION process{};
     const BOOL started = CreateProcessW(executable.c_str(), command.data(), nullptr, nullptr,
-                                        FALSE, CREATE_NEW_PROCESS_GROUP, nullptr, nullptr,
+                                        FALSE, CREATE_NEW_PROCESS_GROUP, nullptr, directory.empty() ? nullptr : directory.c_str(),
                                         &startup, &process);
     if (!started) return false;
     CloseHandle(process.hThread);
     CloseHandle(process.hProcess);
     return true;
 #else
+    if (!directory.empty()) return false;
     const auto program = executable.string();
     std::vector<std::string> owned{program};
     owned.insert(owned.end(), arguments.begin(), arguments.end());
@@ -73,4 +80,23 @@ bool NativeProcessLauncher::launch(const std::filesystem::path& executable,
 #endif
 }
 
+bool NativeProcessLauncher::openDefault(const std::filesystem::path& file) {
+#ifdef _WIN32
+    // 只对校验后的媒体文件请求系统关联，不拼接命令，不申请管理员权限。
+    const auto initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    SHELLEXECUTEINFOW info{};
+    info.cbSize = sizeof(info);
+    info.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_FLAG_NO_UI | SEE_MASK_NOASYNC;
+    info.lpVerb = L"open";
+    info.lpFile = file.c_str();
+    info.nShow = SW_SHOWNORMAL;
+    const bool started = ShellExecuteExW(&info) != FALSE;
+    if (info.hProcess) CloseHandle(info.hProcess);
+    if (SUCCEEDED(initialized)) CoUninitialize();
+    return started;
+#else
+    (void)file;
+    return false;
+#endif
+}
 } // namespace anime_vault

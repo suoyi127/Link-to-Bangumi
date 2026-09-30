@@ -610,7 +610,7 @@ AuditPage SqliteMediaRepository::listAuditPage(std::int64_t offset, int limit,
 UiPreferences SqliteMediaRepository::getUiPreferences() const {
     std::lock_guard lock(database_.mutex());
     auto* db = database_.handle();
-    auto stmt = prepare(db, "SELECT key,json_extract(value_json,'$') FROM setting WHERE key IN ('preferredOperation','scanIntervalSeconds','mpvExecutable','qbWebUiUrl','qbDownloadDirectory')");
+    auto stmt = prepare(db, "SELECT key,json_extract(value_json,'$') FROM setting WHERE key IN ('preferredOperation','scanIntervalSeconds','mpvExecutable','qbWebUiUrl','qbDownloadDirectory','playerType','playerExecutable')");
     UiPreferences preferences;
     int rc;
     while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) {
@@ -620,6 +620,8 @@ UiPreferences SqliteMediaRepository::getUiPreferences() const {
         else if (key == "mpvExecutable") preferences.mpvExecutable = column(stmt.get(), 1);
         else if (key == "qbWebUiUrl") preferences.qbWebUiUrl = column(stmt.get(), 1);
         else if (key == "qbDownloadDirectory") preferences.qbDownloadDirectory = column(stmt.get(), 1);
+        else if (key == "playerType") preferences.playerType = column(stmt.get(), 1);
+        else if (key == "playerExecutable") preferences.playerExecutable = column(stmt.get(), 1);
     }
     if (rc != SQLITE_DONE) throw std::runtime_error(sqlite3_errmsg(db));
     return preferences;
@@ -634,7 +636,9 @@ void SqliteMediaRepository::putUiPreferences(const UiPreferences& preferences) {
                                     {"scanIntervalSeconds", std::to_string(preferences.scanIntervalSeconds)},
                                     {"mpvExecutable", preferences.mpvExecutable},
                                     {"qbWebUiUrl", preferences.qbWebUiUrl},
-                                    {"qbDownloadDirectory", preferences.qbDownloadDirectory}}) {
+                                    {"qbDownloadDirectory", preferences.qbDownloadDirectory},
+                                    {"playerType", preferences.playerType},
+                                    {"playerExecutable", preferences.playerExecutable}}) {
         sqlite3_reset(stmt.get());
         sqlite3_clear_bindings(stmt.get());
         bind(stmt.get(), 1, key);

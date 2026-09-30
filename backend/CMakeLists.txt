@@ -8,6 +8,9 @@ file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/004_media_origin.sql" ANIME_VA
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/005_organization_execution.sql" ANIME_VAULT_ORGANIZATION_EXECUTION_SQL)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/006_parsed_title.sql" ANIME_VAULT_PARSED_TITLE_SQL)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/007_folder_import.sql" ANIME_VAULT_FOLDER_IMPORT_SQL)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/008_novel_library.sql" ANIME_VAULT_NOVEL_SQL)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/009_game_library.sql" ANIME_VAULT_GAME_SQL)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/010_game_vndb.sql" ANIME_VAULT_GAME_VNDB_SQL)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/migrations/001_initial.sql"
   "${CMAKE_CURRENT_SOURCE_DIR}/migrations/002_media_correction.sql"
@@ -15,7 +18,10 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/migrations/004_media_origin.sql"
   "${CMAKE_CURRENT_SOURCE_DIR}/migrations/005_organization_execution.sql"
   "${CMAKE_CURRENT_SOURCE_DIR}/migrations/006_parsed_title.sql"
-  "${CMAKE_CURRENT_SOURCE_DIR}/migrations/007_folder_import.sql")
+  "${CMAKE_CURRENT_SOURCE_DIR}/migrations/007_folder_import.sql"
+  "${CMAKE_CURRENT_SOURCE_DIR}/migrations/008_novel_library.sql"
+  "${CMAKE_CURRENT_SOURCE_DIR}/migrations/009_game_library.sql"
+  "${CMAKE_CURRENT_SOURCE_DIR}/migrations/010_game_vndb.sql")
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/infrastructure/database/InitialSql.hpp.in"
   "${CMAKE_CURRENT_BINARY_DIR}/generated/InitialSql.hpp" @ONLY)
 
@@ -42,6 +48,7 @@ add_library(anime_vault_core STATIC
   src/services/OrganizationService.cpp
   src/services/BangumiMatcher.cpp
   src/services/PlaybackService.cpp
+  src/services/PlayerCatalog.cpp
   src/services/RuntimePaths.cpp
   src/services/RuntimeWebRoot.cpp
   src/infrastructure/ProcessLauncher.cpp
@@ -50,11 +57,15 @@ target_include_directories(anime_vault_core PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 target_compile_features(anime_vault_core PUBLIC cxx_std_20)
+if(WIN32)
+  target_link_libraries(anime_vault_core PRIVATE shell32 ole32 Advapi32)
+endif()
 anime_vault_apply_warnings(anime_vault_core)
 anime_vault_apply_sanitizers(anime_vault_core)
 anime_vault_apply_lto(anime_vault_core)
 
-add_library(anime_vault_bangumi_service STATIC src/services/BangumiService.cpp src/services/AnimeEnricher.cpp src/services/MikanEnricher.cpp src/services/CoverScraper.cpp)
+add_library(anime_vault_bangumi_service STATIC src/services/BangumiService.cpp src/services/BangumiCalendarService.cpp src/services/AnimeEnricher.cpp src/services/MikanEnricher.cpp src/services/CoverScraper.cpp src/services/NovelService.cpp src/services/NovelBangumiService.cpp src/services/GameService.cpp src/services/GameBangumiService.cpp)
+target_sources(anime_vault_bangumi_service PRIVATE src/services/VndbTransport.cpp)
 target_include_directories(anime_vault_bangumi_service PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(anime_vault_bangumi_service PUBLIC cxx_std_20)
 target_link_libraries(anime_vault_bangumi_service PUBLIC anime_vault_core anime_vault_storage nlohmann_json::nlohmann_json)
@@ -63,6 +74,7 @@ anime_vault_apply_sanitizers(anime_vault_bangumi_service)
 anime_vault_apply_lto(anime_vault_bangumi_service)
 
 add_library(anime_vault_bangumi_transport STATIC src/infrastructure/network/DrogonBangumiTransport.cpp src/infrastructure/network/DrogonCoverTransport.cpp src/infrastructure/network/BangumiConnectionManager.cpp src/infrastructure/network/WindowsSystemHttp.cpp src/infrastructure/network/QbWebClient.cpp src/infrastructure/network/QbConnectionManager.cpp)
+target_sources(anime_vault_bangumi_transport PRIVATE src/infrastructure/network/DrogonVndbTransport.cpp)
 target_include_directories(anime_vault_bangumi_transport PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(anime_vault_bangumi_transport PUBLIC cxx_std_20)
 target_link_libraries(anime_vault_bangumi_transport PUBLIC Drogon::Drogon nlohmann_json::nlohmann_json anime_vault_core anime_vault_bangumi_service)
@@ -79,6 +91,8 @@ add_library(anime_vault_api STATIC
   src/api/MediaService.cpp
   src/api/QbConfigController.cpp
   src/api/BangumiConfigController.cpp
+  src/api/NovelController.cpp
+  src/api/GameController.cpp
 )
 target_include_directories(anime_vault_api PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include

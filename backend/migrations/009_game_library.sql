@@ -1,0 +1,12 @@
+CREATE TABLE game_resource (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ path TEXT NOT NULL UNIQUE COLLATE NOCASE,
+ title TEXT NOT NULL,
+ developer TEXT NOT NULL DEFAULT '',
+ summary TEXT NOT NULL DEFAULT '',
+ platform TEXT NOT NULL DEFAULT '',
+ subject_id INTEGER,
+ manual_metadata INTEGER NOT NULL DEFAULT 0,
+ cover BLOB,
+ cover_mime TEXT NOT NULL DEFAULT ''
+);

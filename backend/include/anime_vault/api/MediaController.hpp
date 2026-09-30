@@ -2,6 +2,7 @@
 
 #include "anime_vault/services/OrganizationService.hpp"
 #include "anime_vault/services/BangumiService.hpp"
+#include "anime_vault/services/BangumiCalendarService.hpp"
 #include "anime_vault/services/AnimeEnricher.hpp"
 #include "anime_vault/services/MikanEnricher.hpp"
 #include "anime_vault/services/CoverScraper.hpp"
@@ -55,6 +56,7 @@ void registerMediaEndpoints(MediaService& service, OrganizationService& organiza
                             std::shared_ptr<AnimeEnricher> enricher = {},
                             std::shared_ptr<MikanEnricher> mikanEnricher = {});
 void registerAnimeEndpoints(MediaRepository& repository, std::shared_ptr<BangumiService> bangumi,
-                            std::shared_ptr<CoverScraper> covers = {});
+                            std::shared_ptr<CoverScraper> covers = {},
+                            std::shared_ptr<BangumiCalendarService> calendar = {});
 void registerPlaybackEndpoint(MediaRepository& repository, PlaybackService& playback);
 }

@@ -18,7 +18,7 @@ struct Handle {
 WindowsHttpResult perform(const std::string& host, const std::string& path,
                           const std::string& method, const std::string& userAgent,
                           const std::string& body, std::size_t maxBytes) {
-    if ((host != "api.bgm.tv" && host != "lain.bgm.tv") || path.empty() || path[0] != '/' ||
+    if ((host != "api.bgm.tv" && host != "lain.bgm.tv" && host != "api.vndb.org" && host != "t.vndb.org") || path.empty() || path[0] != '/' ||
         path.size() > 2048 || (method != "GET" && method != "POST") || body.size() > 4096)
         return {};
     const auto wideHost = std::wstring(host.begin(), host.end());

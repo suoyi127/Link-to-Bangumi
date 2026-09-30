@@ -2,6 +2,8 @@
 #include "anime_vault/api/MediaController.hpp"
 #include "anime_vault/api/QbConfigController.hpp"
 #include "anime_vault/api/BangumiConfigController.hpp"
+#include "anime_vault/api/NovelController.hpp"
+#include "anime_vault/api/GameController.hpp"
 #include "anime_vault/api/MediaService.hpp"
 #include "anime_vault/infrastructure/database/SqliteDatabase.hpp"
 #include "anime_vault/infrastructure/database/SqliteMediaRepository.hpp"
@@ -10,6 +12,7 @@
 #include "anime_vault/services/AnimeEnricher.hpp"
 #include "anime_vault/services/MikanEnricher.hpp"
 #include "anime_vault/infrastructure/network/DrogonBangumiTransport.hpp"
+#include "anime_vault/infrastructure/network/DrogonVndbTransport.hpp"
 #include "anime_vault/infrastructure/network/QbWebClient.hpp"
 #include "anime_vault/infrastructure/network/QbConnectionManager.hpp"
 #include "anime_vault/infrastructure/network/DrogonCoverTransport.hpp"
@@ -105,7 +108,15 @@ int main() {
              [bangumiConnection] { return bangumiConnection->summary().configured; }});
         anime_vault::api::registerQbConfigEndpoints(qb);
         anime_vault::api::registerBangumiConfigEndpoints(bangumiConnection);
-        anime_vault::api::registerAnimeEndpoints(repository, bangumi, covers);
+        auto novels = std::make_shared<anime_vault::NovelService>(database);
+        auto novelBangumi = std::make_shared<anime_vault::NovelBangumiService>(*novels, *bangumiConnection, *bangumiConnection);
+        anime_vault::api::registerNovelEndpoints(novels, novelBangumi, processLauncher);
+        auto games = std::make_shared<anime_vault::GameService>(database);
+        auto vndb = std::make_shared<anime_vault::DrogonVndbTransport>();
+        auto gameBangumi = std::make_shared<anime_vault::GameBangumiService>(*games, *bangumiConnection, *bangumiConnection, vndb.get());
+        anime_vault::api::registerGameEndpoints(games, gameBangumi, processLauncher);
+        auto calendar = std::make_shared<anime_vault::BangumiCalendarService>(repository, *bangumiConnection);
+        anime_vault::api::registerAnimeEndpoints(repository, bangumi, covers, calendar);
         drogon::app().registerHandler("/api/qb/status", [qb](const drogon::HttpRequestPtr&,
             std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
             qb->current()->inspect([callback = std::move(callback)](anime_vault::QbStatus status) mutable {

@@ -12,6 +12,9 @@ public:
     void search(std::string keyword, Completion completion) override;
     void searchAliases(std::string keyword, Completion completion) override;
     void subject(std::int64_t id, Completion completion) override;
+    void searchBooks(std::string keyword, Completion completion) override;
+    void searchGames(std::string keyword, Completion completion) override;
+    void calendar(Completion completion) override;
 private:
     void send(const drogon::HttpRequestPtr& request, Completion completion);
     std::string userAgent_;

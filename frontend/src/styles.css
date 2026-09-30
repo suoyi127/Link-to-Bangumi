@@ -1,0 +1,107 @@
+:root { color-scheme: light; font-synthesis: none; }
+* { box-sizing: border-box; }
+body { margin: 0; color: #25333c; background: #f5f7f8; }
+button, input, select { font: inherit; }
+.app-shell { width: 100%; }
+.app-main { min-width: 0; }
+.app-sidebar { border-right: 1px solid #e7edef; }
+.app-sidebar .ant-layout-sider-children { display: flex; flex-direction: column; min-height: 100%; }
+.app-brand { display: flex; gap: 12px; align-items: center; padding: 30px 20px 32px; white-space: nowrap; }
+.app-brand h4.ant-typography { font-size: 17px; margin: 0 0 3px; letter-spacing: -.4px; }
+.brand-mark { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: #287567; color: white; font-size: 12px; font-weight: 700; }
+.brand-caption { color: #88979e; font-size: 9px; font-weight: 600; letter-spacing: 1.5px; }
+.nav-caption { padding: 0 26px 12px; font-size: 11px; color: #88979e; letter-spacing: 1px; }
+.app-sidebar .ant-menu { border-inline-end: 0; padding: 0 10px; }
+.app-sidebar .ant-menu-item { margin-block: 5px; font-weight: 500; }
+.nav-glyph { font-size: 17px; color: #788d94; }
+.sidebar-note { margin-top: auto; padding: 36px 26px 28px; color: #70838c; line-height: 1.8; font-size: 12px; }
+.sidebar-note small { padding-left: 13px; font-size: 11px; color: #94a2a8; }
+.status-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #4d9b86; margin-right: 7px; vertical-align: middle; }
+.app-header.ant-layout-header { height: 90px; line-height: normal; padding: 0 36px; background: #fff; border-bottom: 1px solid #e8edef; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.app-header h4.ant-typography { margin: 0 0 7px; font-size: 21px; letter-spacing: -.5px; }
+.app-header > div > span { font-size: 12px; color: #87959d; }
+.local-badge { font-size: 11px; color: #73868e; border: 1px solid #e3ece8; background: #f9fcfa; padding: 6px 10px; border-radius: 20px; white-space: nowrap; }
+.app-content { padding: 30px 36px 48px; min-width: 0; }
+.page-container { max-width: 1600px; margin-inline: auto; min-width: 0; }
+.page-container h3.ant-typography { font-size: 21px; letter-spacing: -.4px; }
+.page-container h4.ant-typography { font-size: 16px; }
+.page-container h5.ant-typography { font-size: 14px; }
+.page-container .ant-typography { overflow-wrap: anywhere; }
+.page-container .ant-card { box-shadow: 0 2px 5px #23374203; }
+.page-container .ant-alert { border-radius: 9px; font-size: 13px; }
+.page-container .ant-tag { border: 0; font-size: 11px; padding: 2px 8px; border-radius: 5px; }
+.page-container .ant-btn-link { padding-inline: 0; font-weight: 500; }
+.page-container .ant-tabs-nav { margin-bottom: 20px; }
+.page-container .ant-tabs-tab { padding-top: 8px; }
+.page-container .ant-tabs-tab-btn { font-weight: 500; }
+.page-container .ant-list-item { padding-block: 15px; }
+.page-container .ant-space-item { min-width: 0; }
+.page-container .ant-space-compact { max-width: 100%; width: 100%; }
+.page-container .ant-space-compact .ant-input { min-width: 0; }
+.page-container select { min-height: 38px; border: 1px solid #dfe6e9; border-radius: 8px; padding: 7px 30px 7px 12px; background: white; color: #334650; max-width: 100%; cursor: pointer; }
+.page-container label { display: flex; flex-direction: column; gap: 8px; font-size: 12px; font-weight: 500; color: #546973; }
+.page-container label select { align-self: flex-start; }
+.page-container input:focus-visible, .page-container select:focus-visible, button:focus-visible { outline: 2px solid #287567; outline-offset: 3px; }
+.page-container .ant-table-wrapper { min-width: 0; border: 1px solid #e7edef; border-radius: 10px; background: white; overflow: hidden; }
+/* 小窗口只允许表格自身滚动，不让长路径撑开整个页面。 */
+.page-container .ant-table-content { overflow-x: auto; }
+.page-container .ant-table-cell { font-size: 13px; overflow-wrap: anywhere; }
+.page-container .ant-table-thead th { font-size: 12px; font-weight: 500; white-space: nowrap; }
+.page-container .ant-descriptions-item-content { overflow-wrap: anywhere; font-size: 12px; }
+.page-container .ant-descriptions-item-label { font-size: 12px; color: #70838c; }
+.settings-page { max-width: 1240px; margin-inline: auto; }
+.settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; align-items: start; }
+.settings-section { border: 1px solid #e6ecef; border-radius: 12px; background: #fff; padding: 24px; min-width: 0; }
+.settings-section.wide { grid-column: 1 / -1; }
+.settings-section h4.ant-typography { margin: 0; }
+.settings-section .ant-typography-secondary { font-size: 12px; line-height: 1.85; }
+.settings-section .ant-space { max-width: 100%; }
+.settings-section > .ant-space { width: 100%; }
+.settings-section .ant-space:not(.ant-space-vertical) { flex-wrap: wrap; }
+.settings-section .ant-input-number { width: 180px; max-width: 100%; }
+.poster-library .ant-card { border-color: #e4ebee; transition: box-shadow .18s, transform .18s; }
+.poster-library .ant-card-hoverable:hover { box-shadow: 0 7px 20px #1d3b4810; transform: translateY(-2px); }
+.poster-library .ant-card .ant-btn-link { width: 100%; justify-content: flex-start; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; text-align: left; font-size: 13px; }
+.poster-library .ant-card .ant-typography-secondary { font-size: 11px; }
+.poster-library .ant-list-item { padding-block: 0; }
+.anime-cover { border-radius: 9px 9px 0 0; }
+.anime-cover > span { font-size: 12px; letter-spacing: 1px; }
+.calendar-day { background: #fff; border: 1px solid #e6ecef; padding: 20px; border-radius: 12px; }
+.calendar-week-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; align-items: start; }
+.calendar-day h4 { margin-top: 0; margin-bottom: 20px; }
+.calendar-day h4 .ant-typography { font-size: 11px; margin-left: 7px; font-weight: 400; }
+.calendar-day .ant-list-item { margin-bottom: 0; }
+.detail-page { background: #fff; padding: 28px; border: 1px solid #e6ecef; border-radius: 12px; }
+.detail-page .ant-descriptions { max-width: 950px; }
+.detail-page > .ant-space-item > img { border-radius: 9px; border: 1px solid #e7edef; }
+.detail-page > .ant-space-item:has(> h4) { margin-top: 18px; padding-top: 18px; border-top: 1px solid #edf1f3; }
+.resource-page .ant-table table { min-width: 760px; }
+.resource-editor { background: #fff; padding: 24px; border: 1px solid #e6ecef; border-radius: 12px; }
+.dashboard-page .ant-statistic-title { font-size: 12px; }
+.dashboard-page .ant-statistic-content { font-size: 32px; font-weight: 600; letter-spacing: -1px; }
+.dashboard-page .ant-table table { min-width: 580px; }
+.mobile-nav { display: none; }
+@media (max-width: 1100px) { .settings-grid { grid-template-columns: minmax(0, 1fr); } .app-content { padding: 24px; } .app-header.ant-layout-header { padding-inline: 24px; } }
+@media (max-width: 1300px) { .calendar-week-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 991px) {
+  .app-sidebar { display: none; }
+  .mobile-nav { display: flex; gap: 6px; padding: 12px 20px; background: #fff; border-bottom: 1px solid #e8edef; }
+  .mobile-nav button { flex: 1; border: 0; background: transparent; border-radius: 7px; padding: 10px 4px; color: #697982; cursor: pointer; }
+  .mobile-nav button[aria-current="page"] { color: #23695e; background: #eaf3f0; font-weight: 600; }
+}
+@media (max-width: 600px) {
+  .app-header.ant-layout-header { height: 80px; padding-inline: 18px; }
+  .app-header h4.ant-typography { font-size: 19px; }
+  .local-badge { display: none; }
+  .app-content { padding: 18px 14px 32px; }
+  .settings-section, .detail-page, .resource-editor { padding: 18px; }
+  .settings-grid { gap: 16px; }
+  .calendar-day { padding: 15px; }
+  .calendar-week-grid { grid-template-columns: minmax(0, 1fr); }
+  .page-container .ant-list-item-action { margin-inline-start: 12px; }
+  .page-container .ant-descriptions-item-label { width: 110px; }
+}
+@media (prefers-reduced-motion: reduce) { .poster-library .ant-card { transition: none; } .poster-library .ant-card-hoverable:hover { transform: none; } }
+.novel-detail-header { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 24px; margin-bottom: 24px; }
+.novel-file-editor { display: flex; flex-direction: column; gap: 10px; border: 1px solid #e6ecef; border-radius: 10px; padding: 16px; }
+@media (max-width: 600px) { .novel-detail-header { grid-template-columns: 100px minmax(0, 1fr); gap: 14px; } .mobile-nav { overflow-x: auto; } .mobile-nav button { flex-shrink: 0; } }

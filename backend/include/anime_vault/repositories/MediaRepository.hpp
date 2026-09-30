@@ -57,6 +57,7 @@ struct UiPreferences {
     std::string preferredOperation{"hardlink"};
     int scanIntervalSeconds{3600};
     std::string mpvExecutable, qbWebUiUrl, qbDownloadDirectory;
+    std::string playerType{"mpv"}, playerExecutable;
 };
 
 struct MediaCorrection {

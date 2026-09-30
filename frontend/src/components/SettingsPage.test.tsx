@@ -14,6 +14,7 @@ const settings: Settings = {
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 beforeEach(() => {
+  vi.spyOn(client, 'getPlayers').mockResolvedValue({ selectedId: 'mpv', items: [{ id: 'mpv', name: 'mpv', executable: '', available: false }, { id: 'system', name: '系统默认播放器', executable: '', available: true }] })
   vi.spyOn(client, 'getQbConfig').mockResolvedValue({ url: 'http://[::1]:8080', username: '', source: 'none', configured: false })
   vi.spyOn(client, 'getBangumiConfig').mockResolvedValue({ userAgent: '', source: 'none', configured: false })
   vi.stubGlobal('matchMedia', vi.fn().mockImplementation(() => ({ matches: false, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn() })))
@@ -92,7 +93,7 @@ it('shows immutable effective paths and honest inactive integration status, then
   expect(screen.getByText(/Bangumi 未配置/)).toBeInTheDocument()
   expect(screen.getByText(/qBittorrent Web UI 未启用/)).toBeInTheDocument()
   expect(screen.getByText(/尚未配置 qB 下载目录/)).toBeInTheDocument()
-  expect(screen.getByText(/mpv.*本机播放/)).toBeInTheDocument()
+  expect(screen.getByText('本机播放器')).toBeInTheDocument()
   expect(screen.getByText(/扫描间隔.*预留/)).toBeInTheDocument()
   fireEvent.change(screen.getByLabelText('首选整理方式'), { target: { value: 'copy' } })
   fireEvent.click(screen.getByRole('button', { name: '保存偏好' }))
@@ -148,6 +149,7 @@ it('paginates audit history using the returned cursor', async () => {
     .mockResolvedValueOnce({ items: [{ id: 1, action: 'scanned', entityType: 'scan', entityId: '1', createdAt: 'today' }], nextOffset: 50 })
     .mockResolvedValueOnce({ items: [{ id: 2, action: 'organized', entityType: 'media', entityId: '2', createdAt: 'later' }], nextOffset: null })
   render(<SettingsPage />)
+  fireEvent.click(screen.getByText('审计记录'))
   expect(await screen.findByText(/scanned/)).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '下一页审计' }))
   await waitFor(() => expect(audit).toHaveBeenLastCalledWith(50, 50))

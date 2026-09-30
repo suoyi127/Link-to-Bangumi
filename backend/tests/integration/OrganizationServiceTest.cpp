@@ -33,7 +33,7 @@ TEST_CASE("confirmed organization is durable, idempotent and provenance-aware") 
     const auto modified = fs::last_write_time(source);
     SqliteDatabase db(root / "test.db");
     db.migrate();
-    REQUIRE(db.schemaVersion() == 7);
+    REQUIRE(db.schemaVersion() == 10);
     SqliteMediaRepository repo(db);
     const auto scan = repo.createScan({0, "qb_download", "completed"});
     MediaRecord media{0, scan, utf8(source), utf8(source.filename()), "1", "normal",

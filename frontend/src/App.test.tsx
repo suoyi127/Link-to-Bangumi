@@ -14,3 +14,9 @@ it('keeps the sidebar in view while the main page scrolls', () => {
   const sidebar = screen.getByText('Anime Vault').closest('aside')
   expect(sidebar).toHaveStyle({ position: 'sticky', top: '0px', height: '100vh', overflowY: 'auto' })
 })
+
+it('provides a named content landmark and mobile navigation', () => {
+  render(<App />)
+  expect(screen.getByRole('main', { name: '仪表盘内容' })).toBeInTheDocument()
+  expect(screen.getByRole('navigation', { name: '快捷导航' })).toBeInTheDocument()
+})

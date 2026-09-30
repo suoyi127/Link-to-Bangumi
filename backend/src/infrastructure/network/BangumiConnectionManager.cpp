@@ -130,4 +130,30 @@ void BangumiConnectionManager::fetch(std::string url, CoverImageFetcher::Complet
         completion(std::move(response), std::move(error));
     });
 }
+
+void BangumiConnectionManager::calendar(BangumiTransport::Completion completion) {
+    std::shared_ptr<Active> snapshot;
+    { std::lock_guard lock(mutex_); snapshot = active_; }
+    if (!snapshot) { completion(std::nullopt, "bangumi_unconfigured"); return; }
+    snapshot->api->calendar([snapshot, completion = std::move(completion)](auto response, auto error) mutable {
+        completion(std::move(response), std::move(error));
+    });
+}
+
+void BangumiConnectionManager::searchBooks(std::string keyword, BangumiTransport::Completion completion) {
+    std::shared_ptr<Active> snapshot;
+    { std::lock_guard lock(mutex_); snapshot = active_; }
+    if (!snapshot) { completion(std::nullopt, "bangumi_unconfigured"); return; }
+    snapshot->api->searchBooks(std::move(keyword), [snapshot, completion = std::move(completion)](auto response, auto error) mutable {
+        completion(std::move(response), std::move(error));
+    });
+}
+void BangumiConnectionManager::searchGames(std::string keyword, BangumiTransport::Completion completion) {
+    std::shared_ptr<Active> snapshot;
+    { std::lock_guard lock(mutex_); snapshot = active_; }
+    if (!snapshot) { completion(std::nullopt, "bangumi_unconfigured"); return; }
+    snapshot->api->searchGames(std::move(keyword), [snapshot, completion = std::move(completion)](auto response, auto error) mutable {
+        completion(std::move(response), std::move(error));
+    });
+}
 }

@@ -6,12 +6,29 @@ import { AnimeDetailPage } from './AnimeDetailPage'
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 beforeEach(() => {
+  vi.spyOn(client, 'getPlayers').mockResolvedValue({ selectedId: 'mpv', items: [
+    { id: 'mpv', name: 'mpv', executable: 'X:/mpv.exe', available: true },
+    { id: 'vlc', name: 'VLC', executable: 'X:/vlc.exe', available: true },
+  ] })
   vi.stubGlobal('matchMedia', vi.fn().mockImplementation(() => ({ matches: false, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn() })))
   const computedStyle = window.getComputedStyle.bind(window)
   vi.spyOn(window, 'getComputedStyle').mockImplementation((element) => computedStyle(element))
 })
 const media = (id: number): Media => ({ id, scanId: 1, sourcePath: `/source/${id}.mkv`, filename: `${id}.mkv`, parsedTitle: '本地番剧', title: '本地番剧', season: '', episodeNumber: String(id), episodeType: 'normal', sizeBytes: 1, status: 'organized', origin: 'external_import', animeId: 7, confidence: 1 })
 const detail = (items: Media[], nextMediaOffset: number | null): AnimeDetail => ({ id: 7, displayTitle: '本地番剧', originalTitle: '', season: '', coverUrl: '', locked: false, aliases: ['别名甲'], media: items, nextMediaOffset })
+it('temporarily selects VLC without saving a new default', async () => {
+  vi.spyOn(client, 'getAnimeDetail').mockResolvedValue(detail([media(1)], null))
+  vi.spyOn(client, 'getAuditLogs').mockResolvedValue({ items: [], nextOffset: null })
+  const save = vi.spyOn(client, 'savePlayer')
+  const play = vi.spyOn(client, 'playMedia').mockResolvedValue({ mediaId: 1, status: 'started', playerName: 'VLC' })
+  render(<AnimeDetailPage animeId={7} onBack={vi.fn()} />)
+  await screen.findByRole('option', { name: 'VLC' })
+  fireEvent.change(screen.getByLabelText('本次播放器'), { target: { value: 'vlc' } })
+  fireEvent.click(screen.getByRole('button', { name: '播放 1.mkv' }))
+  await waitFor(() => expect(play).toHaveBeenCalledWith(1, 'vlc'))
+  expect(await screen.findByText('已启动VLC：1.mkv')).toBeInTheDocument()
+  expect(save).not.toHaveBeenCalled()
+}, 20000)
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done }); return { promise, resolve } }
 
 it('shows the canonical anime title and episode instead of the source path', async () => {
@@ -54,7 +71,7 @@ it('starts local mpv for the selected media ID and reports launch errors', async
   const play = vi.spyOn(client, 'playMedia').mockRejectedValue(new client.ApiError('mpv_launch_failed', 503))
   render(<AnimeDetailPage animeId={7} onBack={vi.fn()} />)
   await screen.findByText('2.mkv')
-  fireEvent.click(screen.getByRole('button', { name: '用 mpv 播放 2.mkv' }))
+  fireEvent.click(screen.getByRole('button', { name: '播放 2.mkv' }))
   await waitFor(() => expect(play).toHaveBeenCalledWith(2))
   expect(await screen.findByText(/mpv_launch_failed/)).toBeInTheDocument()
 }, 20000)

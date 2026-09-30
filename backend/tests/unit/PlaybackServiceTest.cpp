@@ -1,4 +1,5 @@
 #include "anime_vault/services/PlaybackService.hpp"
+#include "anime_vault/services/PlayerCatalog.hpp"
 #include "anime_vault/infrastructure/database/SqliteDatabase.hpp"
 #include "anime_vault/infrastructure/database/SqliteMediaRepository.hpp"
 
@@ -46,16 +47,54 @@ struct Fixture {
 };
 struct RecordingLauncher final : ProcessLauncher {
     int calls{};
+    int defaultCalls{};
     fs::path executable;
     std::vector<std::string> arguments;
     bool launch(const fs::path& path, const std::vector<std::string>& args) override {
         ++calls; executable = path; arguments = args; return true;
     }
+    bool openDefault(const fs::path& path) override { ++defaultCalls; executable = path; return true; }
 };
 void requireCode(const std::function<void()>& action, const std::string& code) {
     try { action(); FAIL("expected playback error"); }
     catch (const PlaybackError& error) { REQUIRE(error.code() == code); }
 }
+}
+
+TEST_CASE("player selection uses fixed arguments and preserves default association boundaries") {
+    Fixture fixture;
+    const auto video = fixture.source / "episode.mkv";
+    std::ofstream(video) << "data";
+    const auto id = fixture.add(video);
+    RecordingLauncher launcher;
+    PlaybackService service(*fixture.repository, fixture.source, fixture.imported, fixture.library, launcher);
+    service.play(id, utf8(fixture.mpv), "vlc");
+    REQUIRE(launcher.arguments == std::vector<std::string>{utf8(fs::canonical(video))});
+    service.play(id, "", "system");
+    REQUIRE(launcher.defaultCalls == 1);
+    requireCode([&] { service.play(id, utf8(fixture.mpv), "invalid"); }, "invalid_player");
+    const auto script = fixture.source / "unsafe.cmd";
+    std::ofstream(script) << "stub";
+    requireCode([&] { service.play(fixture.add(script), "", "system"); }, "playback_format_unsupported");
+    requireCode([&] { service.play(fixture.add(fixture.source / "missing.mkv"), "", "system"); }, "playback_file_missing");
+    auto prefs = fixture.repository->getUiPreferences();
+    prefs.playerType = "vlc"; prefs.playerExecutable = utf8(fixture.mpv);
+    fixture.repository->putUiPreferences(prefs);
+    REQUIRE(fixture.repository->getUiPreferences().playerType == "vlc");
+    REQUIRE(fixture.repository->getUiPreferences().playerExecutable == utf8(fixture.mpv));
+}
+
+TEST_CASE("player catalog inherits quoted legacy mpv paths and marks missing files unavailable") {
+    Fixture fixture;
+    UiPreferences preferences;
+    preferences.mpvExecutable = "\"" + utf8(fixture.mpv) + "\"";
+    const auto options = discoverPlayers(preferences);
+    REQUIRE(options.front().id == "mpv");
+    REQUIRE(options.front().available);
+    REQUIRE(options.front().executable == utf8(fixture.mpv));
+    preferences.mpvExecutable = utf8(fixture.root / "missing.exe");
+    REQUIRE_FALSE(discoverPlayers(preferences).front().available);
+    REQUIRE_FALSE(validPlayerExecutable(utf8(fixture.source / "script.cmd")));
 }
 
 TEST_CASE("playback chooses organized file and passes only fixed mpv options") {
