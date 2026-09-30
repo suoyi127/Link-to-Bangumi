@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.25)
 if(POLICY CMP0184)
   cmake_policy(SET CMP0184 NEW)
 endif()
-project(anime_vault VERSION 1.0.0 LANGUAGES CXX)
+project(anime_vault VERSION 0.1.0 LANGUAGES CXX)
 
 include(CTest)
 option(WARNINGS_AS_ERRORS "Treat project warnings as errors" OFF)
