@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Alert, Button, Descriptions, Input, List, Modal, Space, Spin, Typography } from 'antd'
-import { bindBangumi, getAnimeDetail, getAuditLogs, playMedia, refreshAnimeCover, searchBangumi } from '../api/client'
+import { bindBangumi, editAnime, editAnimeMedia, getAnimeDetail, getAuditLogs, playMedia, refreshAnimeCover, searchBangumi } from '../api/client'
 import type { AnimeDetail, AuditLog, BangumiCandidate, BangumiSearch, Media } from '../api/types'
 import { PlaybackPlayerSelect } from './PlaybackPlayerSelect'
 
@@ -11,6 +11,10 @@ const mediaPageSize = 200
 export function AnimeDetailPage({ animeId, onBack }: Props) {
   // 当前 animeId 是详情操作上下文，媒体分页、Bangumi 绑定与播放均围绕该条目执行。
   const [detail, setDetail] = useState<AnimeDetail | null>(null)
+  const [edit, setEdit] = useState<Pick<AnimeDetail, 'displayTitle' | 'season' | 'coverUrl'> | null>(null)
+  const [episodeEdit, setEpisodeEdit] = useState<Pick<Media, 'id' | 'episodeNumber' | 'episodeType'> | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [editError, setEditError] = useState('')
   const [media, setMedia] = useState<Media[]>([])
   const [nextMediaOffset, setNextMediaOffset] = useState<number | null>(null)
   const [audits, setAudits] = useState<AuditLog[]>([])
@@ -45,6 +49,7 @@ export function AnimeDetailPage({ animeId, onBack }: Props) {
     const mediaRef = mediaGeneration
     const current = ++generationRef.current
     setPlayerId('')
+    setEdit(null); setEpisodeEdit(null); setSaving(false); setEditError('')
     searchRef.current++
     mediaRef.current++
     setDetail(null); setMedia([]); setAudits([]); setMoreBusy(false); setBinding(false); setRefreshingCover(false); setCoverError(''); setPlayingId(null); setPlayError(''); setPlayNotice(''); setResults(null); setCandidate(null); setError(''); setRemoteError(''); setLoading(true)
@@ -65,6 +70,20 @@ export function AnimeDetailPage({ animeId, onBack }: Props) {
       setMedia((previous) => [...previous, ...page.media]); setNextMediaOffset(page.nextMediaOffset)
     } catch (cause) { if (current === generation.current && mediaCurrent === mediaGeneration.current) setError(errorText(cause)) }
     finally { if (current === generation.current && mediaCurrent === mediaGeneration.current) setMoreBusy(false) }
+  }
+  async function saveEdit() {
+    if (saving || (!edit && !episodeEdit)) return
+    const current = generation.current
+    setSaving(true); setEditError('')
+    try {
+      if (edit) await editAnime(animeId, { displayTitle: edit.displayTitle.trim(), season: edit.season.trim(), coverUrl: edit.coverUrl.trim() })
+      else if (episodeEdit) await editAnimeMedia(episodeEdit.id, { episodeNumber: episodeEdit.episodeNumber.trim(), episodeType: episodeEdit.episodeType })
+      if (current !== generation.current) return
+      setEdit(null); setEpisodeEdit(null)
+      mediaGeneration.current++; setMoreBusy(false)
+      await reload(animeId, current)
+    } catch (cause) { if (current === generation.current) setEditError(errorText(cause)) }
+    finally { if (current === generation.current) setSaving(false) }
   }
   async function search() {
     const value = query.trim()
@@ -121,6 +140,8 @@ export function AnimeDetailPage({ animeId, onBack }: Props) {
     {loading && <Spin aria-label="正在加载详情" />}
     {detail && <>
       <Typography.Title level={3}>{detail.displayTitle}</Typography.Title>
+      <Button onClick={() => { setEditError(''); setEdit({ displayTitle: detail.displayTitle, season: detail.season, coverUrl: detail.coverUrl }) }}>修改信息</Button>
+      {editError && !edit && !episodeEdit && <Alert type="error" message={editError} />}
       {detail.coverUrl && <img src={detail.coverUrl} alt={`${detail.displayTitle} 封面`} style={{ width: 180, maxWidth: '100%', aspectRatio: '2 / 3', objectFit: 'cover' }} />}
       {detail.bangumiSubjectId && <Button loading={refreshingCover} onClick={() => void refreshCover()}>刮削封面</Button>}
       {coverError && <Alert type="warning" message={coverError} />}
@@ -137,7 +158,7 @@ export function AnimeDetailPage({ animeId, onBack }: Props) {
         // One anime can contain releases whose parsed titles are romanized aliases.
         const title = detail.displayTitle.trim() || item.title.trim() || item.filename
         const episode = item.episodeNumber.trim()
-        return <List.Item key={item.id} actions={[<Button key="play" aria-label={`播放 ${item.filename}`} loading={playingId === item.id} disabled={playingId !== null && playingId !== item.id} onClick={() => void startPlayback(item)}>播放</Button>]}><Space direction="vertical"><Typography.Text strong>{title}{episode ? ` [${episode}]` : ''}</Typography.Text><Typography.Text type="secondary">{item.filename}</Typography.Text><Typography.Text type="secondary">{item.episodeType} {item.episodeNumber} · {item.status} · {item.origin}</Typography.Text></Space></List.Item>
+        return <List.Item key={item.id} actions={[<Button key="edit" aria-label={`修改集数 ${item.filename}`} onClick={() => { setEditError(''); setEpisodeEdit({ id: item.id, episodeNumber: item.episodeNumber, episodeType: item.episodeType }) }}>{'修改集数'}</Button>, <Button key="play" aria-label={`播放 ${item.filename}`} loading={playingId === item.id} disabled={playingId !== null && playingId !== item.id} onClick={() => void startPlayback(item)}>播放</Button>]}><Space direction="vertical"><Typography.Text strong>{title}{episode ? ` [${episode}]` : ''}</Typography.Text><Typography.Text type="secondary">{item.filename}</Typography.Text><Typography.Text type="secondary">{item.episodeType} {item.episodeNumber} · {item.status} · {item.origin}</Typography.Text></Space></List.Item>
       }} />
       {nextMediaOffset !== null && <Button loading={moreBusy} onClick={() => void loadMore()}>加载更多媒体</Button>}
       <Typography.Title level={4}>Bangumi 绑定</Typography.Title>
@@ -149,5 +170,20 @@ export function AnimeDetailPage({ animeId, onBack }: Props) {
       <List dataSource={audits} locale={{ emptyText: '暂无记录' }} renderItem={(item) => <List.Item>{item.createdAt} · {item.action}</List.Item>} />
     </>}
     <Modal title="确认绑定 Bangumi" open={!!candidate} okText="确认绑定" okButtonProps={{ 'aria-label': '确认绑定', loading: binding }} onOk={() => void confirmBinding()} onCancel={() => setCandidate(null)}><p>将本地番剧 #{animeId} 绑定到 Bangumi #{candidate?.id}（{candidate?.nameCn || candidate?.name}）？</p></Modal>
+    <Modal title="修改番剧信息" open={!!edit} okText="保存信息" cancelText="取消" confirmLoading={saving} okButtonProps={{ 'aria-label': '保存信息', disabled: !edit?.displayTitle.trim() }} cancelButtonProps={{ disabled: saving }} closable={!saving} maskClosable={!saving} onOk={() => void saveEdit()} onCancel={() => { if (!saving) setEdit(null) }}>
+      {edit && <Space direction="vertical" style={{ width: '100%' }}>
+        {editError && <Alert type="error" message={editError} />}
+        <label>番剧标题<Input aria-label="番剧标题" value={edit.displayTitle} maxLength={200} onChange={(event) => setEdit({ ...edit, displayTitle: event.target.value })} /></label>
+        <label>季数<Input aria-label="番剧季数" value={edit.season} maxLength={40} onChange={(event) => setEdit({ ...edit, season: event.target.value })} /></label>
+        <label>封面地址<Input aria-label="封面地址" value={edit.coverUrl} maxLength={2048} onChange={(event) => setEdit({ ...edit, coverUrl: event.target.value })} /></label>
+      </Space>}
+    </Modal>
+    <Modal title="修改媒体集数" open={!!episodeEdit} okText="保存集数" cancelText="取消" confirmLoading={saving} okButtonProps={{ 'aria-label': '保存集数', disabled: !episodeEdit?.episodeNumber.trim() }} cancelButtonProps={{ disabled: saving }} closable={!saving} maskClosable={!saving} onOk={() => void saveEdit()} onCancel={() => { if (!saving) setEpisodeEdit(null) }}>
+      {episodeEdit && <Space direction="vertical">
+        {editError && <Alert type="error" message={editError} />}
+        <label>媒体集数<Input aria-label="媒体集数" value={episodeEdit.episodeNumber} onChange={(event) => setEpisodeEdit({ ...episodeEdit, episodeNumber: event.target.value })} /></label>
+        <label>集数类型<select aria-label="集数类型" value={episodeEdit.episodeType} onChange={(event) => setEpisodeEdit({ ...episodeEdit, episodeType: event.target.value })}>{['normal', 'sp', 'ova', 'ncop', 'nced'].map((type) => <option key={type} value={type}>{type}</option>)}</select></label>
+      </Space>}
+    </Modal>
   </Space>
 }

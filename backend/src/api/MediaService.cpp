@@ -130,6 +130,33 @@ MediaService::MediaService(MediaRepository& repository, fs::path sourceRoot, fs:
     validateDistinctRoots(sourceRequestedRoot_, importRoot_, libraryRoot_);
 }
 
+ScanRecord MediaService::createCompletedScan(const std::vector<fs::path>& completedPaths) {
+    const std::lock_guard lock(mutex_);
+    validateQbSourceReady();
+    std::vector<fs::path> roots;
+    for (const auto& path : completedPaths) {
+        std::error_code error;
+        const auto resolved = fs::canonical(path, error);
+        if (!error && within(sourceRoot_, resolved) && resolved != sourceRoot_)
+            roots.push_back(resolved);
+    }
+    const auto observed = scanner_.scan(std::chrono::seconds{0}, fs::file_time_type::clock::now());
+    std::vector<SourceFile> changed;
+    for (const auto& file : observed) {
+        if (std::none_of(roots.begin(), roots.end(), [&](const auto& root) { return within(root, file.path); })) continue;
+        const auto stored = repository_.findMediaBySourcePath(utf8(file.path));
+        if (!stored || stored->status == "missing" || stored->sizeBytes != static_cast<std::int64_t>(file.size) ||
+            stored->sourceModifiedAt != std::to_string(file.modifiedAt.time_since_epoch().count())) changed.push_back(file);
+    }
+    if (changed.empty()) {
+        std::vector<std::string> paths;
+        for (const auto& path : scanner_.observedPaths()) paths.push_back(utf8(path));
+        repository_.markMissingMedia("qb_download", paths);
+        return {0, "qb_download", "unchanged"};
+    }
+    return scanFrom(scanner_, "qb_download", std::chrono::seconds{0}, std::nullopt, &changed);
+}
+
 ScanRecord MediaService::createScan(std::chrono::seconds stableFor) {
     const std::lock_guard lock(mutex_);
     validateQbSourceReady();
@@ -237,11 +264,12 @@ void MediaService::enforceRateLimit() {
 
 ScanRecord MediaService::scanFrom(DirectoryScanner& scanner, const std::string& origin,
                                   std::chrono::seconds stableFor,
-                                  std::optional<std::int64_t> folderImportId) {
+                                  std::optional<std::int64_t> folderImportId,
+                                  const std::vector<SourceFile>* verifiedFiles) {
     ScanRecord scan{0, origin, "running"};
     scan.id = repository_.createScan(scan);
     try {
-        const auto files = scanner.scan(stableFor, fs::file_time_type::clock::now());
+        const auto files = verifiedFiles ? *verifiedFiles : scanner.scan(stableFor, fs::file_time_type::clock::now());
         scan.discoveredCount = static_cast<std::int64_t>(files.size());
         for (const auto& file : files) {
             const auto parsed = parser_.parse(utf8(file.path.filename()));
@@ -307,6 +335,17 @@ InboxPage MediaService::listInboxPage(std::int64_t offset, int limit,
                                       std::optional<std::string> origin) const {
     const std::lock_guard lock(mutex_);
     return repository_.listInboxPage(offset, limit, std::move(origin));
+}
+
+MediaRecord MediaService::editEpisode(std::int64_t id, const MediaEpisodeEdit& edit) {
+    const std::lock_guard lock(mutex_);
+    if (id <= 0) throw ApiError(400, "invalid_id", "media id must be positive");
+    const auto episode = EpisodeNumber::parse(edit.episodeNumber);
+    if (!episode) throw ApiError(400, "invalid_episode", "invalid episode number");
+    parseType(edit.episodeType);
+    if (!repository_.getMedia(id)) throw ApiError(404, "media_not_found", "media not found");
+    repository_.updateMediaEpisode(id, episode->toString(), edit.episodeType);
+    return *repository_.getMedia(id);
 }
 
 MediaRecord MediaService::correct(std::int64_t id, const MediaCorrection& correction) {

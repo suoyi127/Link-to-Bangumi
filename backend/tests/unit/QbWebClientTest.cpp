@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <nlohmann/json.hpp>
 #include <regex>
+#include <filesystem>
 
 using anime_vault::QbWebClient;
 
@@ -191,4 +192,19 @@ TEST_CASE("automatic episode preferences append to qB's newline-delimited filter
     REQUIRE(settings["rss_smart_episode_filters"].get<std::string>() ==
         "s(\\d+)e(\\d+)\n(\\d+)x(\\d+)\n" + QbWebClient::bracketEpisodePattern() +
         "\n" + QbWebClient::dashedEpisodePattern());
+}
+
+TEST_CASE("completed qB paths exclude unfinished checking and unsafe paths") {
+    auto data = nlohmann::json::parse(R"([
+      {"progress":1,"state":"uploading","content_path":"D:/downloads/Ready"},
+      {"progress":0.5,"state":"downloading","content_path":"D:/downloads/Partial"},
+      {"progress":1,"state":"checkingUP","content_path":"D:/downloads/Checking"},
+      {"progress":1,"state":"error","content_path":"D:/downloads/Error"},
+      {"progress":1,"state":"pausedUP","content_path":"../outside"}
+    ])");
+    const auto ready = (std::filesystem::temp_directory_path() / "Ready").generic_string();
+    data[0]["content_path"] = ready;
+    const auto paths = anime_vault::QbWebClient::completedPaths(data.dump());
+    REQUIRE(paths.size() == 1);
+    CHECK(paths.front() == ready);
 }

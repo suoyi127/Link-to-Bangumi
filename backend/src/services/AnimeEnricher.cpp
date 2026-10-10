@@ -68,9 +68,9 @@ void AnimeEnricher::runPending(std::vector<AnimeRecord> pending, Completion comp
                     try {
                         const auto current = self->repository_.getAnime(id);
                         if (current && !current->bangumiSubjectId && !current->locked) {
-                            self->repository_.bindAnime(id, *subject.subject, true);
-                            if (self->covers_ && !subject.subject->coverUrl.empty())
-                                self->covers_->cacheSubject(id, *subject.subject);
+                            const auto bound = self->repository_.bindAnime(id, *subject.subject, true);
+                            if (self->covers_ && !subject.subject->coverUrl.empty() && bound.coverUrl == subject.subject->coverUrl)
+                                self->covers_->cacheSubject(id, *subject.subject, {}, bound.coverUrl);
                             ++batch->bound;
                         }
                     } catch (...) { /* 已变化或冲突的绑定交由用户确认。 */ }

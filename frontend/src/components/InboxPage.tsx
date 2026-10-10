@@ -47,13 +47,23 @@ function VideoInboxPage({ onOpenAnime }: Props) {
   const operationTouched = useRef(false)
   const draftChanged = !!selected && !!correction && (correction.title !== selected.title || correction.season !== selected.season || correction.episodeNumber !== selected.episodeNumber || correction.episodeType !== selected.episodeType)
 
-  const refresh = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true)
+  const refresh = useCallback(async (signal?: AbortSignal, quiet = false) => {
+    if (!quiet) setLoading(true)
     try { const page = await getInbox(100, offset, signal, origin); if (signal?.aborted) return; setItems(page.items); setNextOffset(page.nextOffset); setTotal(page.total); setError('') }
     catch (cause) { if (!signal?.aborted) setError(errorText(cause)) }
     finally { if (!signal?.aborted) setLoading(false) }
   }, [offset, origin])
   useEffect(() => { const controller = new AbortController(); void refresh(controller.signal); return () => controller.abort() }, [refresh])
+  useEffect(() => {
+    const controller = new AbortController()
+    let pending = false
+    const timer = setInterval(() => {
+      if (selected || busy || folderBusy || pending) return
+      pending = true
+      void refresh(controller.signal, true).finally(() => { pending = false })
+    }, 10_000)
+    return () => { clearInterval(timer); controller.abort() }
+  }, [refresh, selected, busy, folderBusy])
   useEffect(() => {
     if (origin !== 'folder_import') return
     let active = true

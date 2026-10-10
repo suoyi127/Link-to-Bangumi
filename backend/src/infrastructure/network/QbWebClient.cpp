@@ -239,6 +239,28 @@ std::optional<std::string> QbWebClient::readyMikanFeedPath(std::string_view item
 
 bool QbWebClient::configured() const noexcept { return !username_.empty() && !password_.empty(); }
 
+std::vector<std::string> QbWebClient::completedPaths(std::string_view body) {
+    if (body.size() > 4 * 1024 * 1024) throw std::invalid_argument("qB response too large");
+    const auto data = nlohmann::json::parse(body);
+    if (!data.is_array()) throw std::invalid_argument("invalid qB response");
+    std::vector<std::string> paths;
+    for (const auto& torrent : data) {
+        if (!torrent.is_object()) continue;
+        const auto state = torrent.value("state", std::string{});
+        // 做种只读取源文件；校验、错误和未完成任务不能作为完成凭据。
+        if (torrent.value("progress", 0.0) < 1.0 ||
+            (state != "uploading" && state != "stalledUP" && state != "pausedUP" &&
+             state != "stoppedUP" && state != "queuedUP" && state != "forcedUP")) continue;
+        const auto name = torrent.value("content_path", std::string{});
+        const auto path = std::filesystem::path(std::u8string(name.begin(), name.end()));
+        if (!path.is_absolute() || path == path.root_path()) continue;
+        bool traversal = false;
+        for (const auto& part : path) if (part == "..") traversal = true;
+        if (!traversal) paths.push_back(name);
+    }
+    return paths;
+}
+
 void QbWebClient::inspect(Completion completion) const {
     if (!configured()) { completion({false, false, "qb_unconfigured"}); return; }
     auto preflight = drogon::HttpRequest::newHttpRequest();
@@ -299,6 +321,7 @@ void QbWebClient::inspect(Completion completion) const {
                     const auto data = nlohmann::json::parse(response->getBody());
                     if (!data.is_array()) throw std::invalid_argument("invalid qB response");
                     QbStatus status{true, true, "", version};
+                    status.completedPaths = completedPaths(response->getBody());
                     for (const auto& torrent : data) {
                         if (!torrent.is_object()) continue;
                         ++status.torrentCount;

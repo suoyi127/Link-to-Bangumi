@@ -103,12 +103,15 @@ struct BangumiCacheRecord {
     std::optional<std::int64_t> retryAfter;
 };
 
+struct AnimeEdit { std::string displayTitle, season, coverUrl; };
+
 struct AnimeRecord {
     std::int64_t id{};
     std::string displayTitle, originalTitle, season, coverUrl;
     std::optional<int> year;
     std::optional<std::int64_t> bangumiSubjectId;
     bool locked{};
+    std::string importedMonth;
     std::vector<std::string> aliases;
     std::vector<MediaRecord> media;
     std::optional<std::int64_t> nextMediaOffset;
@@ -180,7 +183,10 @@ public:
     virtual bool putBangumiFailureIfStale(const BangumiCacheRecord& record,
                                          std::int64_t requestStartedAt) = 0;
     virtual std::vector<AnimeRecord> listAnime() const = 0;
-    virtual AnimePage listAnimePage(std::int64_t offset, int limit) const = 0;
+    virtual AnimePage listAnimePage(std::int64_t offset, int limit, const std::string& sort = "import_desc") const = 0;
+    virtual AnimeRecord editAnime(std::int64_t id, const AnimeEdit& edit) = 0;
+    virtual void updateMediaEpisode(std::int64_t id, const std::string& number, const std::string& type) = 0;
+    virtual std::optional<MediaRecord> findMediaBySourcePath(const std::string& path) const = 0;
     virtual std::vector<AnimeRecord> listAnimeForScan(std::int64_t scanId) const = 0;
     virtual std::optional<AnimeRecord> getAnime(std::int64_t id,
                                                 std::int64_t mediaOffset = 0,
@@ -188,7 +194,7 @@ public:
     virtual AnimeRecord bindAnime(std::int64_t id, const BangumiSubject& subject,
                                   bool canonicalizeTitle = false) = 0;
     virtual bool updateCoverIfBound(std::int64_t animeId, std::int64_t subjectId,
-                                    const std::string& localUrl) = 0;
+                                    const std::string& localUrl, std::optional<std::string> expectedCover = std::nullopt) = 0;
     virtual bool applyMikanAlias(const std::string& alias,
                                  const std::string& canonicalTitle) = 0;
     virtual std::optional<AnimeRecord> findAnimeByTitle(

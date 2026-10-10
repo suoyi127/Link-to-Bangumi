@@ -16,6 +16,7 @@ struct QbStatus {
     std::string version;
     int torrentCount{};
     int completedCount{};
+    std::vector<std::string> completedPaths;
 };
 
 using QbMikanCatalog = MikanCatalog;
@@ -36,6 +37,7 @@ class QbWebClient final {
 public:
     using Completion = std::function<void(QbStatus)>;
     QbWebClient(std::string baseUrl, std::string username, std::string password);
+    static std::vector<std::string> completedPaths(std::string_view body);
     static QbEndpoint parseEndpoint(std::string_view baseUrl);
     static bool looksLikeQbWebUi(std::string_view body);
     void inspect(Completion completion) const;

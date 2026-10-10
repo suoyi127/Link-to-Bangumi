@@ -115,13 +115,15 @@ TEST_CASE("scan and inbox records survive reopening a migrated database") {
         REQUIRE(scans.size() == 2);
         REQUIRE(scans.front().source == "D:/sample");
         REQUIRE(scans.front().status == "completed");
-        REQUIRE(media.size() == 2);
-        REQUIRE(media.front().origin == "qb_download");
-        REQUIRE(media.back().origin == "external_import");
-        REQUIRE(media.front().episodeNumber == "2.5");
-        REQUIRE(media.front().season == "2026 Autumn");
-        REQUIRE(media.front().bangumiSubjectId == 12345);
-        REQUIRE(media.front().scanId == scans.front().id);
+        REQUIRE(media.size() == 1);
+        REQUIRE(media.front().origin == "external_import");
+        const auto bound = repo.findMediaBySourcePath("D:/sample/01.mkv");
+        REQUIRE(bound);
+        REQUIRE(bound->origin == "qb_download");
+        REQUIRE(bound->episodeNumber == "2.5");
+        REQUIRE(bound->season == "2026 Autumn");
+        REQUIRE(bound->bangumiSubjectId == 12345);
+        REQUIRE(bound->scanId == scans.front().id);
     }
 }
 

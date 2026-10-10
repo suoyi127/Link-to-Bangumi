@@ -61,23 +61,30 @@ void CoverScraper::refresh(std::int64_t animeId, Completion completion) {
     if (!anime->bangumiSubjectId) { completion({"", "cover_subject_unbound"}); return; }
     const auto expectedSubject = *anime->bangumiSubjectId;
     auto self = shared_from_this();
-    bangumi_->subject(expectedSubject, [self, animeId, expectedSubject,
+    bangumi_->subject(expectedSubject, [self, animeId, expectedSubject, expectedCover = anime->coverUrl,
                                         completion = std::move(completion)](BangumiSubjectResult result) mutable {
         if (!result.subject || !result.errorCode.empty()) {
             completion({"", result.errorCode.empty() ? "cover_unavailable" : result.errorCode});
             return;
         }
-        self->cacheSubject(animeId, std::move(*result.subject), std::move(completion));
+        self->cacheSubject(animeId, std::move(*result.subject), std::move(completion), expectedCover);
     });
 }
 
-void CoverScraper::cacheSubject(std::int64_t animeId, BangumiSubject subject, Completion completion) {
+void CoverScraper::cacheSubject(std::int64_t animeId, BangumiSubject subject, Completion completion, std::optional<std::string> expectedCover) {
     if (!completion) completion = [](CoverScrapeResult) {};
     if (animeId <= 0 || subject.id <= 0 || !allowedImagePath(subject.coverUrl)) {
         completion({"", "cover_unavailable"}); return;
     }
+    if (!expectedCover) {
+        try {
+            const auto anime = repository_.getAnime(animeId);
+            if (!anime) { completion({"", "anime_not_found"}); return; }
+            expectedCover = anime->coverUrl;
+        } catch (...) { completion({"", "cover_storage_error"}); return; }
+    }
     auto self = shared_from_this();
-    fetcher_.fetch(subject.coverUrl, [self, animeId, subjectId = subject.id,
+    fetcher_.fetch(subject.coverUrl, [self, animeId, subjectId = subject.id, expectedCover,
                                       completion = std::move(completion)](
         std::optional<std::string> bytes, std::string) mutable {
         if (!bytes) { completion({"", "cover_unavailable"}); return; }
@@ -104,7 +111,7 @@ void CoverScraper::cacheSubject(std::int64_t animeId, BangumiSubject subject, Co
             std::filesystem::rename(temporaryPath, finalPath);
             const auto url = "/api/covers/" + std::to_string(animeId) + "/" +
                 std::to_string(subjectId) + "/" + filename;
-            if (!self->repository_.updateCoverIfBound(animeId, subjectId, url)) {
+            if (!self->repository_.updateCoverIfBound(animeId, subjectId, url, expectedCover)) {
                 std::error_code ignored;
                 std::filesystem::remove(finalPath, ignored);
                 outcome.errorCode = "cover_binding_changed";

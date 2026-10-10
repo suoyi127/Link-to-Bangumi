@@ -9,14 +9,19 @@
 #include <filesystem>
 #include <random>
 #include <thread>
+#include <atomic>
 
 namespace fs = std::filesystem;
 
 namespace {
 struct OfflineTransport final : anime_vault::BangumiTransport {
+    std::atomic_bool subjectAvailable{false};
     void search(std::string, Completion done) override { done(std::nullopt, "offline"); }
     void searchAliases(std::string, Completion done) override { done(std::nullopt, "offline"); }
-    void subject(std::int64_t, Completion done) override { done(std::nullopt, "offline"); }
+    void subject(std::int64_t, Completion done) override {
+        if (subjectAvailable) done(Response{200, R"({"id":555,"type":2,"name":"Remote","images":{"large":"https://lain.bgm.tv/pic/cover/l/test.jpg"}})"}, "");
+        else done(std::nullopt, "offline");
+    }
 };
 }
 
@@ -52,7 +57,12 @@ TEST_CASE("management routes paginate and persist only allowed preferences") {
         {root / "source", root / "import", root / "library", root / "data", true});
     OfflineTransport transport;
     auto bangumi = std::make_shared<anime_vault::BangumiService>(repository, transport);
-    anime_vault::api::registerAnimeEndpoints(repository, bangumi);
+    struct Images final : anime_vault::CoverImageFetcher {
+        int calls{};
+        void fetch(std::string, Completion done) override { ++calls; done(std::string("\xff\xd8\xff", 3) + "jpeg", ""); }
+    } images;
+    auto covers = std::make_shared<anime_vault::CoverScraper>(repository, bangumi, images, root / "data");
+    anime_vault::api::registerAnimeEndpoints(repository, bangumi, covers);
     drogon::app().addListener("127.0.0.1", 18850);
     std::thread server([] { drogon::app().run(); });
     struct Stop { std::thread& thread; ~Stop() { drogon::app().quit(); thread.join(); } } stop{server};
@@ -155,4 +165,45 @@ TEST_CASE("management routes paginate and persist only allowed preferences") {
     REQUIRE((*put(body)->getJsonObject())["error"]["code"].asString() == "request_too_large");
     REQUIRE((*get("/api/scans?limit=101")->getJsonObject())["error"]["code"].asString() == "invalid_page");
     REQUIRE((*get("/api/audit-logs?offset=-1")->getJsonObject())["error"]["code"].asString() == "invalid_page");
+    REQUIRE(get("/api/anime?sort=import_asc")->statusCode() == drogon::k200OK);
+    REQUIRE((*get("/api/anime?sort=invalid")->getJsonObject())["error"]["code"].asString() == "invalid_sort");
+    auto editAnime = [&](const Json::Value& edit, const std::string& id = "1") {
+        auto request = drogon::HttpRequest::newHttpJsonRequest(edit);
+        request->setMethod(drogon::Put); request->setPath("/api/anime/" + id);
+        auto [result, response] = client->sendRequest(request);
+        REQUIRE(result == drogon::ReqResult::Ok); REQUIRE(response); return response;
+    };
+    Json::Value edit;
+    edit["displayTitle"] = "Edited"; edit["season"] = "2"; edit["coverUrl"] = "";
+    REQUIRE(editAnime(edit)->statusCode() == drogon::k200OK);
+    REQUIRE(repository.getAnime(1)->displayTitle == "Edited");
+    REQUIRE(repository.getAnime(1)->season == "2");
+    REQUIRE(get("/api/anime/1")->getJsonObject()->isMember("importedMonth"));
+    edit["coverUrl"] = "javascript:alert(1)";
+    REQUIRE((*editAnime(edit)->getJsonObject())["error"]["code"].asString() == "invalid_anime_edit");
+    edit["coverUrl"] = ""; edit["displayTitle"] = "";
+    REQUIRE(editAnime(edit)->statusCode() == drogon::k400BadRequest);
+    edit["displayTitle"] = "Edited"; edit["extra"] = true;
+    REQUIRE(editAnime(edit)->statusCode() == drogon::k400BadRequest);
+    edit.removeMember("extra");
+    edit["season"] = std::string("2\0bad", 5);
+    REQUIRE(editAnime(edit)->statusCode() == drogon::k400BadRequest);
+    edit["season"] = "2";
+    edit["displayTitle"] = "   ";
+    REQUIRE(editAnime(edit)->statusCode() == drogon::k400BadRequest);
+    edit["displayTitle"] = "Edited";
+    REQUIRE(editAnime(edit, "99999")->statusCode() == drogon::k404NotFound);
+
+    edit["coverUrl"] = "https://example.test/manual.jpg";
+    REQUIRE(editAnime(edit)->statusCode() == drogon::k200OK);
+    transport.subjectAvailable = true;
+    Json::Value binding; binding["subjectId"] = 555; binding["confirmed"] = true;
+    auto bindRequest = drogon::HttpRequest::newHttpJsonRequest(binding);
+    bindRequest->setMethod(drogon::Put); bindRequest->setPath("/api/anime/1/bangumi");
+    const auto [bindResult, bindResponse] = client->sendRequest(bindRequest);
+    REQUIRE(bindResult == drogon::ReqResult::Ok);
+    REQUIRE(bindResponse->statusCode() == drogon::k200OK);
+    CHECK(images.calls == 0);
+    CHECK(repository.getAnime(1)->coverUrl == "https://example.test/manual.jpg");
+
 }

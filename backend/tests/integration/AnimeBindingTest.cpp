@@ -279,3 +279,33 @@ TEST_CASE("local lookup reuses its index during many scan corrections and refres
     REQUIRE_FALSE(repository.findAnimeByTitle("Legacy Alias"));
     sqlite3_trace_v2(database.handle(), 0, nullptr, nullptr);
 }
+
+TEST_CASE("bound media leaves inbox and library supports protected edits and global month ordering") {
+    SqliteDatabase database(":memory:"); database.migrate();
+    SqliteMediaRepository repository(database);
+    const auto scan = repository.createScan({0, "test", "completed"});
+    const auto media = repository.insertMedia({0, scan, "C:/test/new.mkv", "new.mkv", "1", "normal", 1, "inbox", 1.0});
+    repository.updateMediaCorrection(media, {"New", "1", "1", "normal", 1.0, std::nullopt});
+    const auto id = *repository.getMedia(media)->animeId;
+    REQUIRE(repository.listInboxPage(0, 10).total == 1);
+    repository.bindAnime(id, {1234, "New", "New", "2026-01-01", "", 12, 2});
+    CHECK(repository.listInbox().empty());
+    CHECK(repository.listInboxPage(0, 10).total == 0);
+    repository.editAnime(id, {"Edited", "2", "/api/covers/custom.jpg"});
+    CHECK(repository.getAnime(id)->displayTitle == "Edited");
+    CHECK(repository.getAnime(id)->season == "2");
+    CHECK(repository.getMedia(media)->title == "Edited");
+    const auto next = repository.insertMedia({0, scan, "C:/test/next.mkv", "next.mkv", "2", "normal", 1, "inbox", 1.0});
+    repository.updateMediaCorrection(next, {"New", "1", "2", "normal", 1.0, std::nullopt}, MediaCorrectionIntent::automaticScan);
+    CHECK(repository.getMedia(next)->animeId == id);
+    CHECK(repository.getMedia(next)->title == "Edited");
+    CHECK(repository.getMedia(next)->season == "2");
+    CHECK(repository.getAnime(id)->displayTitle == "Edited");
+    CHECK(repository.getAnime(id)->season == "2");
+    REQUIRE(sqlite3_exec(database.handle(), "INSERT INTO anime(display_title,created_at) VALUES('Older','2025-02-01'),('Newest','2026-09-01'); UPDATE anime SET created_at='2026-03-01' WHERE id=1", nullptr, nullptr, nullptr) == SQLITE_OK);
+    const auto latest = repository.listAnimePage(0, 1, "import_desc");
+    CHECK(latest.items.front().displayTitle == "Newest");
+    CHECK(latest.items.front().importedMonth == "2026-09");
+    CHECK(repository.listAnimePage(1, 1, "import_desc").items.front().displayTitle == "Edited");
+    CHECK(repository.listAnimePage(0, 1, "import_asc").items.front().displayTitle == "Older");
+}

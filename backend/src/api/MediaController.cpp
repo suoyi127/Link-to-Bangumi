@@ -143,6 +143,7 @@ Json::Value animeJson(const AnimeRecord& anime, bool detail) {
     if (anime.bangumiSubjectId) json["bangumiSubjectId"] = Json::Int64(*anime.bangumiSubjectId);
     json["coverUrl"] = anime.coverUrl;
     json["locked"] = anime.locked;
+    json["importedMonth"] = anime.importedMonth;
     if (detail) {
         json["aliases"] = Json::Value(Json::arrayValue);
         for (const auto& alias : anime.aliases) json["aliases"].append(alias);
@@ -589,7 +590,7 @@ void registerMediaEndpoints(MediaService& service, OrganizationService& organiza
             if (!request->body().empty() || !request->getParameters().empty())
                 throw ApiError(400, "invalid_request", "scan takes no body or parameters");
             const auto scan = service.createScan();
-            if (scan.status == "completed") triggerScanEnrichment(enricher, mikanEnricher);
+            if (scan.status == "completed") triggerScanEnrichment(enricher, mikanEnricher, scan.id);
             return scanJson(scan);
         }, 201);
     }, {drogon::Post});
@@ -598,7 +599,7 @@ void registerMediaEndpoints(MediaService& service, OrganizationService& organiza
             if (!request->body().empty() || !request->getParameters().empty())
                 throw ApiError(400, "invalid_request", "import scan takes no body or parameters");
             const auto scan = service.createImportScan();
-            if (scan.status == "completed") triggerScanEnrichment(enricher, mikanEnricher);
+            if (scan.status == "completed") triggerScanEnrichment(enricher, mikanEnricher, scan.id);
             return scanJson(scan);
         }, 201);
     }, {drogon::Post});
@@ -634,11 +635,8 @@ void registerMediaEndpoints(MediaService& service, OrganizationService& organiza
                 deliver(std::move(callback), requestId, 201, scanJson(scan));
                 return;
             }
-            // 前端等刮削回调结束后再刷新，避免仍看到扫描时的原始标题。
-            triggerScanEnrichment(enricher, mikanEnricher, scan.id,
-                [requestId, callback = std::move(callback), scan]() mutable {
-                    deliver(std::move(callback), requestId, 201, scanJson(scan));
-                });
+            deliver(std::move(callback), requestId, 201, scanJson(scan));
+            triggerScanEnrichment(enricher, mikanEnricher, scan.id);
         } catch (const ApiError& error) {
             deliver(std::move(callback), requestId, error.status, errorJson(error.code, error.what()));
         } catch (const std::exception&) {
@@ -678,6 +676,16 @@ void registerMediaEndpoints(MediaService& service, OrganizationService& organiza
             return mediaJson(service.correct(parseId(id), correction));
         });
     }, {drogon::Post});
+    drogon::app().registerHandler("/api/media/{1}/episode", [&service](const Request& request, Callback&& callback, std::string id) {
+        respond(request, std::move(callback), [&] {
+            const auto body = request->body().size() <= 1024 ? request->getJsonObject() : nullptr;
+            if (!request->getParameters().empty() || !body || !body->isObject() || body->size() != 2 ||
+                !(*body)["episodeNumber"].isString() || !(*body)["episodeType"].isString())
+                throw ApiError(400, "invalid_episode_edit", "episodeNumber and episodeType required");
+            const MediaEpisodeEdit edit{(*body)["episodeNumber"].asString(), (*body)["episodeType"].asString()};
+            return mediaJson(service.editEpisode(parseId(id), edit));
+        });
+    }, {drogon::Put});
     drogon::app().registerHandler("/api/organize/preview", [&service](const Request& request, Callback&& callback) {
         respond(request, std::move(callback), [&] {
             const auto body = request->getJsonObject();
@@ -747,11 +755,13 @@ void registerAnimeEndpoints(MediaRepository& repository, std::shared_ptr<Bangumi
             if (!request->body().empty())
                 throw ApiError(400, "invalid_request", "anime list takes no body");
             for (const auto& [name, _] : request->getParameters())
-                if (name != "limit" && name != "offset")
+                if (name != "limit" && name != "offset" && name != "sort")
                     throw ApiError(400, "invalid_page", "unknown page parameter");
             const auto limit = static_cast<int>(pageNumber(request, "limit", 50, 1, 200));
             const auto offset = pageNumber(request, "offset", 0, 0, 1'000'000);
-            const auto page = repository.listAnimePage(offset, limit);
+            const auto sort = request->getParameters().contains("sort") ? request->getParameter("sort") : "import_desc";
+            if (sort != "import_desc" && sort != "import_asc") throw ApiError(400, "invalid_sort", "invalid anime sort");
+            const auto page = repository.listAnimePage(offset, limit, sort);
             Json::Value result;
             result["items"] = Json::Value(Json::arrayValue);
             for (const auto& anime : page.items) result["items"].append(animeJson(anime, false));
@@ -774,6 +784,19 @@ void registerAnimeEndpoints(MediaRepository& repository, std::shared_ptr<Bangumi
             return animeJson(*anime, true);
         });
     }, {drogon::Get});
+    drogon::app().registerHandler("/api/anime/{1}", [&repository](const Request& request, Callback&& callback, std::string id) {
+        respond(request, std::move(callback), [&] {
+            const auto body = request->body().size() <= 8192 ? request->getJsonObject() : nullptr;
+            if (!request->getParameters().empty() || !body || !body->isObject() || body->size() != 3 ||
+                !(*body)["displayTitle"].isString() || !(*body)["season"].isString() || !(*body)["coverUrl"].isString())
+                throw ApiError(400, "invalid_anime_edit", "displayTitle, season and coverUrl required");
+            const AnimeEdit edit{(*body)["displayTitle"].asString(), (*body)["season"].asString(), (*body)["coverUrl"].asString()};
+            try { return animeJson(repository.editAnime(parseId(id), edit), true); }
+            catch (const AnimeBindingError& error) {
+                throw ApiError(error.code() == "anime_not_found" ? 404 : 400, error.code(), "cannot edit anime");
+            }
+        });
+    }, {drogon::Put});
     drogon::app().registerHandler("/api/bangumi/search", [bangumi](const Request& request, Callback&& callback) mutable {
         const auto requestId = requestIdFor(request);
         if (!request->body().empty() || request->getParameters().size() != 1 ||
@@ -846,8 +869,8 @@ void registerAnimeEndpoints(MediaRepository& repository, std::shared_ptr<Bangumi
             }
             try {
                 const auto bound = repository.bindAnime(animeId, *result.subject);
-                if (covers && !result.subject->coverUrl.empty())
-                    covers->cacheSubject(animeId, *result.subject);
+                if (covers && !result.subject->coverUrl.empty() && bound.coverUrl == result.subject->coverUrl)
+                    covers->cacheSubject(animeId, *result.subject, {}, bound.coverUrl);
                 auto payload = animeJson(bound, true);
                 deliver(std::move(callback), requestId, 200, std::move(payload));
             } catch (const AnimeBindingError& error) {

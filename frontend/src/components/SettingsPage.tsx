@@ -262,7 +262,9 @@ export function SettingsPage() {
       {mikanFeeds && <Typography.Text>{mikanFeeds.feedCount} 个订阅 · {mikanFeeds.articleCount} 篇文章 · {mikanFeeds.pairCount} 组标题映射</Typography.Text>}
       {mikanFeeds?.errorCode && <Alert type="warning" message={mikanFeeds.errorCode} />}
       {mikanError && <Alert type="warning" message={mikanError} />}
+      <details className="mikan-feed-details"><summary>订阅列表与文章统计</summary>
       <List size="small" dataSource={mikanFeeds?.feeds ?? []} locale={{ emptyText: '暂无可读取的 Mikan 订阅' }} renderItem={(feed) => <List.Item>{feed.title || 'Mikan 订阅'} · {feed.articleCount} 篇{feed.hasError ? ' · qB 获取失败' : ''}</List.Item>} />
+      </details>
       <Typography.Text type="secondary">新订阅首次获取完成后，已有条目将标记已读；随后自动建立每集下载首个可识别资源的 qB 规则，不限定画质或字幕。无法识别集数的条目会跳过。</Typography.Text>
       <Space.Compact><Input aria-label="Mikan RSS 地址" value={feedUrl} onChange={(event) => setFeedUrl(event.target.value)} maxLength={1024} placeholder="https://mikanani.me/RSS/Bangumi?..." /><Button loading={addingFeed} disabled={!settings.qbWebUiConfigured || !settings.qbDownloadConfigured || qbPathPending || !feedUrl.trim()} onClick={() => void addFeed()}>添加 Mikan 订阅</Button></Space.Compact>
       <Typography.Title level={5}>qB 自动下载规则</Typography.Title>
@@ -277,7 +279,7 @@ export function SettingsPage() {
       </SettingsSection>
       <SettingsSection title="偏好">
       <label>首选整理方式 <select aria-label="首选整理方式" value={draft.preferredOperation} onChange={(event) => setDraft({ ...draft, preferredOperation: event.target.value as Preferences['preferredOperation'] })}><option value="hardlink">硬链接</option><option value="copy">复制</option><option value="symlink">符号链接</option></select></label>
-      <label>扫描间隔（预留，尚无自动扫描） <InputNumber aria-label="扫描间隔（秒）" min={60} max={86400} value={draft.scanIntervalSeconds} onChange={(value) => setDraft({ ...draft, scanIntervalSeconds: value ?? 3600 })} /></label>
+      <label>扫描间隔（预留，qB 每 10 秒检测下载完成） <InputNumber aria-label="扫描间隔（秒）" min={60} max={86400} value={draft.scanIntervalSeconds} onChange={(value) => setDraft({ ...draft, scanIntervalSeconds: value ?? 3600 })} /></label>
       <Button type="primary" loading={saving} onClick={() => void save()}>保存偏好</Button>
       </SettingsSection>
       <div className="settings-section"><PlayerSettings /></div>

@@ -104,3 +104,33 @@ TEST_CASE("library listing omits anime whose only file vanished but retains manu
     REQUIRE(visible.size() == 1);
     REQUIRE(visible.front().displayTitle == "Manual empty");
 }
+
+TEST_CASE("verified completed scan imports immediately and excludes other sources") {
+    const auto root = std::filesystem::temp_directory_path() / ("av-completed-" + std::to_string(std::random_device{}()));
+    struct Cleanup { std::filesystem::path root; ~Cleanup() { std::error_code ec; std::filesystem::remove_all(root, ec); } } cleanup{root};
+    std::filesystem::create_directories(root / "source");
+    std::filesystem::create_directories(root / "library");
+    std::filesystem::create_directories(root / "imports");
+    std::ofstream(root / "source" / "Ready - 01.mkv").put('x');
+    std::ofstream(root / "source" / "Partial - 02.mkv").put('x');
+    SqliteDatabase database(root / "test.db"); database.migrate();
+    SqliteMediaRepository repository(database);
+    api::MediaService service(repository, root / "source", root / "library", root / "imports");
+    const auto result = service.createCompletedScan({root / "source" / "Ready - 01.mkv", root / "outside.mkv"});
+    CHECK(result.processedCount == 1);
+    REQUIRE(repository.listInbox().size() == 1);
+    CHECK(repository.listInbox().front().filename == "Ready - 01.mkv");
+    CHECK(service.createCompletedScan({root / "source" / "Ready - 01.mkv"}).id == 0);
+    const auto item = repository.listInbox().front();
+    const auto updated = service.editEpisode(item.id, {"2.5", "sp"});
+    CHECK(updated.episodeNumber == "2.5");
+    CHECK(updated.episodeType == "sp");
+    CHECK(updated.animeId == item.animeId);
+    CHECK(updated.sourcePath == item.sourcePath);
+    CHECK(repository.getAnime(*item.animeId)->media.front().episodeNumber == "2.5");
+    CHECK_THROWS_AS(service.editEpisode(item.id, {"invalid", "normal"}), api::ApiError);
+    CHECK_THROWS_AS(service.editEpisode(item.id, {"2", "invalid"}), api::ApiError);
+    REQUIRE(std::filesystem::remove(root / "source" / "Ready - 01.mkv"));
+    CHECK(service.createCompletedScan({root / "source" / "Ready - 01.mkv"}).id == 0);
+    CHECK(repository.getMedia(item.id)->status == "missing");
+}

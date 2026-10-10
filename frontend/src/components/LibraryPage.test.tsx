@@ -81,3 +81,23 @@ it('allows calendar retry after a network error and shows stale-cache notice', a
   expect(calendar).toHaveBeenCalledTimes(2)
   expect(screen.getByText('暂无符合排期的本地番剧')).toBeVisible()
 }, 20000)
+
+it('requests global import month sorting and resets pagination on sort change', async () => {
+  const get = vi.spyOn(client, 'getAnime').mockResolvedValue({ items: [{ ...anime(1), importedMonth: '2026-09' }], nextOffset: 200 })
+  render(<LibraryPage onOpenAnime={vi.fn()} />)
+  await screen.findByRole('button', { name: '打开 番剧 1' })
+  expect(screen.getByText(/2026-09 导入/)).toBeVisible()
+  fireEvent.change(screen.getByLabelText('导入月份排序'), { target: { value: 'import_asc' } })
+  await waitFor(() => expect(get).toHaveBeenLastCalledWith(200, 0, expect.anything(), 'import_asc'))
+}, 20000)
+
+it('groups both views by import month including unknown dates', async () => {
+  vi.spyOn(client, 'getAnime').mockResolvedValue({ items: [{ ...anime(1), importedMonth: '2026-10' }, { ...anime(2), importedMonth: '2026-09' }, anime(3)], nextOffset: null })
+  render(<LibraryPage onOpenAnime={vi.fn()} />)
+  const october = await screen.findByRole('region', { name: '2026 年 10 月' })
+  expect(october).toContainElement(screen.getByRole('button', { name: '打开 番剧 1' }))
+  expect(screen.getByRole('region', { name: '导入月份未知' })).toContainElement(screen.getByRole('button', { name: '打开 番剧 3' }))
+  fireEvent.click(screen.getByRole('button', { name: '列表视图' }))
+  expect(screen.getAllByRole('table')).toHaveLength(3)
+  expect(screen.getByRole('region', { name: '2026 年 09 月' })).toContainElement(screen.getByRole('button', { name: '打开 番剧 2' }))
+}, 20000)

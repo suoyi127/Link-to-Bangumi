@@ -29,12 +29,15 @@ struct PreviewResponse {
     std::string expiresAt;
 };
 
+struct MediaEpisodeEdit { std::string episodeNumber, episodeType; };
+
 class MediaService {
 public:
     MediaService(MediaRepository& repository, std::filesystem::path sourceRoot,
                  std::filesystem::path libraryRoot,
                  std::filesystem::path importRoot = "D:/追番/外来导入",
                  bool qbConfigured = true);
+    ScanRecord createCompletedScan(const std::vector<std::filesystem::path>& completedPaths);
     ScanRecord createScan(std::chrono::seconds stableFor = std::chrono::seconds{60});
     void validateQbSourceReady() const;
     ScanRecord createImportScan(std::chrono::seconds stableFor = std::chrono::seconds{60});
@@ -45,6 +48,7 @@ public:
     std::vector<MediaRecord> listInbox() const;
     InboxPage listInboxPage(std::int64_t offset, int limit,
                             std::optional<std::string> origin = std::nullopt) const;
+    MediaRecord editEpisode(std::int64_t id, const MediaEpisodeEdit& edit);
     MediaRecord correct(std::int64_t id, const MediaCorrection& correction);
     PreviewResponse preview(std::int64_t id, const std::string& operation = "hardlink");
 
@@ -64,7 +68,8 @@ private:
     mutable std::mutex mutex_;
     ScanRecord scanFrom(DirectoryScanner& scanner, const std::string& origin,
                         std::chrono::seconds stableFor,
-                        std::optional<std::int64_t> folderImportId = std::nullopt);
+                        std::optional<std::int64_t> folderImportId = std::nullopt,
+                        const std::vector<SourceFile>* verifiedFiles = nullptr);
     void enforceRateLimit();
     void validateSourceRoot() const;
 };

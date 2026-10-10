@@ -31,6 +31,10 @@
 #include <string>
 #include <memory>
 #include <optional>
+#include <atomic>
+#include <condition_variable>
+#include <future>
+#include <thread>
 
 int main() {
     try {
@@ -265,6 +269,52 @@ int main() {
                 std::string(reinterpret_cast<const char*>(encoded.data()), encoded.size()));
             drogon::app().setHomePage("index.html");
         }
+        auto enrichmentActive = std::make_shared<std::atomic_int>(0);
+        // qB 完成状态允许跳过稳定等待；目录遍历放在独立线程，避免阻塞 HTTP 循环。
+        std::jthread automaticScan([&media, qb, enricher, mikanEnricher, enrichmentActive, qbDownloadError](std::stop_token stop) {
+            std::mutex waitMutex;
+            std::condition_variable_any wake;
+            while (!stop.stop_requested()) {
+                {
+                    std::unique_lock lock(waitMutex);
+                    wake.wait_for(lock, stop, std::chrono::seconds(10), [] { return false; });
+                }
+                if (stop.stop_requested()) break;
+                if (!qbDownloadError().empty() || !qb->summary().configured) continue;
+                auto promise = std::make_shared<std::promise<anime_vault::QbStatus>>();
+                auto result = promise->get_future();
+                qb->current()->inspect([promise](anime_vault::QbStatus status) { promise->set_value(std::move(status)); });
+                bool ready = false;
+                for (int waited = 0; waited < 25 && !stop.stop_requested(); ++waited) {
+                    if (result.wait_for(std::chrono::seconds(1)) == std::future_status::ready) { ready = true; break; }
+                }
+                if (!ready || stop.stop_requested()) continue;
+                const auto status = result.get();
+                if (!status.connected) continue;
+                try {
+                    std::vector<std::filesystem::path> completed;
+                    for (const auto& name : status.completedPaths)
+                        completed.emplace_back(std::u8string(name.begin(), name.end()));
+                    const auto scan = media.createCompletedScan(completed);
+                    if (scan.status == "failed") std::cerr << "automatic_scan_failed\n";
+                    // 即使本轮无新文件，也继续处理上次因网络失败而未绑定的条目。
+                    int idle = 0;
+                    const bool schedule = scan.id > 0 || enrichmentActive->compare_exchange_strong(idle, 1);
+                    if (scan.id > 0) enrichmentActive->fetch_add(1);
+                    if (schedule) {
+                        drogon::app().getLoop()->queueInLoop([enricher, mikanEnricher, enrichmentActive, scanId = scan.id] {
+                            mikanEnricher->runOnce([enricher, enrichmentActive, scanId](anime_vault::MikanEnrichmentResult) {
+                                auto done = [enrichmentActive](std::size_t) { enrichmentActive->fetch_sub(1); };
+                                if (scanId > 0) enricher->runForScan(scanId, std::move(done));
+                                else enricher->runOnce(5, std::move(done));
+                            });
+                        });
+                    }
+                } catch (const std::exception& error) {
+                    std::cerr << "automatic_scan_unavailable: " << error.what() << '\n';
+                }
+            }
+        });
         drogon::app().addListener(std::string(anime_vault::api::kHealthBindAddress), port).run();
         return 0;
     } catch (const std::exception& error) {

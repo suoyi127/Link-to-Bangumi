@@ -170,7 +170,8 @@ TEST_CASE("media service scans inbox and previews without creating a target") {
     std::this_thread::sleep_for(std::chrono::milliseconds(1100));
     const auto second = service.createScan(std::chrono::seconds{0});
     REQUIRE(second.processedCount == 1);
-    const auto inbox = service.listInbox();
+    REQUIRE(service.listInbox().empty());
+    const auto inbox = repository.getAnime(1)->media;
     REQUIRE(inbox.size() == 1);
     REQUIRE(inbox.front().episodeNumber == "1");
     REQUIRE(inbox.front().bangumiSubjectId == 734);
@@ -181,15 +182,17 @@ TEST_CASE("media service scans inbox and previews without creating a target") {
     std::this_thread::sleep_for(std::chrono::milliseconds(1100));
     const auto secondImport = service.createImportScan(std::chrono::seconds{0});
     REQUIRE(secondImport.processedCount == 1);
-    const auto combinedInbox = service.listInbox();
+    auto combinedInbox = inbox;
+    const auto unresolved = service.listInbox();
+    REQUIRE(unresolved.size() == 1);
+    combinedInbox.insert(combinedInbox.end(), unresolved.begin(), unresolved.end());
     REQUIRE(combinedInbox.size() == 2);
     REQUIRE(combinedInbox.at(0).origin == "qb_download");
     REQUIRE(combinedInbox.at(1).origin == "external_import");
-    REQUIRE(service.listInboxPage(0, 100).total == 2);
+    REQUIRE(service.listInboxPage(0, 100).total == 1);
     const auto qbPage = service.listInboxPage(0, 100, "qb_download");
-    REQUIRE(qbPage.total == 1);
-    REQUIRE(qbPage.items.size() == 1);
-    REQUIRE(qbPage.items.front().origin == "qb_download");
+    REQUIRE(qbPage.total == 0);
+    REQUIRE(qbPage.items.empty());
     const auto importPage = service.listInboxPage(0, 100, "external_import");
     REQUIRE(importPage.total == 1);
     REQUIRE(importPage.items.size() == 1);
@@ -292,7 +295,8 @@ TEST_CASE("automatic scan does not turn a remote alias into a user alias") {
     service.createScan(std::chrono::seconds{0});
     std::this_thread::sleep_for(std::chrono::milliseconds(1100));
     REQUIRE(service.createScan(std::chrono::seconds{0}).processedCount == 1);
-    REQUIRE(service.listInbox().front().bangumiSubjectId == 111);
+    REQUIRE(service.listInbox().empty());
+    REQUIRE(repository.getAnime(1)->media.front().bangumiSubjectId == 111);
     repository.bindAnime(1, {222, "Remote New", "", "", "", 12, 2});
     REQUIRE_FALSE(repository.findAnimeByTitle("Remote Old"));
 }

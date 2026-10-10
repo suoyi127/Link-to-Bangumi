@@ -126,3 +126,30 @@ TEST_CASE("consumer callback failure does not discard an already published cover
     REQUIRE(coverUrl.starts_with("/api/covers/1/123/"));
     REQUIRE(scraper->readCached(1, 123, coverUrl.substr(coverUrl.rfind('/') + 1)));
 }
+
+TEST_CASE("automatic cover caching respects manual covers and in-flight edits") {
+    TempData temp;
+    SqliteDatabase db(temp.root / "test.db"); db.migrate();
+    SqliteMediaRepository repo(db);
+    REQUIRE(sqlite3_exec(db.handle(), "INSERT INTO anime(display_title) VALUES('Show');", nullptr, nullptr, nullptr) == SQLITE_OK);
+    FakeBangumi remote;
+    auto bangumi = std::make_shared<BangumiService>(repo, remote);
+    struct DelayedImage final : CoverImageFetcher {
+        Completion pending;
+        void fetch(std::string, Completion done) override { pending = std::move(done); }
+    } image;
+    auto scraper = std::make_shared<CoverScraper>(repo, bangumi, image, temp.root);
+    auto enricher = std::make_shared<AnimeEnricher>(repo, bangumi, scraper);
+    repo.editAnime(1, {"Show", "", "https://example.test/manual.jpg"});
+    enricher->runOnce();
+    CHECK_FALSE(static_cast<bool>(image.pending));
+    CHECK(repo.getAnime(1)->coverUrl == "https://example.test/manual.jpg");
+    std::optional<CoverScrapeResult> result;
+    scraper->refresh(1, [&](CoverScrapeResult value) { result = std::move(value); });
+    REQUIRE(static_cast<bool>(image.pending));
+    repo.editAnime(1, {"Show", "", "https://example.test/new-manual.jpg"});
+    image.pending(std::string("\xff\xd8\xff", 3) + "fake-jpeg", "");
+    CHECK(repo.getAnime(1)->coverUrl == "https://example.test/new-manual.jpg");
+    REQUIRE(result);
+    CHECK_FALSE(result->errorCode.empty());
+}
