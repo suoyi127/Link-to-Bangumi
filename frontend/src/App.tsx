@@ -55,7 +55,7 @@ export default function App() {
           <Content className={`app-content page-${page}`} aria-label={`${title}内容`}>
             <div className="page-container">
             <Suspense fallback={<Spin aria-label="正在加载页面" />}>
-              {page === 'dashboard' ? <DashboardPage /> : page === 'inbox' ? <InboxPage onOpenAnime={(id) => { setAnimeId(id); setPage('library') }} /> : page === 'library' ? animeId ? <AnimeDetailPage animeId={animeId} onBack={() => setAnimeId(null)} /> : <LibraryPage onOpenAnime={setAnimeId} /> : page === 'novels' ? <NovelLibraryPage /> : page === 'games' ? <GameLibraryPage /> : <SettingsPage />}
+              {page === 'dashboard' ? <DashboardPage /> : page === 'inbox' ? <InboxPage onOpenAnime={(id) => { setAnimeId(id); setPage('library') }} /> : page === 'library' ? animeId ? <AnimeDetailPage animeId={animeId} onOpenAnime={setAnimeId} onBack={() => setAnimeId(null)} /> : <LibraryPage onOpenAnime={setAnimeId} /> : page === 'novels' ? <NovelLibraryPage /> : page === 'games' ? <GameLibraryPage /> : <SettingsPage />}
             </Suspense>
             </div>
           </Content>

@@ -265,7 +265,7 @@ export function SettingsPage() {
       <details className="mikan-feed-details"><summary>订阅列表与文章统计</summary>
       <List size="small" dataSource={mikanFeeds?.feeds ?? []} locale={{ emptyText: '暂无可读取的 Mikan 订阅' }} renderItem={(feed) => <List.Item>{feed.title || 'Mikan 订阅'} · {feed.articleCount} 篇{feed.hasError ? ' · qB 获取失败' : ''}</List.Item>} />
       </details>
-      <Typography.Text type="secondary">新订阅首次获取完成后，已有条目将标记已读；随后自动建立每集下载首个可识别资源的 qB 规则，不限定画质或字幕。无法识别集数的条目会跳过。</Typography.Text>
+      <Typography.Text type="secondary">新订阅获取完成后自动建立正则及智能集数过滤规则，每集仅下载首个符合条件的版本，不限定字幕组、画质或平台。立即下载，忽略间隔为 0 天，不自动下载 REPACK；已有任务对应的集数会补入去重记录。每个源仅用于一个季度及一种集数编号。</Typography.Text>
       <Space.Compact><Input aria-label="Mikan RSS 地址" value={feedUrl} onChange={(event) => setFeedUrl(event.target.value)} maxLength={1024} placeholder="https://mikanani.me/RSS/Bangumi?..." /><Button loading={addingFeed} disabled={!settings.qbWebUiConfigured || !settings.qbDownloadConfigured || qbPathPending || !feedUrl.trim()} onClick={() => void addFeed()}>添加 Mikan 订阅</Button></Space.Compact>
       <Typography.Title level={5}>qB 自动下载规则</Typography.Title>
       <Typography.Text type="secondary">先将订阅加入 qB，再填写该订阅的完整地址。关键词按文章标题包含匹配；同名规则不会覆盖。下载目标固定为 {settings.sourcePath}。</Typography.Text>

@@ -7,6 +7,20 @@
 
 using namespace anime_vault;
 
+TEST_CASE("episode lookup passes through the configured Bangumi connection") {
+    const auto path = std::filesystem::temp_directory_path() /
+        ("anime-vault-episode-connection-" + std::to_string(std::random_device{}()) + ".db");
+    struct Cleanup { std::filesystem::path path; ~Cleanup() { std::error_code ec; std::filesystem::remove(path, ec); } } cleanup{path};
+    SqliteDatabase db(path); db.migrate();
+    BangumiConnectionManager manager(db, "");
+    std::string error;
+    manager.episodes(548156, 0, [&](auto, auto code) { error = code; });
+    REQUIRE(error == "bangumi_unconfigured");
+    manager.save("suoyi127/Link-to-Bangumi/0.1 (Windows)");
+    manager.episodes(-1, 0, [&](auto, auto code) { error = code; });
+    REQUIRE(error == "invalid_episode_query");
+}
+
 TEST_CASE("Bangumi configuration persists and clears to environment fallback") {
     const auto path = std::filesystem::temp_directory_path() /
         ("anime-vault-bangumi-connection-" + std::to_string(std::random_device{}()) + ".db");

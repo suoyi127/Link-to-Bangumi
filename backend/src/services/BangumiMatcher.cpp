@@ -57,6 +57,9 @@ RankedCandidates rankBangumiCandidates(const BangumiMatchQuery& query,
         if (primary == 1.0) base = 0.96;
         else if (chinese == 1.0) base = 0.92;
         else base = std::max(primary, chinese);
+        // 只给服务端明确返回且完整一致的别名精确分，不用短名称推断罗马音。
+        for (const auto& alias : subject.aliases)
+            if (normalizeTitle(alias) == normalizedQuery) base = std::max(base, 0.92);
         if (base == 0.0) continue;
 
         double score = base;

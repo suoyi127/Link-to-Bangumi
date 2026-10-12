@@ -5,7 +5,7 @@ export type InboxOrigin = 'qb_download' | 'external_import' | 'folder_import'
 export type FolderImport = { id: number; path: string }
 export type InboxPage = Page<Media> & { total: number }
 export type Scan = { id: number; source: string; status: string; discoveredCount: number; processedCount: number; errorCount: number; errorSummary: string }
-export type Media = { id: number; scanId: number; sourcePath: string; filename: string; parsedTitle: string; title: string; season: string; episodeNumber: string; episodeType: string; sizeBytes: number; status: string; origin: string; animeId: number | null; confidence: number; bangumiSubjectId?: number }
+export type Media = { id: number; scanId: number; sourcePath: string; filename: string; parsedTitle: string; title: string; season: string; episodeNumber: string; rawEpisodeNumber?: string; episodeNumberSource?: 'parsed' | 'bangumi' | 'manual'; episodeType: string; sizeBytes: number; status: string; origin: string; animeId: number | null; confidence: number; bangumiSubjectId?: number }
 export type AnimeSort = 'import_desc' | 'import_asc'
 export type Anime = { importedMonth?: string; id: number; displayTitle: string; originalTitle: string; season: string; year?: number; bangumiSubjectId?: number; coverUrl: string; locked: boolean }
 export type AnimeDetail = Anime & { aliases: string[]; media: Media[]; nextMediaOffset: number | null }
@@ -42,3 +42,5 @@ export type GameResource = {
 export type GameCandidate = { id: number; name: string; nameCn: string; platform: string }
 export type GameScrape = { bound: boolean; coverUpdated: boolean; errorCode: string; source?: string }
 export type VndbCandidate = { id: string; name: string; nameCn: string; platform: string }
+
+export type AnimeMergePreview = { previewId: string; sourceId: number; targetId: number; subjectId: number; sourceTitle: string; targetTitle: string; mediaCount: number; aliasCount: number; duplicateEpisodeCount: number; expiresAt: number }

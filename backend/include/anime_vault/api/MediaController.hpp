@@ -32,6 +32,8 @@ struct BindAnimeHttpRequest {
     std::int64_t subjectId{};
     bool confirmed{};
 };
+struct PreviewAnimeMergeHttpRequest { std::int64_t subjectId{}; };
+struct ConfirmAnimeMergeHttpRequest { std::string previewId; bool confirmed{}; };
 struct PlayMediaHttpRequest { std::int64_t mediaId{}; };
 PlayMediaHttpRequest parsePlayMediaRequest(std::string_view rawId);
 bool playbackOriginAllowed(std::string_view origin);

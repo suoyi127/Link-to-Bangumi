@@ -75,7 +75,11 @@ int main() {
         const char* configuredAgent = std::getenv("ANIME_VAULT_BANGUMI_USER_AGENT");
         auto bangumiConnection = std::make_shared<anime_vault::BangumiConnectionManager>(
             database, configuredAgent ? configuredAgent : "");
-        auto bangumi = std::make_shared<anime_vault::BangumiService>(repository, *bangumiConnection);
+        auto bangumi = std::make_shared<anime_vault::BangumiService>(repository, *bangumiConnection,
+            [] { return std::chrono::system_clock::now(); },
+            [](std::chrono::milliseconds delay, std::function<void()> action) {
+                drogon::app().getLoop()->runAfter(static_cast<double>(delay.count()) / 1000.0, std::move(action));
+            });
         auto covers = std::make_shared<anime_vault::CoverScraper>(
             repository, bangumi, *bangumiConnection, data);
         auto enricher = std::make_shared<anime_vault::AnimeEnricher>(repository, bangumi, covers);

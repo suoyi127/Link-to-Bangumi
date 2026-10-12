@@ -16,9 +16,11 @@ namespace fs = std::filesystem;
 namespace {
 struct OfflineTransport final : anime_vault::BangumiTransport {
     std::atomic_bool subjectAvailable{false};
+    std::atomic_int subjectCalls{0};
     void search(std::string, Completion done) override { done(std::nullopt, "offline"); }
     void searchAliases(std::string, Completion done) override { done(std::nullopt, "offline"); }
     void subject(std::int64_t, Completion done) override {
+        ++subjectCalls;
         if (subjectAvailable) done(Response{200, R"({"id":555,"type":2,"name":"Remote","images":{"large":"https://lain.bgm.tv/pic/cover/l/test.jpg"}})"}, "");
         else done(std::nullopt, "offline");
     }
@@ -205,5 +207,40 @@ TEST_CASE("management routes paginate and persist only allowed preferences") {
     REQUIRE(bindResponse->statusCode() == drogon::k200OK);
     CHECK(images.calls == 0);
     CHECK(repository.getAnime(1)->coverUrl == "https://example.test/manual.jpg");
+
+    REQUIRE(sqlite3_exec(database.handle(), "INSERT INTO anime(display_title) VALUES('Merge source');", nullptr, nullptr, nullptr) == SQLITE_OK);
+    const auto sourceId = sqlite3_last_insert_rowid(database.handle());
+    // Existing local targets must remain mergeable even while Bangumi is unavailable or rate limited.
+    transport.subjectAvailable = false;
+    const auto previousCalls = transport.subjectCalls.load();
+    auto conflictRequest = drogon::HttpRequest::newHttpJsonRequest(binding);
+    conflictRequest->setMethod(drogon::Put);
+    conflictRequest->setPath("/api/anime/" + std::to_string(sourceId) + "/bangumi");
+    const auto [conflictResult, conflictResponse] = client->sendRequest(conflictRequest);
+    REQUIRE(conflictResult == drogon::ReqResult::Ok);
+    REQUIRE(conflictResponse->statusCode() == drogon::k409Conflict);
+    REQUIRE((*conflictResponse->getJsonObject())["error"]["code"].asString() == "bangumi_subject_in_use");
+    REQUIRE((*conflictResponse->getJsonObject())["targetAnimeId"].asInt64() == 1);
+    REQUIRE((*conflictResponse->getJsonObject())["targetTitle"].asString() == "Edited");
+    REQUIRE(transport.subjectCalls.load() == previousCalls);
+
+    auto postMerge = [&](const std::string& suffix, const Json::Value& input) {
+        auto request = drogon::HttpRequest::newHttpJsonRequest(input);
+        request->setMethod(drogon::Post);
+        request->setPath("/api/anime/" + std::to_string(sourceId) + "/merge" + suffix);
+        auto [result, response] = client->sendRequest(request);
+        REQUIRE(result == drogon::ReqResult::Ok); REQUIRE(response); return response;
+    };
+    Json::Value mergeInput; mergeInput["subjectId"] = 555;
+    const auto previewResponse = postMerge("/preview", mergeInput);
+    REQUIRE(previewResponse->statusCode() == drogon::k200OK);
+    REQUIRE((*previewResponse->getJsonObject())["targetId"].asInt64() == 1);
+    REQUIRE(repository.getAnime(sourceId));
+    Json::Value confirm; confirm["previewId"] = (*previewResponse->getJsonObject())["previewId"];
+    REQUIRE(postMerge("", confirm)->statusCode() == drogon::k400BadRequest);
+    confirm["confirmed"] = true;
+    REQUIRE(postMerge("", confirm)->statusCode() == drogon::k200OK);
+    REQUIRE_FALSE(repository.getAnime(sourceId));
+    REQUIRE(postMerge("", confirm)->statusCode() == drogon::k200OK);
 
 }

@@ -1,0 +1,191 @@
+{
+  "source": "https://mikanani.me/RSS/Classic",
+  "seed": 20261011,
+  "poolSize": 100,
+  "samples": [
+    {
+      "title": "【悠哈璃羽字幕社&西农YUI汉化组】[暗芝居 第十七季_Yami Shibai 17][12][x264 1080p][CHT]",
+      "url": "https://mikanani.me/Home/Episode/c557191b7aee39b8ddaad98cae1cd8ca64e10898",
+      "expected": {
+        "canonical": "暗芝居 第十七季",
+        "aliases": [
+          "Yami Shibai 17",
+          "暗芝居 第十七季_Yami Shibai 17"
+        ],
+        "episode": 12
+      }
+    },
+    {
+      "title": "[猎户压制部] 擅长逃跑的殿下 第二季 / Nige Jouzu no Wakagimi S2 [24] [1080p] [简日内嵌] [2026年7月番]",
+      "url": "https://mikanani.me/Home/Episode/ed30abb908f2569763653074705f014c2e582a4d",
+      "expected": {
+        "canonical": "擅长逃跑的殿下 第二季",
+        "aliases": [
+          "Nige Jouzu no Wakagimi S2"
+        ],
+        "episode": 24
+      }
+    },
+    {
+      "title": "【悠哈璃羽字幕社&西农YUI汉化组】[暗芝居 第十七季_Yami Shibai 17][12][x264 1080p][CHS]",
+      "url": "https://mikanani.me/Home/Episode/db2578e1d72b2d423ac85dc11e81d87e3d2d4047",
+      "expected": {
+        "canonical": "暗芝居 第十七季",
+        "aliases": [
+          "Yami Shibai 17",
+          "暗芝居 第十七季_Yami Shibai 17"
+        ],
+        "episode": 12
+      }
+    },
+    {
+      "title": "[猎户压制部] 擅长逃跑的殿下 第二季 / Nige Jouzu no Wakagimi S2 [24] [1080p] [繁日内嵌] [2026年7月番]",
+      "url": "https://mikanani.me/Home/Episode/9ffa1badb7f492ad010655f3b61973691404fc5e",
+      "expected": {
+        "canonical": "擅长逃跑的殿下 第二季",
+        "aliases": [
+          "Nige Jouzu no Wakagimi S2"
+        ],
+        "episode": 24
+      }
+    },
+    {
+      "title": "[Nix-Raws] 至高之力 / 至高之力 / バーテックスフォース / VERTEX FORCE S01E02 [CR WEB-DL 1080p AVC AAC][简繁内封]",
+      "url": "https://mikanani.me/Home/Episode/fd19a1186452206b84682695f356220561588899",
+      "expected": {
+        "canonical": "至高之力",
+        "aliases": [
+          "バーテックスフォース",
+          "VERTEX FORCE"
+        ],
+        "episode": 2
+      }
+    },
+    {
+      "title": "[黒ネズミたち] Pop Pap Polters - 02 (ABEMA 1920x1080 AVC AAC MKV)",
+      "url": "https://mikanani.me/Home/Episode/d7d8aaf9ab16281731b10ad34e601f12653d09ce",
+      "expected": null
+    },
+    {
+      "title": "[黒ネズミたち] 重生者的魔法一定要特别 第二季 / Kikansha no Mahou wa Tokubetsu desu 2nd Season - 13 (ABEMA 1280x720 AVC AAC MKV)",
+      "url": "https://mikanani.me/Home/Episode/6affdb4a6f3292089398a16ea0eeb49fe3f1426f",
+      "expected": {
+        "canonical": "重生者的魔法一定要特别 第二季",
+        "aliases": [
+          "Kikansha no Mahou wa Tokubetsu desu 2nd Season"
+        ],
+        "episode": 13
+      }
+    },
+    {
+      "title": "[LoliHouse] 桃源暗鬼 日光·华严瀑布篇 / TOUGEN ANKI: Nikko Kegon no Taki-hen - 02 [WebRip 1080p HEVC-10bit AAC][简繁内封字幕]",
+      "url": "https://mikanani.me/Home/Episode/9a073c5c6185ea0d56d0be5198bd1519cc3db3c8",
+      "expected": {
+        "canonical": "桃源暗鬼 日光·华严瀑布篇",
+        "aliases": [
+          "TOUGEN ANKI: Nikko Kegon no Taki-hen"
+        ],
+        "episode": 2
+      }
+    },
+    {
+      "title": "[黑白字幕组]铠真传武士骑兵 / Yoroi Shin Den Samurai Troopers Part 2 [20] [WebRip 1080p AVC-8bit AAC][CHS](检索用：魔神坛斗士)",
+      "url": "https://mikanani.me/Home/Episode/4a2537ea8baf6780a6729cf05ea2d41cd90236b2",
+      "expected": {
+        "canonical": "铠真传武士骑兵",
+        "aliases": [
+          "Yoroi Shin Den Samurai Troopers Part 2"
+        ],
+        "episode": 20
+      }
+    },
+    {
+      "title": "[桜都字幕组] 不擅交际的未亡人雪女与诅咒戒指 / Hitozukiai ga Nigate na Miboujin no Yukionna-san to Noroi no Yubiwa [01v2][1080P][简体内嵌]",
+      "url": "https://mikanani.me/Home/Episode/a5cc9b3c6fb36418a039e506e4221a68c5b02c47",
+      "expected": {
+        "canonical": "不擅交际的未亡人雪女与诅咒戒指",
+        "aliases": [
+          "Hitozukiai ga Nigate na Miboujin no Yukionna-san to Noroi no Yubiwa"
+        ],
+        "episode": 1
+      }
+    },
+    {
+      "title": "[黒ネズミたち] 紫禁·御喵房（日配版） / Paws & Palaces (Japanese Dub) - 03 (CR 1920x1080 AVC AAC MKV)",
+      "url": "https://mikanani.me/Home/Episode/d01af75f424dc6814a6d4836330fac1caa4dc15d",
+      "expected": {
+        "canonical": "紫禁·御喵房（日配版）",
+        "aliases": [
+          "Paws & Palaces (Japanese Dub)"
+        ],
+        "episode": 3
+      }
+    },
+    {
+      "title": "[jibaketa合成&音频压制][TVB粤语]安妮的童话 / 安妮·雪莉 / Anne Shirley - 17 [粤语+无字幕][WEB 1920x1080 AVC AAC YUE]",
+      "url": "https://mikanani.me/Home/Episode/ff909afd4b51d9683ff5588d4ea6a3349970edac",
+      "expected": {
+        "canonical": "安妮的童话",
+        "aliases": [
+          "安妮·雪莉",
+          "Anne Shirley"
+        ],
+        "episode": 17
+      }
+    },
+    {
+      "title": "[黒ネズミたち] 朱色假面 / Shuiro no Kamen - 01 (ABEMA 1920x1080 AVC AAC MKV)",
+      "url": "https://mikanani.me/Home/Episode/8d1b7c5f4bf7e6874d152fb5df31d3b48a4d51f7",
+      "expected": {
+        "canonical": "朱色假面",
+        "aliases": [
+          "Shuiro no Kamen"
+        ],
+        "episode": 1
+      }
+    },
+    {
+      "title": "[盲僧压制][迪迦奥特曼][52][致以辉煌的人][BDRip][1080p][日语发音][简体中字]",
+      "url": "https://mikanani.me/Home/Episode/be8d9af7cd72caeef5e63c5891424e7156415f49",
+      "expected": null
+    },
+    {
+      "title": "[桜都字幕组] 入间同学入魔了 第四季 / Mairimashita! Iruma-kun (2026) [24][1080P][简体内嵌]",
+      "url": "https://mikanani.me/Home/Episode/557e1ea3e1b7430426f1217be465728e571eb00e",
+      "expected": {
+        "canonical": "入间同学入魔了 第四季",
+        "aliases": [
+          "Mairimashita! Iruma-kun (2026)"
+        ],
+        "episode": 24
+      }
+    },
+    {
+      "title": "乱马1/2「らんま1/2」Ranma1/2 2024年版 第3期 S03E02 1080p 日英双语-多国字幕",
+      "url": "https://mikanani.me/Home/Episode/347a9c57674c6af541349e7aae37d792a68931db",
+      "expected": null
+    },
+    {
+      "title": "[桜都字幕组] 入间同学入魔了 第四季 / Mairimashita! Iruma-kun (2026) [24][1080P][繁体内嵌]",
+      "url": "https://mikanani.me/Home/Episode/c82300840add74abfb3cfca1092124913b720500",
+      "expected": {
+        "canonical": "入间同学入魔了 第四季",
+        "aliases": [
+          "Mairimashita! Iruma-kun (2026)"
+        ],
+        "episode": 24
+      }
+    },
+    {
+      "title": "[ANi] A Tale of the Secret Saint /  转生后的大圣女，极力隐瞒圣女的身分 - 03 [1080P][Baha][WEB-DL][AAC AVC][CHT][MP4]",
+      "url": "https://mikanani.me/Home/Episode/d8f338bb29e276eeb33ca0eb0afad2d21278297f",
+      "expected": {
+        "canonical": "转生后的大圣女，极力隐瞒圣女的身分",
+        "aliases": [
+          "A Tale of the Secret Saint"
+        ],
+        "episode": 3
+      }
+    }
+  ]
+}

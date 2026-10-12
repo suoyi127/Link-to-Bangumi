@@ -1,4 +1,4 @@
-find_package(Drogon CONFIG REQUIRED)
+ find_package(Drogon CONFIG REQUIRED)
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/001_initial.sql" ANIME_VAULT_INITIAL_SQL)
@@ -11,6 +11,8 @@ file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/007_folder_import.sql" ANIME_V
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/008_novel_library.sql" ANIME_VAULT_NOVEL_SQL)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/009_game_library.sql" ANIME_VAULT_GAME_SQL)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/010_game_vndb.sql" ANIME_VAULT_GAME_VNDB_SQL)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/011_episode_number_mapping.sql" ANIME_VAULT_EPISODE_MAPPING_SQL)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/012_anime_merge_preview.sql" ANIME_VAULT_ANIME_MERGE_SQL)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/migrations/001_initial.sql"
   "${CMAKE_CURRENT_SOURCE_DIR}/migrations/002_media_correction.sql"
@@ -21,13 +23,16 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/migrations/007_folder_import.sql"
   "${CMAKE_CURRENT_SOURCE_DIR}/migrations/008_novel_library.sql"
   "${CMAKE_CURRENT_SOURCE_DIR}/migrations/009_game_library.sql"
-  "${CMAKE_CURRENT_SOURCE_DIR}/migrations/010_game_vndb.sql")
+  "${CMAKE_CURRENT_SOURCE_DIR}/migrations/010_game_vndb.sql"
+  "${CMAKE_CURRENT_SOURCE_DIR}/migrations/011_episode_number_mapping.sql"
+  "${CMAKE_CURRENT_SOURCE_DIR}/migrations/012_anime_merge_preview.sql")
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/infrastructure/database/InitialSql.hpp.in"
   "${CMAKE_CURRENT_BINARY_DIR}/generated/InitialSql.hpp" @ONLY)
 
 add_library(anime_vault_storage STATIC
   src/infrastructure/database/SqliteDatabase.cpp
   src/infrastructure/database/SqliteMediaRepository.cpp
+  src/infrastructure/database/SqliteAnimeMerge.cpp
 )
 target_include_directories(anime_vault_storage PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(anime_vault_storage PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)

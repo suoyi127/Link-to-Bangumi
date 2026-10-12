@@ -12,6 +12,7 @@ public:
     void search(std::string keyword, Completion completion) override;
     void searchAliases(std::string keyword, Completion completion) override;
     void subject(std::int64_t id, Completion completion) override;
+    void episodes(std::int64_t id, int offset, Completion completion) override;
     void searchBooks(std::string keyword, Completion completion) override;
     void searchGames(std::string keyword, Completion completion) override;
     void calendar(Completion completion) override;

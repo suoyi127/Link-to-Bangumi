@@ -1,9 +1,14 @@
 #include "anime_vault/infrastructure/network/QbWebClient.hpp"
 #include "anime_vault/services/TitleNormalization.hpp"
+#include "anime_vault/services/FilenameParser.hpp"
+#include "anime_vault/services/ReleaseTextNormalization.hpp"
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <stdexcept>
+#include <set>
+#include <cctype>
 #include <charconv>
 #include <chrono>
 #include <filesystem>
@@ -116,6 +121,7 @@ QbMikanCatalog QbWebClient::parseMikanItems(std::string_view body) {
     QbMikanCatalog result;
     std::unordered_map<std::string, MikanTitlePair> unique;
     std::unordered_set<std::string> conflicts;
+    std::unordered_map<std::string, std::string> owners;
     static const std::regex mikanUrl(R"(^https://(?:www\.)?mikanani\.(?:me|kas\.pub)/RSS/)",
                                      std::regex::icase);
     std::function<void(const nlohmann::json&, int)> visit = [&](const nlohmann::json& node, int depth) {
@@ -131,16 +137,47 @@ QbMikanCatalog QbWebClient::parseMikanItems(std::string_view body) {
                 if (!article.is_object() || !article.contains("title") ||
                     !article["title"].is_string()) continue;
                 const auto title = article["title"].get<std::string>();
-                const auto pair = MikanTitleParser::parse(title);
-                if (!pair) continue;
-                const auto key = normalizedTitleKey(pair->alias);
-                if (key.empty() || conflicts.contains(key)) continue;
-                const auto previous = unique.find(key);
-                if (previous == unique.end()) unique.emplace(key, *pair);
-                else if (normalizedTitleKey(previous->second.canonicalTitle) !=
-                         normalizedTitleKey(pair->canonicalTitle)) {
-                    unique.erase(previous);
-                    conflicts.insert(key);
+                auto pairs = MikanTitleParser::parseAll(title);
+                // 仅单番订阅可用 feed 标题提供季数及译名；搜索/聚合订阅仍只采文章中的明确双语关系。
+                std::string canonical;
+                static const std::regex singleFeed(R"(^https://(?:www\.)?mikanani\.(?:me|kas\.pub)/RSS/Bangumi\?bangumiId=[0-9]+(?:&subgroupid=[0-9]+)?$)", std::regex::icase);
+                const auto feedTitle = node.value("title", std::string{});
+                constexpr std::string_view prefix = "Mikan Project - ";
+                if (!node.value("hasError", false) && std::regex_match(url, singleFeed) && feedTitle.starts_with(prefix))
+                    canonical = feedTitle.substr(prefix.size());
+                if (!canonical.empty() && canonical.size() <= 500) {
+                    const auto add = [&](const std::string& alias, int episode) {
+                        if (!alias.empty() && alias.size() <= 500 && normalizedTitleKey(alias) != normalizedTitleKey(canonical))
+                            pairs.push_back({canonical, alias, episode, true});
+                    };
+                    const auto originalPairs = pairs;
+                    for (auto& pair : pairs) { pair.canonicalTitle = canonical; pair.feedScoped = true; }
+                    for (const auto& pair : originalPairs) {
+                        add(pair.canonicalTitle, pair.episode);
+                        const auto aliasPoints = normalizeTitle(pair.alias);
+                        if (std::none_of(aliasPoints.begin(), aliasPoints.end(), [](char32_t c) { return c >= 0x3400 && c <= 0x9fff; }))
+                            add(pair.canonicalTitle + " " + pair.alias, pair.episode);
+                    }
+                    const auto parsed = FilenameParser{}.parse(title);
+                    if (parsed.confidence >= 0.9 && parsed.episode) add(parsed.title, static_cast<int>(parsed.episode->whole()));
+                    // 兼容旧版把发布标签和半个括号保存成标题的记录，使其也能通过本次订阅纠正。
+                    const auto normalized = normalizeReleaseText(title);
+                    const auto groupEnd = normalized.find(']'), slash = normalized.find('/');
+                    if (!originalPairs.empty() && groupEnd != std::string::npos && slash != std::string::npos && slash > groupEnd) {
+                        auto legacy = normalized.substr(groupEnd + 1, slash - groupEnd - 1);
+                        const auto first = legacy.find_first_not_of(" ");
+                        if (first != std::string::npos) legacy = legacy.substr(first, legacy.find_last_not_of(" ") - first + 1);
+                        add(legacy, originalPairs.front().episode);
+                    }
+                }
+                for (const auto& pair : pairs) {
+                    const auto aliasKey = normalizedTitleKey(pair.alias);
+                    if (aliasKey.empty() || conflicts.contains(aliasKey)) continue;
+                    const auto canonicalKey = normalizedTitleKey(pair.canonicalTitle);
+                    const auto [owner, added] = owners.emplace(aliasKey, canonicalKey);
+                    if (!added && owner->second != canonicalKey) { conflicts.insert(aliasKey); continue; }
+                    const auto key = aliasKey + (pair.feedScoped ? ":episode:" + std::to_string(pair.episode) : "");
+                    unique.try_emplace(key, pair);
                 }
             }
             return;
@@ -148,7 +185,8 @@ QbMikanCatalog QbWebClient::parseMikanItems(std::string_view body) {
         for (const auto& item : node.items()) visit(item.value(), depth + 1);
     };
     visit(root, 0);
-    for (auto& [_, pair] : unique) result.pairs.push_back(std::move(pair));
+    for (auto& [_, pair] : unique)
+        if (!conflicts.contains(normalizedTitleKey(pair.alias))) result.pairs.push_back(std::move(pair));
     return result;
 }
 
@@ -183,21 +221,24 @@ std::string QbWebClient::mikanRuleJson(const QbMikanRuleSpec& spec) {
 }
 
 std::string QbWebClient::bracketEpisodePattern() {
-    // qB wraps patterns in word boundaries; include adjacent words so [01] can match.
-    return R"(\w+\s+\[0*(\d{1,3})\]\[[^\]]*\w+)";
+    return R"((?<=\[)0*(\d{1,3})(?:v\d+)?(?=\]))";
 }
 
 std::string QbWebClient::dashedEpisodePattern() {
-    // Match subtitle titles such as "Name - 08 - [1080P]" without treating 1080P as an episode.
-    return R"(\w+\s+-\s+0*([1-9][0-9]{0,2})\s+-\s+\[[^\]]*\w+)";
+    // qB 使用扩展正则模式，字面空格必须转义。
+    return R"((?<=-\x20)0*(\d{1,3})(?:v\d+)?(?=\s*(?:\[|\(|-)))";
 }
 
 std::string QbWebClient::autoMikanRuleJson(const QbMikanRuleSpec& spec, bool enabled) {
     auto validated = spec;
     validated.keyword = "*";
     auto rule = nlohmann::json::parse(mikanRuleJson(validated));
-    // Smart filtering rejects unrecognized episodes and remembers the first accepted episode.
-    rule["mustContain"] = "";
+    auto filters = nlohmann::json::parse(autoEpisodePreferencesJson(
+        R"({"rss_smart_episode_filters":""})"))["rss_smart_episode_filters"].get<std::string>();
+    std::replace(filters.begin(), filters.end(), '\n', '|');
+    rule["mustContain"] = "(?:_|\\b)(?:" + filters + ")(?:_|\\b)";
+    rule["mustNotContain"] = "REPACK";
+    rule["useRegex"] = true;
     rule["smartFilter"] = true;
     rule["enabled"] = enabled;
     return rule.dump();
@@ -208,18 +249,75 @@ std::string QbWebClient::autoEpisodePreferencesJson(std::string_view currentPref
     if (!current.is_object() || !current.contains("rss_smart_episode_filters") ||
         !current["rss_smart_episode_filters"].is_string())
         throw std::invalid_argument("invalid qB episode filters");
-    std::string filters = current["rss_smart_episode_filters"].get<std::string>();
-    std::istringstream lines(filters);
-    std::string line;
-    std::unordered_set<std::string> existing;
-    while (std::getline(lines, line)) existing.insert(line);
-    for (const auto& pattern : {bracketEpisodePattern(), dashedEpisodePattern()}) {
-        if (existing.contains(pattern)) continue;
-        if (!filters.empty() && filters.back() != '\n') filters += '\n';
-        filters += pattern;
-    }
+    // 每个分支只捕获集数，避免季度、分辨率或日期成为不同的去重键。
+    const std::string filters = std::string(R"(\bs\d{1,2}e0*(\d{1,3})(?:v\d+)?\b)") + "\n" +
+        R"(\b\d{1,2}x0*(\d{1,3})(?:v\d+)?\b)" + "\n" +
+        R"(\bep0*(\d{1,3})(?:v\d+)?\b)" + "\n" +
+        bracketEpisodePattern() + "\n" + dashedEpisodePattern();
     return nlohmann::json{{"rss_smart_episode_filters", filters},
                           {"rss_download_repack_proper_episodes", false}}.dump();
+}
+
+std::string QbWebClient::autoMikanHistoryJson(const QbMikanRuleSpec& spec, std::string_view rulesText,
+                                                std::string_view itemsText, std::string_view torrentsText) {
+    const auto rules = nlohmann::json::parse(rulesText);
+    const auto items = nlohmann::json::parse(itemsText);
+    const auto torrents = nlohmann::json::parse(torrentsText);
+    if (!rules.is_object() || !items.is_object() || !torrents.is_array())
+        throw std::invalid_argument("invalid qB history inputs");
+    std::set<int> episodes;
+    for (const auto& rule : rules) {
+        if (!rule.is_object()) continue;
+        const auto feeds = rule.value("affectedFeeds", nlohmann::json::array());
+        // 多源旧规则可能混合季度，不复用其历史。
+        if (feeds != nlohmann::json::array({spec.feedUrl})) continue;
+        for (const auto& entry : rule.value("previouslyMatchedEpisodes", nlohmann::json::array())) {
+            if (!entry.is_string()) continue;
+            const auto value = entry.get<std::string>();
+            if (value.empty() || value.size() > 3 || value.find_first_not_of("0123456789") != std::string::npos) continue;
+            episodes.insert(std::stoi(value));
+        }
+    }
+    std::unordered_set<std::string> names, hashes;
+    for (const auto& torrent : torrents) {
+        if (!torrent.is_object()) continue;
+        const auto name = torrent.value("name", std::string{});
+        names.insert(name);
+        const auto extension = std::filesystem::path(name).extension().string();
+        if (extension == ".mkv" || extension == ".mp4" || extension == ".avi")
+            names.insert(std::filesystem::path(name).stem().string());
+        auto hash = torrent.value("hash", std::string{});
+        std::transform(hash.begin(), hash.end(), hash.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (hash.size() == 40 && hash.find_first_not_of("0123456789abcdef") == std::string::npos) hashes.insert(hash);
+    }
+    // std::regex 不支持后顾，等价地消费前缀；只用于已确认任务的文章。
+    static const std::regex episodePattern(
+        R"(\bs\d{1,2}e0*(\d{1,3})(?:v\d+)?\b|\b\d{1,2}x0*(\d{1,3})(?:v\d+)?\b|\bep0*(\d{1,3})(?:v\d+)?\b|\[0*(\d{1,3})(?:v\d+)?\]|- 0*(\d{1,3})(?:v\d+)?(?=\s*(?:\[|\(|-)))",
+        std::regex::icase);
+    const auto visit = [&](const auto& self, const nlohmann::json& node) -> void {
+        if (!node.is_object()) return;
+        if (node.contains("url")) {
+            if (node.value("url", std::string{}) != spec.feedUrl) return;
+            for (const auto& article : node.value("articles", nlohmann::json::array())) {
+                const auto title = article.value("title", std::string{});
+                bool evidence = !title.empty() && names.contains(title);
+                auto url = article.value("torrentURL", std::string{});
+                std::transform(url.begin(), url.end(), url.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                const auto start = url.find("urn:btih:");
+                if (start != std::string::npos && hashes.contains(url.substr(start + 9, 40))) evidence = true;
+                std::smatch match;
+                if (!evidence || !std::regex_search(title, match, episodePattern)) continue;
+                for (std::size_t i = 1; i < match.size(); ++i)
+                    if (match[i].matched) { episodes.insert(std::stoi(match[i].str())); break; }
+            }
+            return;
+        }
+        for (const auto& child : node) self(self, child);
+    };
+    visit(visit, items);
+    auto history = nlohmann::json::array();
+    for (const int episode : episodes) history.push_back(std::to_string(episode));
+    return history.dump();
 }
 
 std::optional<std::string> QbWebClient::readyMikanFeedPath(std::string_view items,
@@ -502,14 +600,23 @@ void QbWebClient::addMikanFeedWithAutoRule(std::string url, std::string savePath
                 if (rules.contains(spec.ruleName)) {
                     completion({false, "qb_rule_exists"}); return;
                 }
+                for (const auto& rule : rules) {
+                    if (!rule.is_object() || !rule.value("enabled", false)) continue;
+                    const auto feeds = rule.value("affectedFeeds", nlohmann::json::array());
+                    if (std::find(feeds.begin(), feeds.end(), spec.feedUrl) != feeds.end()) {
+                        completion({false, "qb_rule_exists"}); return;
+                    }
+                }
                 std::optional<std::string> feedPath;
+                std::string feedItems;
                 for (int attempt = 0; attempt < 30 && !feedPath; ++attempt) {
                     const auto items = send(drogon::Get, "/api/v2/rss/items?withData=true", "", *cookie);
                     if (!items || items->statusCode() != drogon::k200OK ||
                         items->getBody().size() > 4 * 1024 * 1024) {
                         completion({false, "qb_api_unavailable"}); return;
                     }
-                    feedPath = readyMikanFeedPath(items->getBody(), spec.feedUrl);
+                    feedItems = std::string(items->getBody());
+                    feedPath = readyMikanFeedPath(feedItems, spec.feedUrl);
                     if (!feedPath) std::this_thread::sleep_for(std::chrono::milliseconds(500));
                 }
                 if (!feedPath) { completion({false, "qb_feed_not_ready"}); return; }
@@ -534,13 +641,18 @@ void QbWebClient::addMikanFeedWithAutoRule(std::string url, std::string savePath
                         completion({false, "qb_preferences_rejected"}); return;
                     }
                 }
-                // Baseline existing articles before enabling the new download rule.
-                const auto marked = send(drogon::Post, "/api/v2/rss/markAsRead",
-                    "itemPath=" + formEncode(*feedPath), *cookie);
-                if (!marked || marked->statusCode() != drogon::k200OK) {
-                    completion({false, "qb_mark_read_failed"}); return;
+                const auto tasks = send(drogon::Get, "/api/v2/torrents/info", "", *cookie);
+                if (!tasks || tasks->statusCode() != drogon::k200OK || tasks->getBody().size() > 8 * 1024 * 1024) {
+                    completion({false, "qb_api_unavailable"}); return;
                 }
-                // Inserting a disabled rule resets qB's queued old articles before activation.
+                const auto history = nlohmann::json::parse(autoMikanHistoryJson(
+                    spec, rulesResponse->getBody(), feedItems, tasks->getBody()));
+                auto activeRule = nlohmann::json::parse(ruleJson);
+                activeRule["previouslyMatchedEpisodes"] = history;
+                ruleJson = activeRule.dump();
+                activeRule["enabled"] = false;
+                pendingJson = activeRule.dump();
+                // 先创建禁用规则，再启用；已读状态不作为下载完成的证据。
                 const auto pending = send(drogon::Post, "/api/v2/rss/setRule",
                     "ruleName=" + formEncode(spec.ruleName) +
                     "&ruleDef=" + formEncode(pendingJson), *cookie);

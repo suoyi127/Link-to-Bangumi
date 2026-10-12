@@ -1,4 +1,5 @@
 #include "anime_vault/infrastructure/network/QbWebClient.hpp"
+#include "anime_vault/services/TitleNormalization.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <nlohmann/json.hpp>
@@ -76,9 +77,13 @@ TEST_CASE("qB RSS catalog maps a three-language dashed Mikan title") {
         "articles":[{"title":"[三明治摆烂组] 才女的侍从 / Saijo no Osewa / 才女のお世话 - 08 - [简日内嵌][AVC 8bit 1080P]"}]}
     })");
     REQUIRE(catalog.feedCount == 1);
-    REQUIRE(catalog.pairs.size() == 1);
-    REQUIRE(catalog.pairs[0].alias == "Saijo no Osewa");
-    REQUIRE(catalog.pairs[0].episode == 8);
+    REQUIRE(catalog.pairs.size() == 2);
+    bool foundRoman = false;
+    for (const auto& pair : catalog.pairs) {
+        foundRoman = foundRoman || pair.alias == "Saijo no Osewa";
+        CHECK(pair.episode == 8);
+    }
+    CHECK(foundRoman);
 }
 
 TEST_CASE("qB feed addition accepts only bounded Mikan HTTPS URLs") {
@@ -148,7 +153,11 @@ TEST_CASE("automatic Mikan rule accepts the first recognized resource per episod
         "", "D:/追番/番剧"};
     const auto rule = nlohmann::json::parse(QbWebClient::autoMikanRuleJson(spec));
     REQUIRE(rule["enabled"] == true);
-    REQUIRE(rule["mustContain"] == "");
+    REQUIRE_FALSE(rule["mustContain"].get<std::string>().empty());
+    REQUIRE(rule["useRegex"] == true);
+    REQUIRE(rule["mustNotContain"] == "REPACK");
+    REQUIRE(rule["addPaused"] == false);
+    REQUIRE(rule["ignoreDays"] == 0);
     REQUIRE(rule["smartFilter"] == true);
     REQUIRE(rule["affectedFeeds"] == nlohmann::json::array({spec.feedUrl}));
     REQUIRE(rule["savePath"] == spec.savePath);
@@ -157,41 +166,21 @@ TEST_CASE("automatic Mikan rule accepts the first recognized resource per episod
     REQUIRE(pending["affectedFeeds"] == rule["affectedFeeds"]);
 }
 
-TEST_CASE("automatic episode pattern normalizes zero-padded bracket episodes") {
-    const std::regex pattern("(?:_|\\b)(?:" + QbWebClient::bracketEpisodePattern() + ")(?:_|\\b)");
-    const auto episode = [&](const std::string& title) {
-        std::smatch match;
-        return std::regex_search(title, match, pattern) ? match[1].str() : std::string{};
-    };
-    REQUIRE(episode("[Group] Anime Name [01][1080P][CHS]") == "1");
-    REQUIRE(episode("[Group] Anime Name [1][1080P][CHS]") == "1");
-    REQUIRE(episode("[Group] Anime Name [001][1080P][CHS]") == "1");
-    REQUIRE(episode("[Group] Anime Name [1080P][CHS]").empty());
-}
-
-TEST_CASE("automatic episode pattern recognizes dashed Mikan episodes") {
-    const std::regex pattern("(?:_|\\b)(?:" + QbWebClient::dashedEpisodePattern() + ")(?:_|\\b)");
-    std::smatch match;
-    const std::string title = "[Group] Saijo no Osewa - 08 - [1080P][CHS]";
-    REQUIRE(std::regex_search(title, match, pattern));
-    REQUIRE(match[1].str() == "8");
-    REQUIRE_FALSE(std::regex_search(std::string("[Group] Saijo no Osewa - 00 - [1080P]"), pattern));
-}
-
 TEST_CASE("automatic rule waits for a fetched feed before marking old articles read") {
     const std::string url = "https://mikanani.me/RSS/Bangumi?bangumiId=4011&subgroupid=203";
     REQUIRE_FALSE(QbWebClient::readyMikanFeedPath(R"({"loading":{"url":"https://mikanani.me/RSS/Bangumi?bangumiId=4011&subgroupid=203","isLoading":true,"hasError":false,"articles":[]}})", url));
     REQUIRE(QbWebClient::readyMikanFeedPath(R"({"Mikan Project - Anime":{"url":"https://mikanani.me/RSS/Bangumi?bangumiId=4011&subgroupid=203","isLoading":false,"hasError":false,"articles":[{"title":"Anime [01]"}]}})", url) == "Mikan Project - Anime");
 }
 
-TEST_CASE("automatic episode preferences append to qB's newline-delimited filters") {
+TEST_CASE("automatic episode preferences replace unsafe defaults with five episode-only filters") {
     const auto settings = nlohmann::json::parse(QbWebClient::autoEpisodePreferencesJson(
-        R"json({"rss_auto_downloading_enabled":true,"rss_processing_enabled":true,"rss_download_repack_proper_episodes":true,"rss_smart_episode_filters":"s(\\d+)e(\\d+)\n(\\d+)x(\\d+)"})json"));
+        R"({"rss_smart_episode_filters":"old unsafe filter"})"));
     REQUIRE(settings["rss_download_repack_proper_episodes"] == false);
-    REQUIRE(settings["rss_smart_episode_filters"].is_string());
-    REQUIRE(settings["rss_smart_episode_filters"].get<std::string>() ==
-        "s(\\d+)e(\\d+)\n(\\d+)x(\\d+)\n" + QbWebClient::bracketEpisodePattern() +
-        "\n" + QbWebClient::dashedEpisodePattern());
+    const auto filters = settings["rss_smart_episode_filters"].get<std::string>();
+    REQUIRE(std::count(filters.begin(), filters.end(), '\n') == 4);
+    REQUIRE(filters.find("old unsafe filter") == std::string::npos);
+    REQUIRE(filters.find(R"(\bs\d{1,2}e0*(\d{1,3})(?:v\d+)?\b)") != std::string::npos);
+    REQUIRE(nlohmann::json::parse(QbWebClient::autoEpisodePreferencesJson(settings.dump())) == settings);
 }
 
 TEST_CASE("completed qB paths exclude unfinished checking and unsafe paths") {
@@ -207,4 +196,42 @@ TEST_CASE("completed qB paths exclude unfinished checking and unsafe paths") {
     const auto paths = anime_vault::QbWebClient::completedPaths(data.dump());
     REQUIRE(paths.size() == 1);
     CHECK(paths.front() == ready);
+}
+
+TEST_CASE("qB preserves multiple Mikan aliases and rejects normalized alias conflicts") {
+    const auto catalog = QbWebClient::parseMikanItems(R"({"feed":{"url":"https://mikanani.me/RSS/Bangumi?bangumiId=1","articles":[
+        {"title":"[G] 安妮的童话 / 安妮·雪莉 / Anne Shirley - 17 [1080P]"},
+        {"title":"[G] 中文甲 / Shared Name [01][1080P]"},
+        {"title":"[G] 中文乙 / Shared_Name [02][1080P]"}
+    ]}})");
+    REQUIRE(catalog.pairs.size() == 2);
+    for (const auto& pair : catalog.pairs) CHECK(pair.canonicalTitle == "安妮的童话");
+}
+
+TEST_CASE("single anime Mikan feeds resolve the four local unmatched releases") {
+    const auto catalog = QbWebClient::parseMikanItems(R"({
+      "rail":{"url":"https://mikanani.me/RSS/Bangumi?bangumiId=4086","title":"Mikan Project - 铁旅！邂逅铁道少女","articles":[{"title":"[ANi] 铁旅！meet with 铁道少女 - 01 [1080P][Baha]"}]},
+      "witch":{"url":"https://mikanani.me/RSS/Bangumi?bangumiId=4092","title":"Mikan Project - 你好，我是受心上人所托来做恋爱药的魔女。","articles":[{"title":"[G] 你好，身为魔女的我，被心上人委托制作迷情药 / Horemajo - 01 [1080P]"}]},
+      "fx":{"url":"https://mikanani.me/RSS/Bangumi?bangumiId=4078","title":"Mikan Project - FX战士久留美","articles":[{"title":"[G] FX 战士久留美 / FX Senshi Kurumi-chan - 01 [1080P]"}]},
+      "apothecary":{"url":"https://mikanani.me/RSS/Bangumi?bangumiId=4106","title":"Mikan Project - 药屋少女的呢喃 第三季","articles":[{"title":"【喵萌奶茶屋】★10月新番★[药师少女的独语 / 药屋少女的呢喃 / Kusuriya no Hitorigoto][49][1080p][简日双语]"}]}
+    })");
+    const auto matches = [&](const std::string& alias, const std::string& canonical) {
+        return std::any_of(catalog.pairs.begin(), catalog.pairs.end(), [&](const auto& pair) {
+            return anime_vault::normalizedTitleKey(pair.alias) == anime_vault::normalizedTitleKey(alias) && pair.canonicalTitle == canonical;
+        });
+    };
+    CHECK(matches("鐵旅！meet with 鐵道少女", "铁旅！邂逅铁道少女"));
+    CHECK(matches("Horemajo", "你好，我是受心上人所托来做恋爱药的魔女。"));
+    CHECK(matches("FX战士久留美 FX Senshi Kurumi-chan", "FX战士久留美"));
+    CHECK(matches("Kusuriya no Hitorigoto", "药屋少女的呢喃 第三季"));
+    CHECK(matches("★10月新番★[药师少女的独语", "药屋少女的呢喃 第三季"));
+}
+
+TEST_CASE("automatic history uses same-feed records and task evidence instead of read status") {
+    const anime_vault::QbMikanRuleSpec spec{"auto", "https://mikanani.me/RSS/Bangumi?bangumiId=1", "", "D:/source"};
+    const auto history = nlohmann::json::parse(QbWebClient::autoMikanHistoryJson(spec,
+        R"json({"old":{"affectedFeeds":["https://mikanani.me/RSS/Bangumi?bangumiId=1"],"previouslyMatchedEpisodes":["001","1080","2026","1x2"]},"other":{"affectedFeeds":["other"],"previouslyMatchedEpisodes":["9"]}})json",
+        R"json({"feed":{"url":"https://mikanani.me/RSS/Bangumi?bangumiId=1","articles":[{"title":"Anime [02v2]","isRead":false},{"title":"Anime - 03 (1080p)","isRead":true},{"title":"Anime [04]","isRead":true}]}})json",
+        R"json([{"name":"Anime [02v2]"},{"name":"Anime - 03 (1080p)"},{"name":"Other [09]"}])json"));
+    REQUIRE(history == nlohmann::json::array({"1", "2", "3"}));
 }

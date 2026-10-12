@@ -56,8 +56,13 @@ public:
     std::vector<AnimeRecord> listAnimeForScan(std::int64_t scanId) const override;
     std::optional<AnimeRecord> getAnime(std::int64_t id, std::int64_t mediaOffset = 0,
                                         int mediaLimit = 50) const override;
+    std::optional<AnimeRecord> findAnimeByBangumiSubject(std::int64_t subjectId) const override;
     AnimeRecord bindAnime(std::int64_t id, const BangumiSubject& subject,
                           bool canonicalizeTitle = false) override;
+    AnimeMergePreview previewAnimeMerge(std::int64_t sourceId, std::int64_t subjectId) override;
+    AnimeRecord mergeAnime(std::int64_t sourceId, const std::string& previewId) override;
+    std::optional<AnimeRecord> nextAnimeNeedingEpisodeMapping(std::int64_t afterId) const override;
+    bool updateEpisodeMappingsIfBound(std::int64_t id, const BangumiSubject& subject) override;
     bool updateCoverIfBound(std::int64_t animeId, std::int64_t subjectId,
                             const std::string& localUrl, std::optional<std::string> expectedCover = std::nullopt) override;
     bool applyMikanAlias(const std::string& alias,
@@ -65,6 +70,7 @@ public:
     std::optional<AnimeRecord> findAnimeByTitle(
         const std::string& title, std::optional<std::string> season = std::nullopt) const override;
 private:
+    void applyAnimeEpisodeMapping(std::int64_t id);
     SqliteDatabase& database_;
     // Guarded by SqliteDatabase::mutex(); refreshed when another writer changes
     // the connection, and incrementally extended during scan corrections.

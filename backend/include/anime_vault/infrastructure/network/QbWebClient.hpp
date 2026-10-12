@@ -56,6 +56,8 @@ public:
     static std::string mikanFeedForm(const std::string& url);
     static std::string mikanRuleJson(const QbMikanRuleSpec& spec);
     static std::string autoMikanRuleJson(const QbMikanRuleSpec& spec, bool enabled = true);
+    static std::string autoMikanHistoryJson(const QbMikanRuleSpec& spec, std::string_view rules,
+                                            std::string_view items, std::string_view torrents);
     static std::string bracketEpisodePattern();
     static std::string dashedEpisodePattern();
     static std::string autoEpisodePreferencesJson(std::string_view currentPreferences);

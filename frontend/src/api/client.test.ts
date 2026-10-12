@@ -62,3 +62,9 @@ it('reports an abort while reading JSON as request_aborted', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, headers: new Headers(), json: () => Promise.reject(new DOMException('aborted', 'AbortError')) }))
   await expect(startSourceScan()).rejects.toMatchObject({ code: 'request_aborted', status: 0 })
 })
+
+it('distinguishes local request pressure from remote Bangumi rate limiting', () => {
+  expect(new ApiError('bangumi_remote_rate_limited', 429).message).toContain('Bangumi 服务端限流')
+  expect(new ApiError('bangumi_queue_full', 503).message).toContain('本地请求队列已满')
+  expect(new ApiError('bangumi_local_rate_limited', 429).message).toContain('本地请求额度')
+})

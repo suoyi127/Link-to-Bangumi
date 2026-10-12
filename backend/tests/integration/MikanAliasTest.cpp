@@ -49,3 +49,22 @@ TEST_CASE("Mikan metadata never overwrites a user-confirmed or bound anime") {
     REQUIRE(repository.getAnime(1)->displayTitle == "User title");
     REQUIRE(repository.getAnime(2)->displayTitle == "Bound roman");
 }
+
+TEST_CASE("Mikan maps spacing variants and stores additional explicit aliases without overwriting users") {
+    TempDb temp;
+    SqliteDatabase database(temp.path);
+    database.migrate();
+    SqliteMediaRepository repository(database);
+    REQUIRE(sqlite3_exec(database.handle(), "INSERT INTO anime(display_title) VALUES('Anne_Shirley');", nullptr, nullptr, nullptr) == SQLITE_OK);
+    REQUIRE(repository.applyMikanAlias("Anne Shirley", "安妮的童话"));
+    REQUIRE(repository.applyMikanAlias("安妮·雪莉", "安妮的童话"));
+    REQUIRE(repository.findAnimeByTitle("Anne.Shirley")->id == 1);
+    const auto chineseAlias = repository.findAnimeByTitle("安妮 雪莉");
+    REQUIRE(chineseAlias);
+    CHECK(chineseAlias->id == 1);
+    CHECK_FALSE(repository.applyMikanAlias("安妮·雪莉", "安妮的童话"));
+    CHECK_FALSE(repository.findAnimeByTitle("Anne Shirley", "第 2 季"));
+    REQUIRE(sqlite3_exec(database.handle(), "INSERT INTO anime(display_title) VALUES('Another');INSERT INTO anime_alias(anime_id,normalized_alias,source) VALUES(2,'anneshirley','user');", nullptr, nullptr, nullptr) == SQLITE_OK);
+    CHECK_FALSE(repository.findAnimeByTitle("Anne Shirley"));
+    CHECK_FALSE(repository.applyMikanAlias("Anne Shirley", "另一部"));
+}

@@ -15,6 +15,37 @@ using anime_vault::test_support::ConfidenceBand;
 using anime_vault::test_support::confidenceBand;
 using anime_vault::test_support::loadFilenameFixtures;
 
+TEST_CASE("explicit season title preserves cumulative raw episode") {
+    const auto parsed = FilenameParser{}.parse("[Dynamis One] Ao no Hako Season 2 - 27 (ABEMA 1920x1080 AVC AAC MKV) [50700C83]");
+    REQUIRE(parsed.title == "Ao no Hako Season 2");
+    REQUIRE(parsed.episode);
+    REQUIRE(parsed.episode->toString() == "27");
+    REQUIRE(parsed.season == 2);
+}
+
+TEST_CASE("filename whitespace and compact separators retain episode and revision") {
+    const FilenameParser parser;
+    for (const auto& filename : std::vector<std::string>{
+        "[Sakurato] Toumei\xc2\xa0na\xe3\x80\x80Yoru [ 01v2 ][1080P].mkv",
+        "[Sakurato] Toumei_na_Yoru-01v2[1080P].mkv",
+        "[Sakurato] Toumei na Yoru – 01v2 [1080P].mkv"}) {
+        CAPTURE(filename);
+        const auto parsed = parser.parse(filename);
+        CHECK(parsed.title == "Toumei na Yoru");
+        CHECK(parsed.episode == EpisodeNumber::parse("1"));
+        CHECK(parsed.version == 2);
+        CHECK(parsed.warnings.empty());
+    }
+    for (const auto& filename : {"Title-01-02.mkv", "Title-01+02.mkv", "Title-01-02v2.mkv", "Title-01v2-02v3.mkv", "Title - 01 - 02v2.mkv", "Title - 01v2 + 02v3.mkv"}) {
+        const auto parsed = parser.parse(filename);
+        CHECK_FALSE(parsed.episode);
+        CHECK(parsed.warnings == std::vector<std::string>{"multiple_episodes"});
+    }
+    const auto macross = parser.parse("Macross-7 - 01.mkv");
+    CHECK(macross.title == "Macross-7");
+    CHECK(macross.episode == EpisodeNumber::parse("1"));
+}
+
 TEST_CASE("filename parser matches every approved fixture expectation") {
     const auto fixtures = loadFilenameFixtures(FIXTURE_PATH);
     REQUIRE(fixtures.size() == 57);

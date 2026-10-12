@@ -122,6 +122,16 @@ void BangumiConnectionManager::subject(std::int64_t id, BangumiTransport::Comple
     });
 }
 
+void BangumiConnectionManager::episodes(std::int64_t id, int offset, BangumiTransport::Completion completion) {
+    std::shared_ptr<Active> snapshot;
+    { std::lock_guard lock(mutex_); snapshot = active_; }
+    if (!snapshot) { completion(std::nullopt, "bangumi_unconfigured"); return; }
+    // 与条目查询共用配置快照，配置切换不影响已经发出的分集请求。
+    snapshot->api->episodes(id, offset, [snapshot, completion = std::move(completion)](auto response, auto error) mutable {
+        completion(std::move(response), std::move(error));
+    });
+}
+
 void BangumiConnectionManager::fetch(std::string url, CoverImageFetcher::Completion completion) {
     std::shared_ptr<Active> snapshot;
     { std::lock_guard lock(mutex_); snapshot = active_; }

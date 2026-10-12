@@ -1,8 +1,14 @@
 import type { Anime, AnimeDetail, AuditLog, BangumiConfig, BangumiConnectionTest, BangumiSearch, Execution, FolderImport, InboxOrigin, InboxPage, Media, MetadataSync, MikanFeeds, Page, Preferences, Preview, QbAction, QbConfig, QbConfigDraft, QbMikanRule, QbStatus, Scan, Settings } from './types'
 
+const bangumiErrorText: Record<string, string> = {
+  bangumi_remote_rate_limited: 'Bangumi 服务端限流，已暂停发送请求，请稍后重试',
+  bangumi_local_rate_limited: '本地请求额度暂时用尽，请稍后重试',
+  bangumi_queue_full: '本地请求队列已满，请等待当前任务完成后重试',
+}
+
 export class ApiError extends Error {
-  constructor(public code: string, public status: number, public requestId?: string) {
-    super(`请求失败（${code}${requestId ? `，请求 ID：${requestId}` : ''}）`)
+  constructor(public code: string, public status: number, public requestId?: string, public targetAnimeId?: number, public targetTitle?: string) {
+    super(`${bangumiErrorText[code] || '请求失败'}（${code}${requestId ? `，请求 ID：${requestId}` : ''}）`)
     this.name = 'ApiError'
   }
 }
@@ -29,7 +35,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const code = typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string'
       ? error.code
       : typeof payload.errorCode === 'string' && payload.errorCode ? payload.errorCode : 'http_error'
-    throw new ApiError(code, response.status, requestId)
+    throw new ApiError(code, response.status, requestId, typeof payload.targetAnimeId === 'number' ? payload.targetAnimeId : undefined, typeof payload.targetTitle === 'string' ? payload.targetTitle : undefined)
   }
   return payload as T
 }
@@ -101,3 +107,6 @@ export const createMikanRule = (rule: QbMikanRule) => request<QbAction>('/api/qb
 export const syncMetadata = () => request<MetadataSync>('/api/enrichment/sync', { method: 'POST' })
 export const putSettings = (preferences: Preferences) => request<Settings>('/api/settings', { ...json(preferences), method: 'PUT' })
 export const getAuditLogs = (limit = 50, offset = 0, animeId?: number) => request<Page<AuditLog>>(`/api/audit-logs${pageQuery(limit, offset)}${animeId === undefined ? '' : `&animeId=${animeId}`}`)
+
+export const previewAnimeMerge = (id: number, subjectId: number) => request<import('./types').AnimeMergePreview>(`/api/anime/${id}/merge/preview`, json({ subjectId }))
+export const mergeAnime = (id: number, previewId: string) => request<AnimeDetail>(`/api/anime/${id}/merge`, json({ previewId, confirmed: true }))

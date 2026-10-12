@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cctype>
 #include <unordered_set>
+#include <regex>
 
 namespace anime_vault {
 namespace {
@@ -63,6 +64,8 @@ MediaRecord mediaRow(sqlite3_stmt* stmt) {
         record.folderImportId = sqlite3_column_int64(stmt, 17);
         record.origin = "folder_import";
     }
+    record.rawEpisodeNumber = column(stmt, 18);
+    record.episodeNumberSource = column(stmt, 19);
     return record;
 }
 OrganizationJobRecord jobRow(sqlite3_stmt* stmt) {
@@ -122,6 +125,39 @@ void addTitleIndexEntry(std::unordered_map<std::string, std::vector<AnimeRecord>
             return item.id == anime.id;
         })) records.push_back(anime);
 }
+void storeEpisodeMappings(sqlite3* db, const BangumiSubject& subject) {
+    // 仅接收一一对应的正整数正片映射；异常映射整批忽略。
+    bool validMapping = !subject.episodes.empty() && subject.episodes.size() <= 1000;
+    std::unordered_set<std::string> sorts, eps;
+    const auto validNumber = [](const std::string& value) {
+        if (value.empty() || value.size() > 5 || value.front() == '0' ||
+            !std::all_of(value.begin(), value.end(), [](unsigned char c) { return std::isdigit(c); })) return false;
+        return std::stoi(value) <= 10000;
+    };
+    for (const auto& mapping : subject.episodes) {
+        if (!validNumber(mapping.sort) || !validNumber(mapping.ep) ||
+            !sorts.insert(mapping.sort).second || !eps.insert(mapping.ep).second) validMapping = false;
+    }
+    if (validMapping) {
+        auto remove = prepare(db, "DELETE FROM bangumi_episode_mapping WHERE subject_id=?");
+        sqlite3_bind_int64(remove.get(), 1, subject.id); done(db, remove.get());
+        for (const auto& mapping : subject.episodes) {
+            auto insert = prepare(db, "INSERT INTO bangumi_episode_mapping(subject_id,sort_number,ep_number) VALUES(?,?,?)");
+            sqlite3_bind_int64(insert.get(), 1, subject.id);
+            bind(insert.get(), 2, mapping.sort); bind(insert.get(), 3, mapping.ep); done(db, insert.get());
+        }
+    }
+}
+
+void mapAnimeEpisodes(sqlite3* db, std::int64_t animeId) {
+    auto update = prepare(db,
+        "UPDATE media_file SET episode_number=COALESCE((SELECT e.ep_number FROM bangumi_episode_mapping e JOIN anime a ON a.bangumi_subject_id=e.subject_id WHERE a.id=media_file.anime_id AND e.sort_number=media_file.raw_episode_number),raw_episode_number),"
+        "episode_number_source=CASE WHEN EXISTS(SELECT 1 FROM bangumi_episode_mapping e JOIN anime a ON a.bangumi_subject_id=e.subject_id WHERE a.id=media_file.anime_id AND e.sort_number=media_file.raw_episode_number) THEN 'bangumi' ELSE 'parsed' END,updated_at=CURRENT_TIMESTAMP "
+        "WHERE anime_id=? AND episode_number_source!='manual' AND episode_type='normal'");
+    sqlite3_bind_int64(update.get(), 1, animeId);
+    done(db, update.get());
+}
+
 void fillAnime(sqlite3* db, AnimeRecord& record, std::int64_t mediaOffset, int mediaLimit) {
     auto aliases = prepare(db, "SELECT normalized_alias FROM anime_alias WHERE anime_id=? ORDER BY normalized_alias LIMIT 100");
     sqlite3_bind_int64(aliases.get(), 1, record.id);
@@ -129,7 +165,7 @@ void fillAnime(sqlite3* db, AnimeRecord& record, std::int64_t mediaOffset, int m
     while ((rc = sqlite3_step(aliases.get())) == SQLITE_ROW)
         record.aliases.push_back(column(aliases.get(), 0));
     if (rc != SQLITE_DONE) throw std::runtime_error(sqlite3_errmsg(db));
-    auto media = prepare(db, "SELECT m.id,m.scan_id,m.source_path,m.filename,m.episode_number,m.episode_type,m.size_bytes,m.status,m.confidence,m.title,m.season,a.bangumi_subject_id,m.source_modified_at,m.origin,m.anime_id,m.parsed_title,m.library_path,m.folder_import_id FROM media_file m JOIN anime a ON a.id=m.anime_id WHERE a.id=? AND m.status!='missing' ORDER BY m.id LIMIT ? OFFSET ?");
+    auto media = prepare(db, "SELECT m.id,m.scan_id,m.source_path,m.filename,m.episode_number,m.episode_type,m.size_bytes,m.status,m.confidence,m.title,m.season,a.bangumi_subject_id,m.source_modified_at,m.origin,m.anime_id,m.parsed_title,m.library_path,m.folder_import_id,m.raw_episode_number,m.episode_number_source FROM media_file m JOIN anime a ON a.id=m.anime_id WHERE a.id=? AND m.status!='missing' ORDER BY m.id LIMIT ? OFFSET ?");
     sqlite3_bind_int64(media.get(), 1, record.id);
     sqlite3_bind_int(media.get(), 2, mediaLimit + 1);
     sqlite3_bind_int64(media.get(), 3, mediaOffset);
@@ -228,7 +264,7 @@ std::int64_t SqliteMediaRepository::insertMedia(const MediaRecord& record) {
         throw std::invalid_argument("invalid folder import ID");
     auto* db = database_.handle();
     const auto beforeChanges = sqlite3_total_changes64(db);
-    auto stmt = prepare(db, "INSERT INTO media_file(scan_id,source_path,filename,episode_number,episode_type,size_bytes,status,confidence,source_modified_at,origin,parsed_title,folder_import_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(source_path) DO UPDATE SET scan_id=excluded.scan_id,filename=excluded.filename,size_bytes=excluded.size_bytes,source_modified_at=excluded.source_modified_at,status=CASE WHEN media_file.status='missing' AND media_file.library_path IS NULL THEN 'inbox' ELSE media_file.status END,updated_at=CURRENT_TIMESTAMP WHERE media_file.origin=excluded.origin AND media_file.folder_import_id IS excluded.folder_import_id");
+    auto stmt = prepare(db, "INSERT INTO media_file(scan_id,source_path,filename,episode_number,episode_type,size_bytes,status,confidence,source_modified_at,origin,parsed_title,folder_import_id,raw_episode_number) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(source_path) DO UPDATE SET scan_id=excluded.scan_id,filename=excluded.filename,size_bytes=excluded.size_bytes,source_modified_at=excluded.source_modified_at,status=CASE WHEN media_file.status='missing' AND media_file.library_path IS NULL THEN 'inbox' ELSE media_file.status END,updated_at=CURRENT_TIMESTAMP WHERE media_file.origin=excluded.origin AND media_file.folder_import_id IS excluded.folder_import_id");
     sqlite3_bind_int64(stmt.get(), 1, record.scanId);
     bind(stmt.get(), 2, record.sourcePath); bind(stmt.get(), 3, record.filename);
     bind(stmt.get(), 4, record.episodeNumber); bind(stmt.get(), 5, record.episodeType);
@@ -240,6 +276,7 @@ std::int64_t SqliteMediaRepository::insertMedia(const MediaRecord& record) {
     bind(stmt.get(), 11, record.parsedTitle);
     if (record.folderImportId) sqlite3_bind_int64(stmt.get(), 12, *record.folderImportId);
     else sqlite3_bind_null(stmt.get(), 12);
+    bind(stmt.get(), 13, record.episodeNumber);
     done(db, stmt.get());
     if (sqlite3_changes(db) == 0)
         throw std::invalid_argument("media origin conflicts with existing source path");
@@ -285,7 +322,7 @@ void SqliteMediaRepository::markMissingMedia(const std::string& origin,
 std::optional<MediaRecord> SqliteMediaRepository::getMedia(std::int64_t id) const {
     std::lock_guard lock(database_.mutex());
     auto* db = database_.handle();
-    auto stmt = prepare(db, "SELECT m.id,m.scan_id,m.source_path,m.filename,m.episode_number,m.episode_type,m.size_bytes,m.status,m.confidence,m.title,m.season,a.bangumi_subject_id,m.source_modified_at,m.origin,m.anime_id,m.parsed_title,m.library_path,m.folder_import_id FROM media_file m LEFT JOIN anime a ON a.id=m.anime_id WHERE m.id=?");
+    auto stmt = prepare(db, "SELECT m.id,m.scan_id,m.source_path,m.filename,m.episode_number,m.episode_type,m.size_bytes,m.status,m.confidence,m.title,m.season,a.bangumi_subject_id,m.source_modified_at,m.origin,m.anime_id,m.parsed_title,m.library_path,m.folder_import_id,m.raw_episode_number,m.episode_number_source FROM media_file m LEFT JOIN anime a ON a.id=m.anime_id WHERE m.id=?");
     sqlite3_bind_int64(stmt.get(), 1, id);
     const int rc = sqlite3_step(stmt.get());
     if (rc == SQLITE_ROW) return mediaRow(stmt.get());
@@ -297,10 +334,10 @@ void SqliteMediaRepository::updateMediaParse(std::int64_t id, const std::string&
                                              const std::string& episodeType, double confidence) {
     std::lock_guard lock(database_.mutex());
     auto* db = database_.handle();
-    auto stmt = prepare(db, "UPDATE media_file SET episode_number=?,episode_type=?,confidence=?,updated_at=CURRENT_TIMESTAMP WHERE id=?");
-    bind(stmt.get(), 1, episodeNumber); bind(stmt.get(), 2, episodeType);
-    sqlite3_bind_double(stmt.get(), 3, confidence);
-    sqlite3_bind_int64(stmt.get(), 4, id);
+    auto stmt = prepare(db, "UPDATE media_file SET episode_number=?,raw_episode_number=?,episode_number_source='parsed',episode_type=?,confidence=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND episode_number_source!='manual'");
+    bind(stmt.get(), 1, episodeNumber); bind(stmt.get(), 2, episodeNumber); bind(stmt.get(), 3, episodeType);
+    sqlite3_bind_double(stmt.get(), 4, confidence);
+    sqlite3_bind_int64(stmt.get(), 5, id);
     done(db, stmt.get());
     if (sqlite3_changes(db) == 0) throw std::runtime_error("media not found");
 }
@@ -321,7 +358,7 @@ void SqliteMediaRepository::updateMediaCorrection(
         if (sqlite3_step(previous.get()) == SQLITE_ROW) priorDisplayTitle = column(previous.get(), 0);
     }
     if (correction.bangumiSubjectId) {
-        auto anime = prepare(db, "INSERT INTO anime(display_title,season,bangumi_subject_id) VALUES(?,?,?) ON CONFLICT(bangumi_subject_id) DO NOTHING");
+        auto anime = prepare(db, "INSERT INTO anime(id,display_title,season,bangumi_subject_id) VALUES((SELECT high_water+1 FROM anime_identity WHERE singleton=1),?,?,?) ON CONFLICT(bangumi_subject_id) DO NOTHING");
         bind(anime.get(), 1, correction.title);
         bind(anime.get(), 2, correction.season);
         sqlite3_bind_int64(anime.get(), 3, *correction.bangumiSubjectId);
@@ -350,8 +387,18 @@ void SqliteMediaRepository::updateMediaCorrection(
             if (const auto local = findAnimeByTitle(correction.title, correction.season))
                 animeId = local->id;
         }
+        if (!animeId && intent == MediaCorrectionIntent::automaticScan) {
+            // 旧版本未提取 Season 字段；完整标题明确同季时复用唯一的既有绑定。
+            static const std::regex explicitSeason(R"(\bSeason +([0-9]{1,2})$)", std::regex::icase);
+            std::smatch season;
+            if (std::regex_search(correction.title, season, explicitSeason) &&
+                std::to_string(std::stoi(season[1].str())) == correction.season) {
+                const auto legacy = findAnimeByTitle(correction.title);
+                if (legacy && legacy->season.empty() && legacy->bangumiSubjectId) animeId = legacy->id;
+            }
+        }
         if (!animeId) {
-            auto anime = prepare(db, "INSERT INTO anime(display_title,season) VALUES(?,?)");
+            auto anime = prepare(db, "INSERT INTO anime(id,display_title,season) VALUES((SELECT high_water+1 FROM anime_identity WHERE singleton=1),?,?)");
             bind(anime.get(), 1, correction.title);
             bind(anime.get(), 2, correction.season);
             done(db, anime.get());
@@ -369,16 +416,20 @@ void SqliteMediaRepository::updateMediaCorrection(
         sqlite3_bind_int64(manual.get(), 1, animeId);
         if (sqlite3_step(manual.get()) == SQLITE_ROW) { resolvedTitle = column(manual.get(), 0); resolvedSeason = column(manual.get(), 1); }
     }
-    auto stmt = prepare(db, "UPDATE media_file SET title=?,season=?,episode_number=?,episode_type=?,confidence=?,anime_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?");
+    auto stmt = prepare(db, "UPDATE media_file SET title=?,season=?,episode_number=?,episode_type=?,confidence=?,anime_id=?,raw_episode_number=?,episode_number_source=?,updated_at=CURRENT_TIMESTAMP WHERE id=?");
     bind(stmt.get(), 1, resolvedTitle);
     bind(stmt.get(), 2, resolvedSeason);
-    bind(stmt.get(), 3, correction.episodeNumber);
-    bind(stmt.get(), 4, correction.episodeType);
+    const bool manual = intent == MediaCorrectionIntent::userConfirmed || existingMedia->episodeNumberSource == "manual";
+    bind(stmt.get(), 3, intent == MediaCorrectionIntent::automaticScan && manual ? existingMedia->episodeNumber : correction.episodeNumber);
+    bind(stmt.get(), 4, intent == MediaCorrectionIntent::automaticScan && manual ? existingMedia->episodeType : correction.episodeType);
     sqlite3_bind_double(stmt.get(), 5, correction.confidence);
     sqlite3_bind_int64(stmt.get(), 6, animeId);
-    sqlite3_bind_int64(stmt.get(), 7, id);
+    bind(stmt.get(), 7, existingMedia->rawEpisodeNumber);
+    bind(stmt.get(), 8, manual ? "manual" : "parsed");
+    sqlite3_bind_int64(stmt.get(), 9, id);
     done(db, stmt.get());
     if (sqlite3_changes(db) == 0) throw std::runtime_error("media not found");
+    if (!manual) mapAnimeEpisodes(db, animeId);
     if (intent == MediaCorrectionIntent::userConfirmed) {
         auto rename = prepare(db, "UPDATE anime SET display_title=?,updated_at=CURRENT_TIMESTAMP WHERE id=?");
         bind(rename.get(), 1, correction.title);
@@ -597,7 +648,7 @@ AuditPage SqliteMediaRepository::listAuditPage(std::int64_t offset, int limit,
     std::lock_guard lock(database_.mutex());
     auto* db = database_.handle();
     auto stmt = prepare(db, animeId
-        ? "SELECT id,action,entity_type,entity_id,created_at FROM audit_log WHERE action='anime_bound' AND entity_type='anime' AND entity_id=? ORDER BY id DESC LIMIT ? OFFSET ?"
+        ? "SELECT id,action,entity_type,entity_id,created_at FROM audit_log WHERE action IN ('anime_bound','anime_merged') AND entity_type='anime' AND entity_id=? ORDER BY id DESC LIMIT ? OFFSET ?"
         : "SELECT id,action,entity_type,entity_id,created_at FROM audit_log ORDER BY id DESC LIMIT ? OFFSET ?");
     int parameter = 1;
     if (animeId) bind(stmt.get(), parameter++, std::to_string(*animeId));
@@ -660,7 +711,7 @@ void SqliteMediaRepository::putUiPreferences(const UiPreferences& preferences) {
 std::vector<MediaRecord> SqliteMediaRepository::listInbox() const {
     std::lock_guard lock(database_.mutex());
     auto* db = database_.handle();
-    auto stmt = prepare(db, "SELECT m.id,m.scan_id,m.source_path,m.filename,m.episode_number,m.episode_type,m.size_bytes,m.status,m.confidence,m.title,m.season,a.bangumi_subject_id,m.source_modified_at,m.origin,m.anime_id,m.parsed_title,m.library_path,m.folder_import_id FROM media_file m LEFT JOIN anime a ON a.id=m.anime_id WHERE m.status='inbox' AND a.bangumi_subject_id IS NULL ORDER BY m.id");
+    auto stmt = prepare(db, "SELECT m.id,m.scan_id,m.source_path,m.filename,m.episode_number,m.episode_type,m.size_bytes,m.status,m.confidence,m.title,m.season,a.bangumi_subject_id,m.source_modified_at,m.origin,m.anime_id,m.parsed_title,m.library_path,m.folder_import_id,m.raw_episode_number,m.episode_number_source FROM media_file m LEFT JOIN anime a ON a.id=m.anime_id WHERE m.status='inbox' AND a.bangumi_subject_id IS NULL ORDER BY m.id");
     std::vector<MediaRecord> result;
     int rc;
     while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW)
@@ -691,8 +742,8 @@ InboxPage SqliteMediaRepository::listInboxPage(std::int64_t offset, int limit,
     InboxPage page;
     page.total = sqlite3_column_int64(count.get(), 0);
     auto stmt = prepare(db, filtered
-        ? "SELECT m.id,m.scan_id,m.source_path,m.filename,m.episode_number,m.episode_type,m.size_bytes,m.status,m.confidence,m.title,m.season,a.bangumi_subject_id,m.source_modified_at,m.origin,m.anime_id,m.parsed_title,m.library_path,m.folder_import_id FROM media_file m LEFT JOIN anime a ON a.id=m.anime_id WHERE m.status='inbox' AND a.bangumi_subject_id IS NULL AND (CASE WHEN m.folder_import_id IS NOT NULL THEN 'folder_import' ELSE m.origin END)=? ORDER BY m.id LIMIT ? OFFSET ?"
-        : "SELECT m.id,m.scan_id,m.source_path,m.filename,m.episode_number,m.episode_type,m.size_bytes,m.status,m.confidence,m.title,m.season,a.bangumi_subject_id,m.source_modified_at,m.origin,m.anime_id,m.parsed_title,m.library_path,m.folder_import_id FROM media_file m LEFT JOIN anime a ON a.id=m.anime_id WHERE m.status='inbox' AND a.bangumi_subject_id IS NULL ORDER BY m.id LIMIT ? OFFSET ?");
+        ? "SELECT m.id,m.scan_id,m.source_path,m.filename,m.episode_number,m.episode_type,m.size_bytes,m.status,m.confidence,m.title,m.season,a.bangumi_subject_id,m.source_modified_at,m.origin,m.anime_id,m.parsed_title,m.library_path,m.folder_import_id,m.raw_episode_number,m.episode_number_source FROM media_file m LEFT JOIN anime a ON a.id=m.anime_id WHERE m.status='inbox' AND a.bangumi_subject_id IS NULL AND (CASE WHEN m.folder_import_id IS NOT NULL THEN 'folder_import' ELSE m.origin END)=? ORDER BY m.id LIMIT ? OFFSET ?"
+        : "SELECT m.id,m.scan_id,m.source_path,m.filename,m.episode_number,m.episode_type,m.size_bytes,m.status,m.confidence,m.title,m.season,a.bangumi_subject_id,m.source_modified_at,m.origin,m.anime_id,m.parsed_title,m.library_path,m.folder_import_id,m.raw_episode_number,m.episode_number_source FROM media_file m LEFT JOIN anime a ON a.id=m.anime_id WHERE m.status='inbox' AND a.bangumi_subject_id IS NULL ORDER BY m.id LIMIT ? OFFSET ?");
     // Count and page use the same filter so a busy source cannot hide the other source.
     if (filtered) bind(stmt.get(), 1, *origin);
     const int firstPageParameter = filtered ? 2 : 1;
@@ -799,6 +850,17 @@ std::vector<AnimeRecord> SqliteMediaRepository::listAnimeForScan(std::int64_t sc
     return items;
 }
 
+std::optional<AnimeRecord> SqliteMediaRepository::findAnimeByBangumiSubject(std::int64_t subjectId) const {
+    if (subjectId <= 0) return std::nullopt;
+    std::lock_guard lock(database_.mutex());
+    auto stmt = prepare(database_.handle(), "SELECT id,display_title,original_title,season,year,bangumi_subject_id,cover_url,locked FROM anime WHERE bangumi_subject_id=?");
+    sqlite3_bind_int64(stmt.get(), 1, subjectId);
+    const auto rc = sqlite3_step(stmt.get());
+    if (rc == SQLITE_ROW) return animeRow(stmt.get());
+    if (rc != SQLITE_DONE) throw std::runtime_error(sqlite3_errmsg(database_.handle()));
+    return std::nullopt;
+}
+
 std::optional<AnimeRecord> SqliteMediaRepository::getAnime(std::int64_t id,
                                                            std::int64_t mediaOffset,
                                                            int mediaLimit) const {
@@ -820,7 +882,7 @@ void SqliteMediaRepository::updateMediaEpisode(std::int64_t id, const std::strin
     std::lock_guard lock(database_.mutex());
     auto* db = database_.handle();
     Transaction tx(db);
-    auto stmt = prepare(db, "UPDATE media_file SET episode_number=?,episode_type=?,confidence=1,updated_at=CURRENT_TIMESTAMP WHERE id=?");
+    auto stmt = prepare(db, "UPDATE media_file SET episode_number=?,episode_type=?,episode_number_source='manual',confidence=1,updated_at=CURRENT_TIMESTAMP WHERE id=?");
     bind(stmt.get(), 1, number); bind(stmt.get(), 2, type); sqlite3_bind_int64(stmt.get(), 3, id); done(db, stmt.get());
     auto audit = prepare(db, "INSERT INTO audit_log(action,entity_type,entity_id,details_json) VALUES('episode_edited','media_file',?,'{}')");
     bind(audit.get(), 1, std::to_string(id)); done(db, audit.get()); tx.commit();
@@ -885,10 +947,10 @@ AnimeRecord SqliteMediaRepository::bindAnime(std::int64_t id, const BangumiSubje
     const auto* oldTitleRaw = reinterpret_cast<const char*>(sqlite3_column_text(current.get(), 2));
     const std::string oldTitle = oldTitleRaw ? oldTitleRaw : "";
     if (locked && !same) throw AnimeBindingError("anime_locked");
-    auto owner = prepare(db, "SELECT id FROM anime WHERE bangumi_subject_id=? AND id<>?");
+    auto owner = prepare(db, "SELECT id,display_title FROM anime WHERE bangumi_subject_id=? AND id<>?");
     sqlite3_bind_int64(owner.get(), 1, subject.id);
     sqlite3_bind_int64(owner.get(), 2, id);
-    if (sqlite3_step(owner.get()) == SQLITE_ROW) throw AnimeBindingError("bangumi_subject_in_use");
+    if (sqlite3_step(owner.get()) == SQLITE_ROW) throw AnimeBindingError("bangumi_subject_in_use", sqlite3_column_int64(owner.get(), 0), reinterpret_cast<const char*>(sqlite3_column_text(owner.get(), 1)));
     if (!same || !sqlite3_column_int(current.get(), 1)) {
         const bool rebinding = hadBinding && !same;
         auto update = prepare(db, rebinding
@@ -957,8 +1019,40 @@ AnimeRecord SqliteMediaRepository::bindAnime(std::int64_t id, const BangumiSubje
         bind(auditEntry.get(), 1, std::to_string(id));
         done(db, auditEntry.get());
     }
+    storeEpisodeMappings(db, subject);
+    mapAnimeEpisodes(db, id);
     tx.commit();
     return *getAnime(id);
+}
+
+void SqliteMediaRepository::applyAnimeEpisodeMapping(std::int64_t id) {
+    mapAnimeEpisodes(database_.handle(), id);
+}
+
+std::optional<AnimeRecord> SqliteMediaRepository::nextAnimeNeedingEpisodeMapping(std::int64_t afterId) const {
+    std::lock_guard lock(database_.mutex());
+    auto stmt = prepare(database_.handle(), "SELECT a.id,a.display_title,a.original_title,a.season,a.year,a.bangumi_subject_id,a.cover_url,a.locked FROM anime a "
+        "WHERE a.id>? AND a.bangumi_subject_id IS NOT NULL AND EXISTS(SELECT 1 FROM media_file m WHERE m.anime_id=a.id AND m.status!='missing' AND m.episode_type='normal' AND m.episode_number_source='parsed' AND m.raw_episode_number!='') ORDER BY a.id LIMIT 1");
+    sqlite3_bind_int64(stmt.get(), 1, afterId);
+    const auto rc = sqlite3_step(stmt.get());
+    if (rc == SQLITE_ROW) return animeRow(stmt.get());
+    if (rc != SQLITE_DONE) throw std::runtime_error(sqlite3_errmsg(database_.handle()));
+    return std::nullopt;
+}
+
+bool SqliteMediaRepository::updateEpisodeMappingsIfBound(std::int64_t id, const BangumiSubject& subject) {
+    if (subject.id <= 0 || subject.type != 2 || subject.episodes.empty()) return false;
+    std::lock_guard lock(database_.mutex());
+    auto* db = database_.handle();
+    Transaction tx(db);
+    auto current = prepare(db, "SELECT 1 FROM anime WHERE id=? AND bangumi_subject_id=?");
+    sqlite3_bind_int64(current.get(), 1, id); sqlite3_bind_int64(current.get(), 2, subject.id);
+    if (sqlite3_step(current.get()) != SQLITE_ROW) return false;
+    // 异步回包只能更新仍绑定同一词条的文件，不改写标题或人工集数。
+    storeEpisodeMappings(db, subject);
+    mapAnimeEpisodes(db, id);
+    tx.commit();
+    return true;
 }
 
 bool SqliteMediaRepository::updateCoverIfBound(std::int64_t animeId, std::int64_t subjectId,
@@ -995,11 +1089,22 @@ bool SqliteMediaRepository::applyMikanAlias(const std::string& alias,
         canonicalTitle.size() > 500) return false;
     const auto key = normalizedTitleKey(alias);
     if (key.empty() || key == normalizedTitleKey(canonicalTitle)) return false;
-    const auto candidate = findAnimeByTitle(alias);
-    if (!candidate || normalizedTitleKey(candidate->displayTitle) != key) return false;
+    auto candidate = findAnimeByTitle(alias);
+    const bool aliasFound = candidate.has_value();
+    const auto canonicalKey = normalizedTitleKey(canonicalTitle);
+    if (!candidate) candidate = findAnimeByTitle(canonicalTitle);
+    if (!candidate) return false;
+    const auto displayKey = normalizedTitleKey(candidate->displayTitle);
+    if (displayKey != key && displayKey != canonicalKey) return false;
     std::lock_guard lock(database_.mutex());
+    // 别名有多个归属时不能退回规范标题猜测；已保存的映射无需重复改写。
+    if (!aliasFound && titleIndex_.contains(key)) return false;
     auto* db = database_.handle();
     Transaction tx(db);
+    auto existing = prepare(db, "SELECT 1 FROM anime_alias WHERE anime_id=? AND normalized_alias=?");
+    sqlite3_bind_int64(existing.get(), 1, candidate->id);
+    bind(existing.get(), 2, key);
+    if (sqlite3_step(existing.get()) == SQLITE_ROW) return false;
     // RSS may suggest a title only for an untouched local entry. A user alias or
     // Bangumi binding is authoritative and must never be replaced by feed text.
     auto update = prepare(db,
@@ -1075,7 +1180,7 @@ std::optional<AnimeRecord> SqliteMediaRepository::findAnimeByTitle(
     if (!found && season && matches->second.size() == 1) {
         // 人工纠正季数后仍接受唯一的人工别名；存在多个同名候选时保持严格季数匹配。
         const auto& candidate = matches->second.front();
-        auto userAlias = prepare(db, "SELECT 1 FROM anime_alias WHERE anime_id=? AND normalized_alias=? AND source='user'");
+        auto userAlias = prepare(db, "SELECT 1 FROM anime_alias WHERE anime_id=? AND normalized_alias=? AND source IN ('user','merged')");
         sqlite3_bind_int64(userAlias.get(), 1, candidate.id); bind(userAlias.get(), 2, key);
         if (sqlite3_step(userAlias.get()) == SQLITE_ROW) return candidate;
     }

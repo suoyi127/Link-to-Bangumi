@@ -3,6 +3,7 @@
 #include "anime_vault/services/BangumiService.hpp"
 
 #include <cstddef>
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -25,6 +26,7 @@ public:
     void runForScan(std::int64_t scanId, Completion completion = {});
 private:
     void runPending(std::vector<AnimeRecord> pending, Completion completion);
+    std::atomic<std::int64_t> mappingCursor_{};
     MediaRepository& repository_;
     std::shared_ptr<BangumiService> bangumi_;
     std::shared_ptr<CoverScraper> covers_;

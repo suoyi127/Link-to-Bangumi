@@ -39,6 +39,8 @@ struct MediaRecord {
     std::string parsedTitle;
     std::string libraryPath;
     std::optional<std::int64_t> folderImportId;
+    std::string rawEpisodeNumber;
+    std::string episodeNumberSource{"parsed"};
 };
 
 struct FolderImportRecord {
@@ -122,10 +124,19 @@ struct AnimePage {
     std::optional<std::int64_t> nextOffset;
 };
 
+struct AnimeMergePreview {
+    std::string previewId;
+    std::int64_t sourceId{}, targetId{}, subjectId{};
+    std::string sourceTitle, targetTitle;
+    std::int64_t mediaCount{}, aliasCount{}, duplicateEpisodeCount{}, expiresAt{};
+};
+
 class AnimeBindingError final : public std::runtime_error {
 public:
-    explicit AnimeBindingError(std::string code)
-        : std::runtime_error(code), code_(std::move(code)) {}
+    explicit AnimeBindingError(std::string code, std::int64_t targetId = 0, std::string title = {})
+        : std::runtime_error(code), targetAnimeId(targetId), targetTitle(std::move(title)), code_(std::move(code)) {}
+    std::int64_t targetAnimeId{};
+    std::string targetTitle;
     const std::string& code() const noexcept { return code_; }
 private:
     std::string code_;
@@ -191,8 +202,13 @@ public:
     virtual std::optional<AnimeRecord> getAnime(std::int64_t id,
                                                 std::int64_t mediaOffset = 0,
                                                 int mediaLimit = 50) const = 0;
+    virtual std::optional<AnimeRecord> findAnimeByBangumiSubject(std::int64_t) const { return std::nullopt; }
     virtual AnimeRecord bindAnime(std::int64_t id, const BangumiSubject& subject,
                                   bool canonicalizeTitle = false) = 0;
+    virtual AnimeMergePreview previewAnimeMerge(std::int64_t, std::int64_t) { throw AnimeBindingError("merge_unavailable"); }
+    virtual AnimeRecord mergeAnime(std::int64_t, const std::string&) { throw AnimeBindingError("merge_unavailable"); }
+    virtual std::optional<AnimeRecord> nextAnimeNeedingEpisodeMapping(std::int64_t) const { return std::nullopt; }
+    virtual bool updateEpisodeMappingsIfBound(std::int64_t, const BangumiSubject&) { return false; }
     virtual bool updateCoverIfBound(std::int64_t animeId, std::int64_t subjectId,
                                     const std::string& localUrl, std::optional<std::string> expectedCover = std::nullopt) = 0;
     virtual bool applyMikanAlias(const std::string& alias,

@@ -1,0 +1,17 @@
+{
+  "AnimeVault 新订阅模板": {
+    "enabled": false,
+    "mustContain": "(?:_|\\b)(?:\\bs\\d{1,2}e0*(\\d{1,3})(?:v\\d+)?\\b|\\b\\d{1,2}x0*(\\d{1,3})(?:v\\d+)?\\b|\\bep0*(\\d{1,3})(?:v\\d+)?\\b|(?<=\\[)0*(\\d{1,3})(?:v\\d+)?(?=\\])|(?<=-\\x20)0*(\\d{1,3})(?:v\\d+)?(?=\\s*(?:\\[|\\(|-)))(?:_|\\b)",
+    "mustNotContain": "REPACK",
+    "useRegex": true,
+    "episodeFilter": "",
+    "smartFilter": true,
+    "previouslyMatchedEpisodes": [],
+    "affectedFeeds": [],
+    "ignoreDays": 0,
+    "lastMatch": "",
+    "addPaused": false,
+    "assignedCategory": "",
+    "savePath": "D:\\追番\\番剧\\"
+  }
+}
