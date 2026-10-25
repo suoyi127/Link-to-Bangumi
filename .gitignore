@@ -9,3 +9,22 @@
 *.db
 *.db-shm
 *.db-wal
+
+# Local assistant instructions and working notes
+/AGENTS.md
+/CLAUDE.md
+/GEMINI.md
+/.agents/
+/.claude/
+/.codex/
+/.github/agents/
+/.github/copilot-instructions.md
+/docs/superpowers/
+/docs/refactoring-plan.md
+
+# Additional generated output
+/cmake-build-*/
+/CMakeFiles/
+/CMakeCache.txt
+/Testing/
+/frontend/coverage/

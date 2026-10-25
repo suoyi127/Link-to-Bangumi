@@ -2,7 +2,7 @@
 
 Link to Bangumi 是面向 Windows 的本地资源管理工具，将番剧、小说和游戏集中到同一界面，通过 Bangumi 获取标题、简介与封面，游戏另支持 VNDB 备用刮削。资源文件保留在自己的电脑上，播放、阅读和游戏启动交由本机程序完成。
 
-当前版本：**0.1.0**。普通用户可从 [版本发布页](https://github.com/suoyi127/Link-to-Bangumi/releases/tag/0.1.0) 下载 `Setup.exe`；开发者启动方法见下方[启动流程](#启动流程)，可复制的命令另见 [PowerShell 命令文件](docs/powershell-commands.md)。
+当前版本：**0.1.0**。普通用户可从 [版本发布页](https://github.com/suoyi127/Link-to-Bangumi/releases/latest) 下载 `Setup.exe`；开发者启动方法见下方[启动流程](#启动流程)，可复制的命令另见 [PowerShell 命令文件](docs/powershell-commands.md)。
 
 ## 资源与使用声明
 
