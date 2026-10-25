@@ -1,4 +1,5 @@
 #pragma once
+#include "anime_vault/ports/AnimeRepository.hpp"
 
 #include "anime_vault/services/MikanTitleParser.hpp"
 
@@ -6,7 +7,7 @@
 #include <functional>
 
 namespace anime_vault {
-class MediaRepository;
+class AnimeRepository;
 
 struct MikanEnrichmentResult {
     std::size_t appliedCount{};
@@ -19,10 +20,10 @@ public:
     using CatalogCompletion = std::function<void(MikanCatalog)>;
     using Fetcher = std::function<void(CatalogCompletion)>;
     using Completion = std::function<void(MikanEnrichmentResult)>;
-    MikanEnricher(MediaRepository& repository, Fetcher fetcher);
+    MikanEnricher(AnimeRepository& repository, Fetcher fetcher);
     void runOnce(Completion completion = {}) const;
 private:
-    MediaRepository& repository_;
+    AnimeRepository& repository_;
     Fetcher fetcher_;
 };
 }

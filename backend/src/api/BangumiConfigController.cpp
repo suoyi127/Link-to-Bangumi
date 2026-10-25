@@ -1,28 +1,19 @@
 #include "anime_vault/api/BangumiConfigController.hpp"
+#include "anime_vault/api/HttpSupport.hpp"
 #include "anime_vault/infrastructure/network/DrogonBangumiTransport.hpp"
 
 #include <drogon/drogon.h>
-#include <atomic>
 #include <functional>
 
 namespace anime_vault::api {
 namespace {
 using Callback = std::function<void(const drogon::HttpResponsePtr&)>;
 using Request = drogon::HttpRequestPtr;
-std::atomic_uint64_t sequence{0};
 void reply(Callback callback, int status, Json::Value payload) {
-    const auto id = std::to_string(++sequence);
-    payload["requestId"] = id;
-    auto response = drogon::HttpResponse::newHttpJsonResponse(payload);
-    response->setStatusCode(static_cast<drogon::HttpStatusCode>(status));
-    response->addHeader("X-Request-Id", id);
-    callback(response);
+    deliver(std::move(callback), requestContext({}, RequestIdPolicy::BangumiConfig), status, std::move(payload));
 }
 void failure(Callback callback, int status, const std::string& code) {
-    Json::Value payload;
-    payload["error"]["code"] = code;
-    payload["error"]["message"] = code;
-    reply(std::move(callback), status, std::move(payload));
+    reply(std::move(callback), status, errorJson(code, code));
 }
 Json::Value summaryJson(const BangumiConfigSummary& summary) {
     Json::Value value;
@@ -40,15 +31,14 @@ std::string readAgent(const drogon::HttpRequestPtr& request) {
 }
 void handleError(Callback callback, const std::exception& error) {
     if (const auto* known = dynamic_cast<const BangumiConfigError*>(&error)) {
-        const int status = known->code == "request_too_large" ? 413 :
-            known->code == "bangumi_config_storage_failed" || known->code == "bangumi_config_corrupt" ? 500 : 400;
+        const int status = bangumiConfigErrorStatus(known->code);
         failure(std::move(callback), status, known->code);
     } else failure(std::move(callback), 500, "internal_error");
 }
 }
 
 std::string parseBangumiUserAgent(const Json::Value& body) {
-    if (!body.isObject() || body.size() != 1 || !body["userAgent"].isString())
+    if (!hasExactFields(body, {"userAgent"}) || !body["userAgent"].isString())
         throw BangumiConfigError("invalid_request", "userAgent required");
     auto agent = body["userAgent"].asString();
     if (!BangumiConnectionManager::validUserAgent(agent))

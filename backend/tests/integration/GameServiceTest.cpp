@@ -1,3 +1,6 @@
+#include "anime_vault/infrastructure/NativeLibraryFileAccess.hpp"
+#include "anime_vault/infrastructure/database/SqliteDatabase.hpp"
+#include "anime_vault/infrastructure/database/SqliteGameRepository.hpp"
 #include "anime_vault/services/GameService.hpp"
 #include "anime_vault/services/GameBangumiService.hpp"
 #include "anime_vault/infrastructure/ProcessLauncher.hpp"
@@ -17,7 +20,7 @@ struct GameLauncher : ProcessLauncher {
     bool launchInDirectory(const fs::path& exe, const std::vector<std::string>& args, const fs::path& cwd) override { directory = cwd; return launch(exe, args); }
 };
 TEST_CASE("Game paths accept paired copied quotes and surrounding whitespace") {
-    GameFixture fixture; SqliteDatabase db(fixture.root / "db.sqlite"); db.migrate(); GameService games(db);
+    GameFixture fixture; SqliteDatabase db(fixture.root / "db.sqlite"); db.migrate(); SqliteGameRepository gamesRepository(db); NativeLibraryFileAccess gamesFiles; GameService games(gamesRepository, gamesFiles);
     const auto path = (fixture.root / "Story.exe").u8string();
     const auto plain = games.importExecutable(fixture.root / "Story.exe");
     REQUIRE(games.importExecutable(fs::path(u8" \"" + path + u8"\" \r\n")).id == plain.id);
@@ -27,7 +30,7 @@ TEST_CASE("Game paths accept paired copied quotes and surrounding whitespace") {
     REQUIRE_THROWS_AS(games.importExecutable(fs::path(u8"\"" + path)), GameError);
 }
 TEST_CASE("Game import is idempotent and preserves manual metadata") {
-    GameFixture fixture; SqliteDatabase db(fixture.root / "db.sqlite"); db.migrate(); GameService games(db);
+    GameFixture fixture; SqliteDatabase db(fixture.root / "db.sqlite"); db.migrate(); SqliteGameRepository gamesRepository(db); NativeLibraryFileAccess gamesFiles; GameService games(gamesRepository, gamesFiles);
     auto game = games.importExecutable(fixture.root / "Story.exe");
     games.edit(game.id, "中文游戏", "开发商", "简介", game.path);
     REQUIRE(games.importExecutable(fixture.root / "Story.exe").id == game.id);
@@ -64,7 +67,7 @@ struct VndbStub : VndbTransport {
     void fetch(std::string, CoverImageFetcher::Completion completion) override { if (deferCover) pending.push_back(std::move(completion)); else completion(std::string("\xff\xd8\xff\xd9", 4), ""); }
 };
 TEST_CASE("VNDB is used only when initial Bangumi matching fails") {
-    GameFixture fixture; SqliteDatabase db(fixture.root / "db.sqlite"); db.migrate(); GameService games(db);
+    GameFixture fixture; SqliteDatabase db(fixture.root / "db.sqlite"); db.migrate(); SqliteGameRepository gamesRepository(db); NativeLibraryFileAccess gamesFiles; GameService games(gamesRepository, gamesFiles);
     const auto game = games.importExecutable(fixture.root / "Story.exe");
     GameTransport transport; GameCovers covers; VndbStub vndb;
     auto scraper = std::make_shared<GameBangumiService>(games, transport, covers, &vndb);
@@ -88,7 +91,7 @@ TEST_CASE("VNDB is used only when initial Bangumi matching fails") {
     REQUIRE(games.get(other.id).title == "人工中文"); REQUIRE(vndb.searches == 1);
 }
 TEST_CASE("VNDB rejects incomplete search uniqueness and late covers from another source") {
-    GameFixture fixture; SqliteDatabase db(fixture.root / "db.sqlite"); db.migrate(); GameService games(db);
+    GameFixture fixture; SqliteDatabase db(fixture.root / "db.sqlite"); db.migrate(); SqliteGameRepository gamesRepository(db); NativeLibraryFileAccess gamesFiles; GameService games(gamesRepository, gamesFiles);
     const auto game = games.importExecutable(fixture.root / "Story.exe");
     GameTransport transport; GameCovers covers; VndbStub vndb; vndb.more = true;
     auto scraper = std::make_shared<GameBangumiService>(games, transport, covers, &vndb);
@@ -105,7 +108,7 @@ TEST_CASE("VNDB rejects incomplete search uniqueness and late covers from anothe
     REQUIRE_FALSE(games.setVndbCover(game.id, "v4", "bad", "image/jpeg"));
 }
 TEST_CASE("Game scraping filters subject types and preserves edited titles") {
-    GameFixture fixture; SqliteDatabase db(fixture.root / "db.sqlite"); db.migrate(); GameService games(db);
+    GameFixture fixture; SqliteDatabase db(fixture.root / "db.sqlite"); db.migrate(); SqliteGameRepository gamesRepository(db); NativeLibraryFileAccess gamesFiles; GameService games(gamesRepository, gamesFiles);
     auto game = games.importExecutable(fixture.root / "Story.exe");
     GameTransport transport; GameCovers covers;
     auto scraper = std::make_shared<GameBangumiService>(games, transport, covers);

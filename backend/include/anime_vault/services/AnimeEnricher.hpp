@@ -1,15 +1,17 @@
 #pragma once
+#include "anime_vault/ports/AnimeRepository.hpp"
 
 #include "anime_vault/services/BangumiService.hpp"
 
 #include <cstddef>
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <vector>
 
 namespace anime_vault {
-class MediaRepository;
+class AnimeRepository;
 class CoverScraper;
 struct AnimeRecord;
 
@@ -17,7 +19,7 @@ struct AnimeRecord;
 class AnimeEnricher final : public std::enable_shared_from_this<AnimeEnricher> {
 public:
     using Completion = std::function<void(std::size_t)>;
-    AnimeEnricher(MediaRepository& repository, std::shared_ptr<BangumiService> bangumi,
+    AnimeEnricher(AnimeRepository& repository, std::shared_ptr<BangumiService> bangumi,
                   std::shared_ptr<CoverScraper> covers = {});
     // 仅尝试处理有限数量的未绑定条目，减少外部请求并保留歧义给用户确认。
     void runOnce(std::size_t limit = 5, Completion completion = {});
@@ -25,7 +27,8 @@ public:
     void runForScan(std::int64_t scanId, Completion completion = {});
 private:
     void runPending(std::vector<AnimeRecord> pending, Completion completion);
-    MediaRepository& repository_;
+    std::atomic<std::int64_t> mappingCursor_{};
+    AnimeRepository& repository_;
     std::shared_ptr<BangumiService> bangumi_;
     std::shared_ptr<CoverScraper> covers_;
 };

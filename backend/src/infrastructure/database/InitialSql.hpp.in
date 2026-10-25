@@ -9,3 +9,5 @@ inline constexpr const char* kFolderImportSql = R"ANIME_VAULT_SQL(@ANIME_VAULT_F
 inline constexpr const char* kNovelSql = R"ANIME_VAULT_SQL(@ANIME_VAULT_NOVEL_SQL@)ANIME_VAULT_SQL";
 inline constexpr const char* kGameSql = R"ANIME_VAULT_SQL(@ANIME_VAULT_GAME_SQL@)ANIME_VAULT_SQL";
 inline constexpr const char* kGameVndbSql = R"ANIME_VAULT_SQL(@ANIME_VAULT_GAME_VNDB_SQL@)ANIME_VAULT_SQL";
+inline constexpr const char* kEpisodeMappingSql = R"ANIME_VAULT_SQL(@ANIME_VAULT_EPISODE_MAPPING_SQL@)ANIME_VAULT_SQL";
+inline constexpr const char* kAnimeMergeSql = R"ANIME_VAULT_SQL(@ANIME_VAULT_ANIME_MERGE_SQL@)ANIME_VAULT_SQL";

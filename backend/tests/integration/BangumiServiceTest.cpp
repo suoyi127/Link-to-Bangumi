@@ -21,6 +21,19 @@ struct FakeTransport final : BangumiTransport {
     std::optional<Response> next{Response{200,
         R"({"data":[{"id":123,"type":2,"name":"Frieren","name_cn":"葬送的芙莉莲","date":"2023-09-29","eps":28,"images":{"large":"https://example.test/cover.jpg"}}]})"}};
     std::optional<Response> subjectNext;
+    std::optional<Response> episodesNext;
+    int episodeCalls{};
+    int subjectCalls{};
+    std::vector<Response> episodePages;
+    void episodes(std::int64_t, int, Completion completion) {
+        ++episodeCalls;
+        if (!episodePages.empty()) {
+            const auto response = episodePages.front();
+            episodePages.erase(episodePages.begin());
+            completion(response, ""); return;
+        }
+        completion(episodesNext, episodesNext ? "" : "offline");
+    }
     std::optional<Response> aliasNext{Response{200, R"({"results":0,"list":[]})"}};
     std::optional<Response> aliasPrefixNext;
     std::vector<std::string> aliasQueries;
@@ -36,7 +49,7 @@ struct FakeTransport final : BangumiTransport {
         if (delay) { pending = std::move(completion); return; }
         completion(next, next ? "" : "timeout");
     }
-    void subject(std::int64_t, Completion completion) override { completion(subjectNext, subjectNext ? "" : "timeout"); }
+    void subject(std::int64_t, Completion completion) override { ++subjectCalls; completion(subjectNext, subjectNext ? "" : "timeout"); }
     void searchAliases(std::string keyword, Completion completion) override {
         aliasQueries.push_back(std::move(keyword));
         const auto& response = aliasQueries.size() > 1 && aliasPrefixNext ? aliasPrefixNext : aliasNext;
@@ -63,6 +76,153 @@ TEST_CASE("Bangumi subject lookup rejects a response for a different requested I
     REQUIRE(result);
     REQUIRE(result->errorCode == "bangumi_bad_response");
     REQUIRE_FALSE(result->subject);
+}
+
+TEST_CASE("bound Bangumi episode sort becomes season episode while manual edits win") {
+    TempDb temp;
+    SqliteDatabase db(temp.path);
+    db.migrate();
+    SqliteMediaRepository repo(db);
+    const auto scan = repo.createScan({0, "test", "completed"});
+    const auto media = repo.insertMedia({0, scan, "C:/test/Ao no Hako Season 2 - 27.mkv", "Ao no Hako Season 2 - 27.mkv", "27", "normal", 1, "inbox", .95});
+    repo.updateMediaCorrection(media, {"Ao no Hako Season 2", "2", "27", "normal", .95, std::nullopt}, MediaCorrectionIntent::automaticScan);
+    FakeTransport transport;
+    transport.subjectNext = FakeTransport::Response{200, R"({"id":548156,"type":2,"name":"Ao no Hako Season 2","eps":12})"};
+    transport.episodesNext = FakeTransport::Response{200, R"({"total":2,"offset":0,"data":[{"type":0,"sort":26,"ep":1},{"type":0,"sort":27,"ep":2}]})"};
+    auto service = std::make_shared<BangumiService>(repo, transport);
+    std::optional<BangumiSubjectResult> result;
+    service->subject(548156, [&](auto value) { result = std::move(value); });
+    REQUIRE(result);
+    REQUIRE(result->subject);
+    const auto anime = *repo.getMedia(media)->animeId;
+    repo.bindAnime(anime, *result->subject);
+    REQUIRE(repo.getMedia(media)->episodeNumber == "2");
+    REQUIRE(repo.getMedia(media)->rawEpisodeNumber == "27");
+    REQUIRE(repo.getMedia(media)->episodeNumberSource == "bangumi");
+    repo.bindAnime(anime, *result->subject);
+    REQUIRE(repo.getMedia(media)->episodeNumber == "2");
+    repo.updateMediaEpisode(media, "7", "normal");
+    repo.bindAnime(anime, *result->subject);
+    REQUIRE(repo.getMedia(media)->episodeNumber == "7");
+    REQUIRE(repo.getMedia(media)->rawEpisodeNumber == "27");
+    REQUIRE(repo.getMedia(media)->episodeNumberSource == "manual");
+    repo.updateMediaCorrection(media, {"Ao no Hako Season 2", "2", "27", "normal", .95, std::nullopt}, MediaCorrectionIntent::automaticScan);
+    REQUIRE(repo.getMedia(media)->episodeNumber == "7");
+    const auto later = repo.insertMedia({0, scan, "C:/test/later.mkv", "later.mkv", "26", "normal", 1, "inbox", .95});
+    repo.updateMediaCorrection(later, {"Ao no Hako Season 2", "2", "26", "normal", .95, std::nullopt}, MediaCorrectionIntent::automaticScan);
+    REQUIRE(repo.getMedia(later)->episodeNumber == "1");
+    REQUIRE(repo.getMedia(later)->rawEpisodeNumber == "26");
+    repo.bindAnime(anime, {999, "Other season", "", "", "", 12, 2});
+    REQUIRE(repo.getMedia(later)->episodeNumber == "26");
+    REQUIRE(repo.getMedia(media)->episodeNumber == "7");
+    REQUIRE_FALSE(repo.updateEpisodeMappingsIfBound(anime, *result->subject));
+    REQUIRE(repo.getMedia(later)->episodeNumber == "26");
+}
+
+TEST_CASE("scans refresh episode mapping for an already bound anime") {
+    TempDb temp;
+    SqliteDatabase db(temp.path);
+    db.migrate();
+    SqliteMediaRepository repo(db);
+    const auto scan = repo.createScan({0, "test", "completed"});
+    const auto media = repo.insertMedia({0, scan, "C:/test/bound.mkv", "bound.mkv", "27", "normal", 1, "inbox", .95});
+    repo.updateMediaCorrection(media, {"Ao no Hako Season 2", "2", "27", "normal", .95, std::nullopt}, MediaCorrectionIntent::automaticScan);
+    repo.bindAnime(*repo.getMedia(media)->animeId, {548156, "Ao no Hako Season 2", "", "", "", 12, 2});
+    FakeTransport transport;
+    transport.subjectNext = FakeTransport::Response{200, R"({"id":548156,"type":2,"name":"Ao no Hako Season 2"})"};
+    transport.episodesNext = FakeTransport::Response{200, R"({"total":1,"offset":0,"data":[{"type":0,"sort":27,"ep":2}]})"};
+    auto service = std::make_shared<BangumiService>(repo, transport);
+    auto enricher = std::make_shared<AnimeEnricher>(repo, service);
+    enricher->runForScan(scan);
+    REQUIRE(repo.getMedia(media)->episodeNumber == "2");
+    enricher->runForScan(scan);
+    REQUIRE(transport.episodeCalls == 1);
+}
+
+TEST_CASE("explicit season files reuse a legacy binding with an unset season") {
+    TempDb temp;
+    SqliteDatabase db(temp.path);
+    db.migrate();
+    SqliteMediaRepository repo(db);
+    const auto scan = repo.createScan({0, "test", "completed"});
+    const auto first = repo.insertMedia({0, scan, "C:/test/legacy.mkv", "legacy.mkv", "26", "normal", 1, "inbox", .95});
+    repo.updateMediaCorrection(first, {"Ao no Hako Season 2", "", "26", "normal", .95, std::nullopt}, MediaCorrectionIntent::automaticScan);
+    const auto anime = *repo.getMedia(first)->animeId;
+    BangumiSubject subject{548156, "Ao no Hako Season 2", "", "", "", 12, 2};
+    subject.episodes = {{"26", "1"}, {"27", "2"}};
+    repo.bindAnime(anime, subject);
+    const auto later = repo.insertMedia({0, scan, "C:/test/legacy-later.mkv", "legacy-later.mkv", "27", "normal", 1, "inbox", .95});
+    repo.updateMediaCorrection(later, {"Ao no Hako Season 2", "2", "27", "normal", .95, std::nullopt}, MediaCorrectionIntent::automaticScan);
+    REQUIRE(repo.getMedia(later)->animeId == anime);
+    REQUIRE(repo.getMedia(later)->episodeNumber == "2");
+}
+
+TEST_CASE("automatic special episodes remain unconverted and can be scanned") {
+    TempDb temp;
+    SqliteDatabase db(temp.path);
+    db.migrate();
+    SqliteMediaRepository repo(db);
+    const auto scan = repo.createScan({0, "test", "completed"});
+    const auto media = repo.insertMedia({0, scan, "C:/test/special.mkv", "special.mkv", "27", "sp", 1, "inbox", .95});
+    REQUIRE_NOTHROW(repo.updateMediaCorrection(media, {"Special show", "2", "27", "sp", .95, std::nullopt}, MediaCorrectionIntent::automaticScan));
+    REQUIRE(repo.getMedia(media)->episodeNumber == "27");
+}
+
+TEST_CASE("background enrichment retries bound episode mapping after a failed initial load") {
+    TempDb temp;
+    SqliteDatabase db(temp.path);
+    db.migrate();
+    SqliteMediaRepository repo(db);
+    const auto scan = repo.createScan({0, "test", "completed"});
+    const auto media = repo.insertMedia({0, scan, "C:/test/retry.mkv", "retry.mkv", "27", "normal", 1, "inbox", .95});
+    repo.updateMediaCorrection(media, {"Ao no Hako Season 2", "2", "27", "normal", .95, std::nullopt}, MediaCorrectionIntent::automaticScan);
+    repo.bindAnime(*repo.getMedia(media)->animeId, {548156, "Ao no Hako Season 2", "", "", "", 12, 2});
+    FakeTransport transport;
+    transport.episodesNext = FakeTransport::Response{200, R"({"total":1,"offset":0,"data":[{"type":0,"sort":27,"ep":2}]})"};
+    auto service = std::make_shared<BangumiService>(repo, transport);
+    auto enricher = std::make_shared<AnimeEnricher>(repo, service);
+    REQUIRE(sqlite3_exec(db.handle(),
+        "INSERT INTO anime(display_title) VALUES('Unmatched A'),('Unmatched B'),('Unmatched C'),('Unmatched D'),('Unmatched E');",
+        nullptr, nullptr, nullptr) == SQLITE_OK);
+    enricher->runOnce();
+    REQUIRE(repo.getMedia(media)->episodeNumber == "2");
+}
+
+TEST_CASE("episode mappings require complete unambiguous normal episode pages") {
+    TempDb temp;
+    SqliteDatabase db(temp.path);
+    db.migrate();
+    SqliteMediaRepository repo(db);
+    FakeTransport transport;
+    transport.episodePages = {{200, R"({"total":2,"offset":0,"data":[{"type":0,"sort":26,"ep":1}]})"},
+                              {200, R"({"total":2,"offset":1,"data":[{"type":0,"sort":27,"ep":2}]})"}};
+    auto service = std::make_shared<BangumiService>(repo, transport);
+    std::optional<BangumiSubjectResult> result;
+    service->episodeMapping(548156, [&](auto value) { result = std::move(value); });
+    REQUIRE(result->subject);
+    REQUIRE(result->subject->episodes.size() == 2);
+    REQUIRE(result->subject->episodes[1].sort == "27");
+    REQUIRE(result->subject->episodes[1].ep == "2");
+    REQUIRE(transport.episodeCalls == 2);
+    for (const auto& invalid : std::vector<std::string>{
+        R"({"total":2,"offset":0,"data":[{"type":0,"sort":27,"ep":2},{"type":0,"sort":27,"ep":3}]})",
+        R"({"total":2,"offset":0,"data":[{"type":0,"sort":27,"ep":2},{"type":0,"sort":28,"ep":2}]})",
+        R"({"total":1,"offset":0,"data":[{"type":1,"sort":27,"ep":2}]})",
+        R"({"total":1,"offset":0,"data":[{"type":0,"sort":27,"ep":0}]})",
+        R"({"total":1,"offset":9,"data":[{"type":0,"sort":27,"ep":2}]})",
+        R"({"total":1001,"offset":0,"data":[]})"}) {
+        CAPTURE(invalid);
+        transport.episodesNext = FakeTransport::Response{200, invalid};
+        service = std::make_shared<BangumiService>(repo, transport);
+        service->episodeMapping(548156, [&](auto value) { result = std::move(value); });
+        REQUIRE(result->errorCode.empty());
+        REQUIRE(result->subject);
+        REQUIRE(result->subject->episodes.empty());
+    }
+    transport.episodePages = {{200, R"({"total":2,"offset":0,"data":[{"type":0,"sort":26,"ep":1}]})"}, {503, "offline"}};
+    service = std::make_shared<BangumiService>(repo, transport);
+    service->episodeMapping(548156, [&](auto value) { result = std::move(value); });
+    REQUIRE(result->subject->episodes.empty());
 }
 
 TEST_CASE("calendar intersects all local pages by subject ID and rechecks media on cache reads") {
@@ -490,7 +650,7 @@ TEST_CASE("Bangumi asynchronous completion retains service state and respects th
         limited->search({"unique" + std::to_string(index), {}, {}}, [](BangumiSearchResult) {});
     std::optional<BangumiSearchResult> result;
     limited->search({"last", {}, {}}, [&](BangumiSearchResult value) { result = std::move(value); });
-    REQUIRE(result->errorCode == "bangumi_rate_limited");
+    REQUIRE(result->errorCode == "bangumi_local_rate_limited");
     REQUIRE(transport.calls == 11);
 }
 
@@ -538,4 +698,50 @@ TEST_CASE("Bangumi search caches normalized queries and retries offline without 
     service->search({"Frieren", std::nullopt, std::nullopt}, [&](BangumiSearchResult value) { result = std::move(value); });
     REQUIRE(result->errorCode.empty());
     REQUIRE(transport.calls == 3);
+}
+
+TEST_CASE("Bangumi reuses validated subject details without spending another request") {
+    SqliteDatabase db(":memory:"); db.migrate(); SqliteMediaRepository repo(db);
+    FakeTransport transport;
+    transport.subjectNext = BangumiTransport::Response{200, R"({"id":123,"type":2,"name":"Frieren"})"};
+    auto service = std::make_shared<BangumiService>(repo, transport);
+    service->subject(123, [](auto result) { REQUIRE(result.subject); });
+    service->subject(123, [](auto result) { REQUIRE(result.subject); });
+    CHECK(transport.subjectCalls == 1);
+}
+
+TEST_CASE("Bangumi queues background work and reserves manual requests until the window resets") {
+    SqliteDatabase db(":memory:"); db.migrate(); SqliteMediaRepository repo(db);
+    FakeTransport transport; transport.next = BangumiTransport::Response{200, R"({"data":[]})"};
+    auto now = std::chrono::system_clock::time_point{std::chrono::seconds{1700000000}};
+    std::vector<std::function<void()>> timers;
+    auto service = std::make_shared<BangumiService>(repo, transport, [&] { return now; },
+        [&](auto, auto action) { timers.push_back(std::move(action)); });
+    int completed = 0;
+    bool manualFinished = false;
+    for (int i = 0; i < 9; ++i) service->search({"background" + std::to_string(i)}, [&, i](auto result) { CHECK(result.errorCode.empty()); if (i == 8) CHECK(manualFinished); ++completed; }, BangumiService::Priority::background);
+    CHECK(transport.calls == 8); CHECK(completed == 8);
+    service->search({"manual1"}, [&](auto result) { CHECK(result.errorCode.empty()); ++completed; });
+    service->search({"manual2"}, [&](auto result) { CHECK(result.errorCode.empty()); ++completed; });
+    CHECK(transport.calls == 10);
+    service->search({"manual3"}, [&](auto result) { CHECK(result.errorCode.empty()); manualFinished = true; });
+    CHECK_FALSE(manualFinished);
+    now += std::chrono::seconds{60};
+    auto wake = std::move(timers.front()); timers.erase(timers.begin()); wake();
+    CHECK(manualFinished); CHECK(completed == 11); CHECK(transport.calls == 12);
+}
+
+TEST_CASE("Bangumi upstream 429 is distinct and pauses subsequent queued sends") {
+    SqliteDatabase db(":memory:"); db.migrate(); SqliteMediaRepository repo(db);
+    FakeTransport transport; transport.next = BangumiTransport::Response{429, ""};
+    auto now = std::chrono::system_clock::time_point{std::chrono::seconds{1700000000}};
+    std::vector<std::function<void()>> timers;
+    auto service = std::make_shared<BangumiService>(repo, transport, [&] { return now; }, [&](auto, auto action) { timers.push_back(std::move(action)); });
+    service->search({"first"}, [](auto result) { CHECK(result.errorCode == "bangumi_remote_rate_limited"); CHECK(result.retryAfter); });
+    transport.next = BangumiTransport::Response{200, R"({"data":[]})"};
+    bool completed = false;
+    service->search({"second"}, [&](auto result) { CHECK(result.errorCode.empty()); completed = true; });
+    CHECK_FALSE(completed); CHECK(transport.calls == 1);
+    now += std::chrono::seconds{60}; auto wake = std::move(timers.front()); timers.erase(timers.begin()); wake();
+    CHECK(completed); CHECK(transport.calls == 2);
 }

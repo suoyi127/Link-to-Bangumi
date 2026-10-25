@@ -28,3 +28,10 @@
 /CMakeCache.txt
 /Testing/
 /frontend/coverage/
+
+# Publish API documentation only; other notes remain local
+*.md
+/docs/*
+!/docs/api.md
+!/docs/openapi.json
+/compose.yaml

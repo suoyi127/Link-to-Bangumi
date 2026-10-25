@@ -20,7 +20,7 @@ bool within(const fs::path& root, const fs::path& candidate) {
 }
 }
 
-PlaybackService::PlaybackService(MediaRepository& repository, fs::path sourceRoot,
+PlaybackService::PlaybackService(ScanRepository& repository, fs::path sourceRoot,
                                  fs::path importRoot, fs::path libraryRoot,
                                  ProcessLauncher& launcher)
     : repository_(repository), sourceRoot_(std::move(sourceRoot)),

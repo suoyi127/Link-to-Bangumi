@@ -55,7 +55,7 @@ TEST_CASE("scan and inbox records survive reopening a migrated database") {
     {
         SqliteDatabase db(path);
         db.migrate();
-        REQUIRE(db.schemaVersion() == 10);
+        REQUIRE(db.schemaVersion() == 12);
         SqliteMediaRepository repo(db);
         const auto scanId = repo.createScan({0, "D:/sample", "running", 1, 0, 0, ""});
         const auto mediaId = repo.insertMedia({0, scanId, "D:/sample/01.mkv", "01.mkv", "1.5", "normal", 1234, "inbox", 0.9});
@@ -108,20 +108,22 @@ TEST_CASE("scan and inbox records survive reopening a migrated database") {
     {
         SqliteDatabase db(path);
         db.migrate();
-        REQUIRE(db.schemaVersion() == 10);
+        REQUIRE(db.schemaVersion() == 12);
         SqliteMediaRepository repo(db);
         const auto scans = repo.listScans();
         const auto media = repo.listInbox();
         REQUIRE(scans.size() == 2);
         REQUIRE(scans.front().source == "D:/sample");
         REQUIRE(scans.front().status == "completed");
-        REQUIRE(media.size() == 2);
-        REQUIRE(media.front().origin == "qb_download");
-        REQUIRE(media.back().origin == "external_import");
-        REQUIRE(media.front().episodeNumber == "2.5");
-        REQUIRE(media.front().season == "2026 Autumn");
-        REQUIRE(media.front().bangumiSubjectId == 12345);
-        REQUIRE(media.front().scanId == scans.front().id);
+        REQUIRE(media.size() == 1);
+        REQUIRE(media.front().origin == "external_import");
+        const auto bound = repo.findMediaBySourcePath("D:/sample/01.mkv");
+        REQUIRE(bound);
+        REQUIRE(bound->origin == "qb_download");
+        REQUIRE(bound->episodeNumber == "2.5");
+        REQUIRE(bound->season == "2026 Autumn");
+        REQUIRE(bound->bangumiSubjectId == 12345);
+        REQUIRE(bound->scanId == scans.front().id);
     }
 }
 
@@ -141,9 +143,10 @@ TEST_CASE("schema migration six backfills parsed titles from existing correction
         "ALTER TABLE media_file DROP COLUMN folder_import_id;"
         "DROP TABLE folder_import;"
         "DROP TABLE game_resource; DROP TABLE novel_file; DROP TABLE novel_work; DROP TABLE novel_source;"
-        "ALTER TABLE media_file DROP COLUMN parsed_title; PRAGMA user_version=5;", nullptr, nullptr, nullptr) == SQLITE_OK);
+        "ALTER TABLE media_file DROP COLUMN parsed_title; ALTER TABLE media_file DROP COLUMN raw_episode_number;"
+        "ALTER TABLE media_file DROP COLUMN episode_number_source; DROP TABLE bangumi_episode_mapping; DROP TABLE anime_merge_preview; DROP TRIGGER anime_identity_insert; DROP TABLE anime_identity; PRAGMA user_version=5;", nullptr, nullptr, nullptr) == SQLITE_OK);
     db.migrate();
-    REQUIRE(db.schemaVersion() == 10);
+    REQUIRE(db.schemaVersion() == 12);
     SqliteMediaRepository repo(db);
     const auto media = repo.getMedia(1);
     REQUIRE(media);
@@ -151,6 +154,40 @@ TEST_CASE("schema migration six backfills parsed titles from existing correction
     const auto unparsed = repo.getMedia(2);
     REQUIRE(unparsed);
     REQUIRE(unparsed->parsedTitle.empty());
+}
+
+TEST_CASE("migration eleven preserves existing numbers and manual provenance") {
+    const auto path = std::filesystem::temp_directory_path() /
+        ("anime-vault-episode-migration-" + std::to_string(std::random_device{}()) + ".db");
+    struct Cleanup { std::filesystem::path path; ~Cleanup() { std::error_code ec; std::filesystem::remove(path, ec); } } cleanup{path};
+    {
+        SqliteDatabase db(path);
+        db.migrate();
+        REQUIRE(sqlite3_exec(db.handle(),
+            "ALTER TABLE media_file DROP COLUMN raw_episode_number; ALTER TABLE media_file DROP COLUMN episode_number_source;"
+            "DROP TABLE bangumi_episode_mapping; DROP TABLE anime_merge_preview; DROP TRIGGER anime_identity_insert; DROP TABLE anime_identity; PRAGMA user_version=10;"
+            "INSERT INTO anime(id,display_title) VALUES(1,'Auto'),(2,'User title');"
+            "INSERT INTO anime_alias(anime_id,normalized_alias,source) VALUES(2,'user','user');"
+            "INSERT INTO media_file(id,anime_id,source_path,filename,episode_number,episode_type,size_bytes,status) VALUES"
+            "(1,1,'C:/test/auto.mkv','auto.mkv','27','normal',1,'inbox'),"
+            "(2,1,'C:/test/manual.mkv','manual.mkv','7','normal',1,'inbox'),"
+            "(3,2,'C:/test/title.mkv','title.mkv','3','normal',1,'inbox');"
+            "INSERT INTO audit_log(action,entity_type,entity_id,details_json) VALUES('episode_edited','media_file','2','{}');",
+            nullptr, nullptr, nullptr) == SQLITE_OK);
+        db.migrate();
+        SqliteMediaRepository repo(db);
+        REQUIRE(repo.getMedia(1)->rawEpisodeNumber == "27");
+        REQUIRE(repo.getMedia(1)->episodeNumberSource == "parsed");
+        REQUIRE(repo.getMedia(2)->rawEpisodeNumber == "7");
+        REQUIRE(repo.getMedia(2)->episodeNumberSource == "manual");
+        REQUIRE(repo.getMedia(3)->episodeNumberSource == "manual");
+    }
+    SqliteDatabase db(path);
+    db.migrate();
+    SqliteMediaRepository repo(db);
+    REQUIRE(db.schemaVersion() == 12);
+    REQUIRE(repo.getMedia(1)->rawEpisodeNumber == "27");
+    REQUIRE(repo.getMedia(2)->episodeNumber == "7");
 }
 
 TEST_CASE("user correction records title aliases and automatic scans never rename canonical anime") {

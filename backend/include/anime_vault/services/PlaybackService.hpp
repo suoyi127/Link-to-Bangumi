@@ -1,7 +1,7 @@
 #pragma once
 
 #include "anime_vault/infrastructure/ProcessLauncher.hpp"
-#include "anime_vault/repositories/MediaRepository.hpp"
+#include "anime_vault/ports/ScanRepository.hpp"
 
 #include <filesystem>
 #include <stdexcept>
@@ -20,14 +20,14 @@ private:
 
 class PlaybackService {
 public:
-    PlaybackService(MediaRepository& repository, std::filesystem::path sourceRoot,
+    PlaybackService(ScanRepository& repository, std::filesystem::path sourceRoot,
                     std::filesystem::path importRoot, std::filesystem::path libraryRoot,
                     ProcessLauncher& launcher);
     // 根据媒体 ID 解析并校验真实文件，再将可执行文件和参数分开交给系统启动器。
     void play(std::int64_t mediaId, const std::string& executable,
               const std::string& playerType = "mpv") const;
 private:
-    MediaRepository& repository_;
+    ScanRepository& repository_;
     std::filesystem::path sourceRoot_, importRoot_, libraryRoot_;
     ProcessLauncher& launcher_;
 };

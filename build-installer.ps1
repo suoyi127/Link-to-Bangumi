@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory=$true)][string]$PackageDir,
     [string]$IsccPath,
-    [string]$AppVersion = '0.1.0'
+    [string]$AppVersion = '0.1.2'
 )
 
 $ErrorActionPreference = 'Stop'

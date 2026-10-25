@@ -1,6 +1,7 @@
-find_package(Drogon CONFIG REQUIRED)
+ find_package(Drogon CONFIG REQUIRED)
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
+find_package(Threads REQUIRED)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/001_initial.sql" ANIME_VAULT_INITIAL_SQL)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/002_media_correction.sql" ANIME_VAULT_CORRECTION_SQL)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/003_source_snapshot.sql" ANIME_VAULT_SOURCE_SNAPSHOT_SQL)
@@ -11,6 +12,8 @@ file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/007_folder_import.sql" ANIME_V
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/008_novel_library.sql" ANIME_VAULT_NOVEL_SQL)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/009_game_library.sql" ANIME_VAULT_GAME_SQL)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/010_game_vndb.sql" ANIME_VAULT_GAME_VNDB_SQL)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/011_episode_number_mapping.sql" ANIME_VAULT_EPISODE_MAPPING_SQL)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/012_anime_merge_preview.sql" ANIME_VAULT_ANIME_MERGE_SQL)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/migrations/001_initial.sql"
   "${CMAKE_CURRENT_SOURCE_DIR}/migrations/002_media_correction.sql"
@@ -21,26 +24,42 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/migrations/007_folder_import.sql"
   "${CMAKE_CURRENT_SOURCE_DIR}/migrations/008_novel_library.sql"
   "${CMAKE_CURRENT_SOURCE_DIR}/migrations/009_game_library.sql"
-  "${CMAKE_CURRENT_SOURCE_DIR}/migrations/010_game_vndb.sql")
+  "${CMAKE_CURRENT_SOURCE_DIR}/migrations/010_game_vndb.sql"
+  "${CMAKE_CURRENT_SOURCE_DIR}/migrations/011_episode_number_mapping.sql"
+  "${CMAKE_CURRENT_SOURCE_DIR}/migrations/012_anime_merge_preview.sql")
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/infrastructure/database/InitialSql.hpp.in"
   "${CMAKE_CURRENT_BINARY_DIR}/generated/InitialSql.hpp" @ONLY)
 
 add_library(anime_vault_storage STATIC
+  src/infrastructure/database/SqliteNovelRepository.cpp
+  src/infrastructure/database/SqliteGameRepository.cpp
   src/infrastructure/database/SqliteDatabase.cpp
   src/infrastructure/database/SqliteMediaRepository.cpp
+  src/infrastructure/database/SqliteScanRepository.cpp
+  src/infrastructure/database/SqliteOrganizationRepository.cpp
+  src/infrastructure/database/SqliteSettingsRepository.cpp
+  src/infrastructure/database/SqliteMetadataCache.cpp
+  src/infrastructure/database/SqliteAnimeRepository.cpp
+  src/infrastructure/database/SqliteAnimeMerge.cpp
 )
 target_include_directories(anime_vault_storage PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(anime_vault_storage PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
 target_compile_features(anime_vault_storage PUBLIC cxx_std_20)
-target_link_libraries(anime_vault_storage PUBLIC unofficial::sqlite3::sqlite3)
+target_link_libraries(anime_vault_storage PUBLIC unofficial::sqlite3::sqlite3 PRIVATE nlohmann_json::nlohmann_json)
 anime_vault_apply_warnings(anime_vault_storage)
 anime_vault_apply_sanitizers(anime_vault_storage)
 anime_vault_apply_lto(anime_vault_storage)
 
 add_library(anime_vault_core STATIC
+  src/services/NovelService.cpp
+  src/services/GameService.cpp
+  src/infrastructure/NativeLibraryFileAccess.cpp
   src/Core.cpp
+  src/application/MediaService.cpp
+  src/application/QbCompletedScanCoordinator.cpp
   src/domain/EpisodeNumber.cpp
   src/services/FilenameParser.cpp
+  src/services/QbRssRules.cpp
   src/services/MikanTitleParser.cpp
   src/services/DirectoryScanner.cpp
   src/services/TargetPlanner.cpp
@@ -57,6 +76,7 @@ target_include_directories(anime_vault_core PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 target_compile_features(anime_vault_core PUBLIC cxx_std_20)
+target_link_libraries(anime_vault_core PRIVATE nlohmann_json::nlohmann_json Threads::Threads)
 if(WIN32)
   target_link_libraries(anime_vault_core PRIVATE shell32 ole32 Advapi32)
 endif()
@@ -64,7 +84,7 @@ anime_vault_apply_warnings(anime_vault_core)
 anime_vault_apply_sanitizers(anime_vault_core)
 anime_vault_apply_lto(anime_vault_core)
 
-add_library(anime_vault_bangumi_service STATIC src/services/BangumiService.cpp src/services/BangumiCalendarService.cpp src/services/AnimeEnricher.cpp src/services/MikanEnricher.cpp src/services/CoverScraper.cpp src/services/NovelService.cpp src/services/NovelBangumiService.cpp src/services/GameService.cpp src/services/GameBangumiService.cpp)
+add_library(anime_vault_bangumi_service STATIC src/services/BangumiService.cpp src/services/BangumiCalendarService.cpp src/services/AnimeEnricher.cpp src/services/MikanEnricher.cpp src/services/CoverScraper.cpp src/services/NovelBangumiService.cpp src/services/GameBangumiService.cpp)
 target_sources(anime_vault_bangumi_service PRIVATE src/services/VndbTransport.cpp)
 target_include_directories(anime_vault_bangumi_service PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(anime_vault_bangumi_service PUBLIC cxx_std_20)
@@ -86,9 +106,16 @@ anime_vault_apply_sanitizers(anime_vault_bangumi_transport)
 anime_vault_apply_lto(anime_vault_bangumi_transport)
 
 add_library(anime_vault_api STATIC
+  src/api/HttpSupport.cpp
   src/api/HealthController.cpp
   src/api/MediaController.cpp
-  src/api/MediaService.cpp
+  src/api/MediaJson.cpp
+  src/api/ScanController.cpp
+  src/api/AnimeController.cpp
+  src/api/OrganizationController.cpp
+  src/api/PlaybackController.cpp
+  src/api/SettingsController.cpp
+  src/api/QbRssController.cpp
   src/api/QbConfigController.cpp
   src/api/BangumiConfigController.cpp
   src/api/NovelController.cpp

@@ -1,7 +1,7 @@
 #include "anime_vault/api/QbConfigController.hpp"
+#include "anime_vault/api/HttpSupport.hpp"
 
 #include <drogon/drogon.h>
-#include <atomic>
 #include <functional>
 #include <stdexcept>
 #include <utility>
@@ -10,21 +10,12 @@ namespace anime_vault::api {
 namespace {
 using Request = drogon::HttpRequestPtr;
 using Callback = std::function<void(const drogon::HttpResponsePtr&)>;
-std::atomic_uint64_t sequence{0};
 
 void reply(Callback callback, int status, Json::Value payload) {
-    const auto id = std::to_string(++sequence);
-    payload["requestId"] = id;
-    auto response = drogon::HttpResponse::newHttpJsonResponse(payload);
-    response->setStatusCode(static_cast<drogon::HttpStatusCode>(status));
-    response->addHeader("X-Request-Id", id);
-    callback(response);
+    deliver(std::move(callback), requestContext({}, RequestIdPolicy::QbConfig), status, std::move(payload));
 }
 void failure(Callback callback, int status, const std::string& code) {
-    Json::Value payload;
-    payload["error"]["code"] = code;
-    payload["error"]["message"] = code;
-    reply(std::move(callback), status, std::move(payload));
+    reply(std::move(callback), status, errorJson(code, code));
 }
 QbConfigRequest requestBody(const Request& request) {
     if (request->body().size() > 2048)
@@ -37,9 +28,7 @@ QbConfigRequest requestBody(const Request& request) {
 }
 void handleError(Callback callback, const std::exception& error) {
     if (const auto* known = dynamic_cast<const QbConfigError*>(&error)) {
-        const int status = known->code == "request_too_large" ? 413 :
-            known->code == "qb_config_storage_failed" || known->code == "qb_config_corrupt" ||
-            known->code == "qb_config_storage_unavailable" ? 500 : 400;
+        const int status = qbConfigErrorStatus(known->code);
         failure(std::move(callback), status, known->code);
     } else failure(std::move(callback), 500, "internal_error");
 }
@@ -56,7 +45,7 @@ Json::Value statusJson(const QbStatus& status) {
 }
 
 QbConfigRequest parseQbConfigRequest(const Json::Value& body) {
-    if (!body.isObject() || body.size() != 3 || !body["url"].isString() ||
+    if (!hasExactFields(body, {"url", "username", "password"}) || !body["url"].isString() ||
         !body["username"].isString() || !body["password"].isString())
         throw QbConfigError("invalid_request", "url, username and password required");
     return {body["url"].asString(), body["username"].asString(), body["password"].asString()};

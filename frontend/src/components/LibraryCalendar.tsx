@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Alert, Button, Card, Input, List, Space, Spin, Tag, Typography } from 'antd'
-import { getAnimeCalendar } from '../api/client'
+import { Alert, Button, Card, Input, Space, Spin, Tag, Typography } from 'antd'
+import { getAnimeCalendar } from '../api/anime'
 import type { AnimeCalendar } from '../api/types'
 import { AnimeCover } from './AnimeCover'
 
@@ -41,12 +41,12 @@ export function LibraryCalendar({ onOpenAnime }: { onOpenAnime: (id: number) => 
         const items = day.items.filter((item) => `${item.displayTitle} ${item.originalTitle}`.toLocaleLowerCase().includes(keyword))
         return <section className="calendar-day" key={day.weekday} aria-label={`${label}排期`} style={{ width: '100%' }}>
           <Typography.Title level={4}>{label} {label === today && <Tag color="blue">今天</Tag>} <Typography.Text type="secondary">{items.length} 部</Typography.Text></Typography.Title>
-          {items.length === 0 ? <Typography.Text type="secondary">{keyword ? '没有匹配的番剧' : '暂无本地番剧'}</Typography.Text> : <List grid={{ gutter: 16, column: 2 }} dataSource={items} renderItem={(item) => <List.Item>
-            <Card hoverable cover={<AnimeCover key={`${item.id}-${item.coverUrl}`} item={item} />} styles={{ body: { padding: 12 } }} style={{ overflow: 'hidden' }}>
+          {items.length === 0 ? <Typography.Text type="secondary">{keyword ? '没有匹配的番剧' : '暂无本地番剧'}</Typography.Text> : <div className="calendar-posters">{items.map((item) => <div key={item.id}>
+            <Card hoverable cover={<AnimeCover key={`${item.id}-${item.coverUrl}`} item={item} />} styles={{ body: { padding: 8 } }} style={{ overflow: 'hidden' }}>
               <Button type="link" aria-label={`打开 ${item.displayTitle}`} onClick={() => onOpenAnime(item.id)} style={{ maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.displayTitle}</Button>
               <div><Typography.Text type="secondary">{item.season || '季数未标注'}</Typography.Text></div>
             </Card>
-          </List.Item>} />}
+          </div>)}</div>}
         </section>
       })}</div>
     </>}

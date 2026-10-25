@@ -7,6 +7,8 @@
 #include <atomic>
 #include <cctype>
 #include <limits>
+#include <cmath>
+#include <unordered_set>
 #include <stdexcept>
 
 namespace anime_vault {
@@ -174,8 +176,8 @@ auto once(Callback callback) {
 }
 }
 
-BangumiService::BangumiService(MediaRepository& repository, BangumiTransport& transport, Clock clock)
-    : repository_(repository), transport_(transport), clock_(std::move(clock)) {}
+BangumiService::BangumiService(MediaRepository& repository, BangumiTransport& transport, Clock clock, Scheduler scheduler)
+    : scheduler_(std::move(scheduler)), repository_(repository), transport_(transport), clock_(std::move(clock)) {}
 
 bool BangumiService::allowRequest(TimePoint now) {
     std::lock_guard lock(rateMutex_);
@@ -185,7 +187,75 @@ bool BangumiService::allowRequest(TimePoint now) {
     return true;
 }
 
-void BangumiService::search(BangumiMatchQuery query, SearchCompletion completion) {
+void BangumiService::remoteRateLimited() {
+    std::lock_guard lock(rateMutex_);
+    remoteRetryAt_ = std::max(remoteRetryAt_, clock_() + std::chrono::minutes{1});
+}
+
+void BangumiService::scheduleRequest(Priority priority, std::function<void()> action,
+                                    std::function<void(std::string)> rejected) {
+    // 未注入事件循环的嵌入调用仍明确区分本地预算；生产服务始终注入非阻塞定时器。
+    if (!scheduler_) {
+        bool cooling;
+        { std::lock_guard lock(rateMutex_); cooling = remoteRetryAt_ > clock_(); }
+        if (cooling) rejected("bangumi_remote_rate_limited");
+        else if (allowRequest(clock_())) action();
+        else rejected("bangumi_local_rate_limited");
+        return;
+    }
+    bool full;
+    {
+        std::lock_guard lock(rateMutex_);
+        full = manualQueue_.size() + backgroundQueue_.size() >= 128;
+        if (!full) (priority == Priority::manual ? manualQueue_ : backgroundQueue_).push_back({std::move(action)});
+    }
+    if (full) { rejected("bangumi_queue_full"); return; }
+    pumpRequests();
+}
+
+void BangumiService::pumpRequests() {
+    {
+        std::lock_guard lock(rateMutex_);
+        if (pumping_) return;
+        pumping_ = true;
+    }
+    for (;;) {
+        std::function<void()> action;
+        std::optional<std::chrono::milliseconds> delay;
+        {
+            std::lock_guard lock(rateMutex_);
+            const auto now = clock_();
+            std::erase_if(recentRequests_, [now](TimePoint at) { return at + std::chrono::minutes{1} <= now; });
+            auto& queue = manualQueue_.empty() ? backgroundQueue_ : manualQueue_;
+            // 后台最多使用8个槽位；手动请求优先消费队列且可使用完整10个槽位。
+            const auto limit = manualQueue_.empty() ? 8u : 10u;
+            if (!queue.empty() && remoteRetryAt_ <= now && recentRequests_.size() < limit) {
+                action = std::move(queue.front().action); queue.pop_front(); recentRequests_.push_back(now);
+            } else {
+                pumping_ = false;
+                if (!queue.empty() && !timerArmed_) {
+                    auto wake = remoteRetryAt_;
+                    if (recentRequests_.size() >= limit) wake = std::max(wake, recentRequests_.front() + std::chrono::minutes{1});
+                    delay = std::max(std::chrono::milliseconds{1}, std::chrono::duration_cast<std::chrono::milliseconds>(wake - now));
+                    timerArmed_ = true;
+                }
+            }
+        }
+        if (action) { action(); continue; }
+        if (delay) {
+            const auto weak = weak_from_this();
+            scheduler_(*delay, [weak] {
+                if (const auto self = weak.lock()) {
+                    { std::lock_guard lock(self->rateMutex_); self->timerArmed_ = false; }
+                    self->pumpRequests();
+                }
+            });
+        }
+        return;
+    }
+}
+
+void BangumiService::search(BangumiMatchQuery query, SearchCompletion completion, Priority priority) {
     std::string normalized;
     try { normalized = normalizeQuery(query.title); }
     catch (...) { completion({{}, "bangumi_invalid_query"}); return; }
@@ -218,15 +288,16 @@ void BangumiService::search(BangumiMatchQuery query, SearchCompletion completion
         completion({{}, "bangumi_unavailable", cached->retryCount, fromSeconds(*cached->retryAfter)});
         return;
     }
-    if (!allowRequest(now)) { completion({{}, "bangumi_rate_limited"}); return; }
     auto self = shared_from_this();
     auto finish = once<BangumiSearchResult>(std::move(completion));
+    scheduleRequest(priority, [self, normalized, key, now, query = std::move(query), cached = std::move(cached), finish]() mutable {
     try {
-        transport_.search(normalized, [self, key, startedAt = seconds(now), query = std::move(query), cached = std::move(cached),
+        self->transport_.search(normalized, [self, key, startedAt = seconds(now), query = std::move(query), cached = std::move(cached),
                                        finish](std::optional<BangumiTransport::Response> response,
                                                                          std::string) mutable {
             const auto callbackNow = self->clock_();
             const int status = response ? response->status : 0;
+            if (status == 429) { self->remoteRateLimited(); finish({{}, "bangumi_remote_rate_limited", 0, self->clock_() + std::chrono::minutes{1}}); return; }
             if (!response || retryable(status)) {
                 const int retries = std::min(cached ? cached->retryCount + 1 : 1, 5);
                 const auto retryAt = callbackNow + std::chrono::minutes{backoffMinutes(retries)};
@@ -248,16 +319,32 @@ void BangumiService::search(BangumiMatchQuery query, SearchCompletion completion
               catch (...) { finish({{}, "bangumi_storage_error"}); }
         });
     } catch (...) { finish({{}, "bangumi_unavailable"}); }
+    }, [finish](std::string code) { finish({{}, std::move(code)}); });
 }
 
-void BangumiService::subject(std::int64_t id, SubjectCompletion completion) {
+void BangumiService::subject(std::int64_t id, SubjectCompletion completion, Priority priority) {
     if (id <= 0) { completion({std::nullopt, "bangumi_invalid_subject_id"}); return; }
-    if (!allowRequest(clock_())) { completion({std::nullopt, "bangumi_rate_limited"}); return; }
+    std::optional<BangumiSubject> cached;
+    {
+        std::lock_guard lock(rateMutex_);
+        const auto found = subjectCache_.find(id);
+        if (found != subjectCache_.end() && found->second.first > clock_()) cached = found->second.second;
+    }
+    if (cached) { completion({std::move(cached), ""}); return; }
     auto self = shared_from_this();
-    auto finish = once<BangumiSubjectResult>(std::move(completion));
+    auto finish = once<BangumiSubjectResult>([self, id, completion = std::move(completion)](BangumiSubjectResult result) mutable {
+        if (result.subject && result.errorCode.empty()) {
+            std::lock_guard lock(self->rateMutex_);
+            if (self->subjectCache_.size() >= 256) self->subjectCache_.clear();
+            self->subjectCache_[id] = {self->clock_() + std::chrono::minutes{result.subject->episodes.empty() ? 1 : 15}, *result.subject};
+        }
+        completion(std::move(result));
+    });
+    scheduleRequest(priority, [self, id, finish, priority] {
     try {
-        transport_.subject(id, [self, finish, id](
+        self->transport_.subject(id, [self, finish, id, priority](
                                std::optional<BangumiTransport::Response> response, std::string) mutable {
+            if (response && response->status == 429) { self->remoteRateLimited(); finish({std::nullopt, "bangumi_remote_rate_limited"}); return; }
             if (!response || retryable(response->status)) {
                 finish({std::nullopt, "bangumi_unavailable"}); return;
             }
@@ -268,26 +355,102 @@ void BangumiService::subject(std::int64_t id, SubjectCompletion completion) {
                 auto subject = parseSubjectBody(response->body);
                 if (subject.id != id) { finish({std::nullopt, "bangumi_bad_response"}); return; }
                 if (subject.type != 2) { finish({std::nullopt, "bangumi_not_animation"}); return; }
-                finish({std::move(subject), ""});
+                self->loadEpisodes(std::move(subject), 0, -1, finish, 0, priority);
             } catch (...) { finish({std::nullopt, "bangumi_bad_response"}); }
         });
     } catch (...) { finish({std::nullopt, "bangumi_unavailable"}); }
+    }, [finish](std::string code) { finish({std::nullopt, std::move(code)}); });
 }
 
-void BangumiService::aliasSubject(std::string title, SubjectCompletion completion) {
+void BangumiService::episodeMapping(std::int64_t id, SubjectCompletion completion, Priority priority) {
+    if (id <= 0) { completion({std::nullopt, "bangumi_invalid_subject_id"}); return; }
+    const auto now = clock_();
+    std::optional<BangumiSubject> cached;
+    {
+        std::lock_guard lock(rateMutex_);
+        const auto found = episodeCache_.find(id);
+        if (found != episodeCache_.end() && found->second.first > now) cached = found->second.second;
+    }
+    if (cached) { completion({std::move(cached), ""}); return; }
+    BangumiSubject subject;
+    subject.id = id; subject.type = 2;
+    auto self = shared_from_this();
+    loadEpisodes(std::move(subject), 0, -1, [self, id, completion = std::move(completion)](BangumiSubjectResult result) {
+        if (result.subject) {
+            // 完整分集表短期复用；失败仅退避一分钟，避免高频扫描占满网络限额。
+            std::lock_guard lock(self->rateMutex_);
+            if (self->episodeCache_.size() >= 256) self->episodeCache_.clear();
+            const auto ttl = std::chrono::minutes{result.subject->episodes.empty() ? 1 : 15};
+            self->episodeCache_[id] = {self->clock_() + ttl, *result.subject};
+        }
+        completion(std::move(result));
+    }, 0, priority);
+}
+
+void BangumiService::loadEpisodes(BangumiSubject subject, int offset, int total, SubjectCompletion completion, int pages, Priority priority) {
+    auto finish = once<BangumiSubjectResult>(std::move(completion));
+    auto fallback = [finish, subject]() mutable { subject.episodes.clear(); finish({std::move(subject), ""}); };
+    if (pages >= 10) { fallback(); return; }
+    auto self = shared_from_this();
+    scheduleRequest(priority, [self, subject = std::move(subject), offset, total, finish, fallback, pages, priority]() mutable {
+    try {
+        const auto id = subject.id;
+        self->transport_.episodes(id, offset,
+            [self, subject = std::move(subject), offset, total, finish, fallback, pages, priority]
+            (std::optional<BangumiTransport::Response> response, std::string) mutable {
+            // 分集表不可用时仍允许绑定；不以猜测的偏移量改写集数。
+            if (response && response->status == 429) self->remoteRateLimited();
+            if (!response || response->status != 200) { fallback(); return; }
+            try {
+                if (response->body.empty() || response->body.size() > kMaxBody) throw std::invalid_argument("episode size");
+                const auto document = nlohmann::json::parse(response->body);
+                if (!document.is_object() || !document.contains("total") || !document["total"].is_number_integer() ||
+                    !document.contains("offset") || !document["offset"].is_number_integer() || document["offset"].get<int>() != offset ||
+                    !document.contains("data") || !document["data"].is_array() || document["data"].size() > 100)
+                    throw std::invalid_argument("episode page");
+                const auto count = document["total"].get<int>();
+                if (count < 0 || count > 1000 || (total >= 0 && total != count) ||
+                    offset + static_cast<int>(document["data"].size()) > count)
+                    throw std::invalid_argument("episode total");
+                std::unordered_set<std::string> sorts, eps;
+                for (const auto& mapping : subject.episodes) { sorts.insert(mapping.sort); eps.insert(mapping.ep); }
+                for (const auto& item : document["data"]) {
+                    if (!item.is_object() || !item.contains("type") || !item["type"].is_number_integer() || item["type"].get<int>() != 0 ||
+                        !item.contains("sort") || !item["sort"].is_number() || !item.contains("ep") || !item["ep"].is_number())
+                        throw std::invalid_argument("episode fields");
+                    const double sort = item["sort"].get<double>(), ep = item["ep"].get<double>();
+                    if (!std::isfinite(sort) || !std::isfinite(ep) || sort <= 0 || ep <= 0 || sort > 10000 || ep > 10000 ||
+                        std::floor(sort) != sort || std::floor(ep) != ep) throw std::invalid_argument("episode number");
+                    BangumiEpisodeMapping mapping{std::to_string(static_cast<int>(sort)), std::to_string(static_cast<int>(ep))};
+                    if (!sorts.insert(mapping.sort).second || !eps.insert(mapping.ep).second) throw std::invalid_argument("episode ambiguity");
+                    subject.episodes.push_back(std::move(mapping));
+                }
+                const auto next = offset + static_cast<int>(document["data"].size());
+                if (next < count) {
+                    if (next == offset) throw std::invalid_argument("empty episode page");
+                    self->loadEpisodes(std::move(subject), next, count, finish, pages + 1, priority);
+                } else finish({std::move(subject), ""});
+            } catch (...) { fallback(); }
+        });
+    } catch (...) { fallback(); }
+    }, [fallback](std::string) mutable { fallback(); });
+}
+
+void BangumiService::aliasSubject(std::string title, SubjectCompletion completion, Priority priority) {
     try { (void)normalizeQuery(title); }
     catch (...) { completion({std::nullopt, "bangumi_invalid_query"}); return; }
     auto self = shared_from_this();
     auto finish = once<BangumiSubjectResult>(std::move(completion));
     auto attempt = std::make_shared<std::function<void(std::string, bool)>>();
-    *attempt = [self, title, finish, weak = std::weak_ptr<std::function<void(std::string, bool)>>(attempt)]
+    *attempt = [self, title, finish, priority, weak = std::weak_ptr<std::function<void(std::string, bool)>>(attempt)]
         (std::string keyword, bool retry) {
-        if (!self->allowRequest(self->clock_())) { finish({std::nullopt, "bangumi_rate_limited"}); return; }
+        const auto next = weak.lock();
+        self->scheduleRequest(priority, [self, keyword, next, title, finish, retry, priority] {
         try {
-            const auto next = weak.lock();
             self->transport_.searchAliases(keyword,
-                [self, title, finish, next, retry](std::optional<BangumiTransport::Response> response, std::string) {
-                if (!response || retryable(response->status)) {
+                [self, title, finish, next, retry, priority](std::optional<BangumiTransport::Response> response, std::string) {
+                if (response && response->status == 429) { self->remoteRateLimited(); finish({std::nullopt, "bangumi_remote_rate_limited"}); return; }
+            if (!response || retryable(response->status)) {
                     finish({std::nullopt, "bangumi_unavailable"}); return;
                 }
                 if (response->status != 200) { finish({std::nullopt, "bangumi_http_error"}); return; }
@@ -305,9 +468,10 @@ void BangumiService::aliasSubject(std::string title, SubjectCompletion completio
                 self->subject(*id, [title, finish](BangumiSubjectResult result) {
                     if (result.subject && !verifiedAlias(title, *result.subject)) result.subject.reset();
                     finish(std::move(result));
-                });
+                }, priority);
             });
         } catch (...) { finish({std::nullopt, "bangumi_unavailable"}); }
+        }, [finish](std::string code) { finish({std::nullopt, std::move(code)}); });
     };
     (*attempt)(std::move(title), true);
 }

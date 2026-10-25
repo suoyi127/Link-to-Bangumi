@@ -32,6 +32,7 @@ public:
     void search(std::string keyword, BangumiTransport::Completion completion) override;
     void searchAliases(std::string keyword, BangumiTransport::Completion completion) override;
     void subject(std::int64_t id, BangumiTransport::Completion completion) override;
+    void episodes(std::int64_t id, int offset, BangumiTransport::Completion completion) override;
     void searchBooks(std::string keyword, BangumiTransport::Completion completion) override;
     void searchGames(std::string keyword, BangumiTransport::Completion completion) override;
     void calendar(BangumiTransport::Completion completion) override;

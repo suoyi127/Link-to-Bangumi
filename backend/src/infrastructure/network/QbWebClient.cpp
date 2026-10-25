@@ -1,18 +1,15 @@
 #include "anime_vault/infrastructure/network/QbWebClient.hpp"
-#include "anime_vault/services/TitleNormalization.hpp"
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <stdexcept>
 #include <charconv>
 #include <chrono>
 #include <filesystem>
 #include <iomanip>
-#include <regex>
 #include <sstream>
 #include <thread>
-#include <unordered_map>
-#include <unordered_set>
 #include <utility>
 
 namespace anime_vault {
@@ -109,135 +106,53 @@ std::optional<std::string> QbWebClient::loginCookie(const drogon::HttpResponsePt
 }
 
 QbMikanCatalog QbWebClient::parseMikanItems(std::string_view body) {
-    if (body.empty() || body.size() > 4 * 1024 * 1024)
-        throw std::invalid_argument("invalid qB RSS response size");
-    const auto root = nlohmann::json::parse(body);
-    if (!root.is_object()) throw std::invalid_argument("invalid qB RSS response");
-    QbMikanCatalog result;
-    std::unordered_map<std::string, MikanTitlePair> unique;
-    std::unordered_set<std::string> conflicts;
-    static const std::regex mikanUrl(R"(^https://(?:www\.)?mikanani\.(?:me|kas\.pub)/RSS/)",
-                                     std::regex::icase);
-    std::function<void(const nlohmann::json&, int)> visit = [&](const nlohmann::json& node, int depth) {
-        if (depth > 8 || !node.is_object()) return;
-        const auto url = node.value("url", std::string{});
-        if (!url.empty() && std::regex_search(url, mikanUrl) && node.contains("articles") &&
-            node["articles"].is_array()) {
-            ++result.feedCount;
-            result.feeds.push_back({node.value("title", std::string{}),
-                static_cast<int>(node["articles"].size()), node.value("hasError", false)});
-            for (const auto& article : node["articles"]) {
-                if (++result.articleCount > 5000) throw std::invalid_argument("too many RSS articles");
-                if (!article.is_object() || !article.contains("title") ||
-                    !article["title"].is_string()) continue;
-                const auto title = article["title"].get<std::string>();
-                const auto pair = MikanTitleParser::parse(title);
-                if (!pair) continue;
-                const auto key = normalizedTitleKey(pair->alias);
-                if (key.empty() || conflicts.contains(key)) continue;
-                const auto previous = unique.find(key);
-                if (previous == unique.end()) unique.emplace(key, *pair);
-                else if (normalizedTitleKey(previous->second.canonicalTitle) !=
-                         normalizedTitleKey(pair->canonicalTitle)) {
-                    unique.erase(previous);
-                    conflicts.insert(key);
-                }
-            }
-            return;
-        }
-        for (const auto& item : node.items()) visit(item.value(), depth + 1);
-    };
-    visit(root, 0);
-    for (auto& [_, pair] : unique) result.pairs.push_back(std::move(pair));
-    return result;
+    return QbRssRules::parseMikanItems(body);
 }
-
 bool QbWebClient::validMikanFeedUrl(std::string_view url) {
-    if (url.empty() || url.size() > 1024) return false;
-    static const std::regex pattern(
-        R"(^https://(?:www\.)?mikanani\.(?:me|kas\.pub)/RSS/(?:Bangumi|MyBangumi|Search)(?:\?[A-Za-z0-9._~%=&+-]{1,768})?$)",
-        std::regex::icase);
-    return std::regex_match(url.begin(), url.end(), pattern);
+    return QbRssRules::validMikanFeedUrl(url);
 }
-
 std::string QbWebClient::mikanRuleJson(const QbMikanRuleSpec& spec) {
-    if (!validMikanFeedUrl(spec.feedUrl) || spec.ruleName.empty() ||
-        spec.ruleName.size() > 80 || spec.keyword.empty() || spec.keyword.size() > 120 ||
-        spec.savePath.empty() || spec.savePath.size() > 1024 ||
-        !std::filesystem::path(spec.savePath).is_absolute())
-        throw std::invalid_argument("invalid qB Mikan rule");
-    for (const unsigned char ch : spec.ruleName)
-        if (ch < 0x20 || ch == 0x7f) throw std::invalid_argument("invalid qB rule name");
-    for (const unsigned char ch : spec.keyword)
-        if (ch < 0x20 || ch == 0x7f) throw std::invalid_argument("invalid qB rule keyword");
-    for (const auto& component : std::filesystem::path(spec.savePath))
-        if (component == "..") throw std::invalid_argument("invalid qB save path");
-    return nlohmann::json{
-        {"enabled", true}, {"mustContain", spec.keyword}, {"mustNotContain", ""},
-        {"useRegex", false}, {"episodeFilter", ""}, {"smartFilter", false},
-        {"previouslyMatchedEpisodes", nlohmann::json::array()},
-        {"affectedFeeds", nlohmann::json::array({spec.feedUrl})},
-        {"ignoreDays", 0}, {"lastMatch", ""}, {"addPaused", false},
-        {"assignedCategory", ""}, {"savePath", spec.savePath}
-    }.dump();
+    return QbRssRules::mikanRuleJson(spec);
 }
-
-std::string QbWebClient::bracketEpisodePattern() {
-    // qB wraps patterns in word boundaries; include adjacent words so [01] can match.
-    return R"(\w+\s+\[0*(\d{1,3})\]\[[^\]]*\w+)";
-}
-
-std::string QbWebClient::dashedEpisodePattern() {
-    // Match subtitle titles such as "Name - 08 - [1080P]" without treating 1080P as an episode.
-    return R"(\w+\s+-\s+0*([1-9][0-9]{0,2})\s+-\s+\[[^\]]*\w+)";
-}
-
+std::string QbWebClient::bracketEpisodePattern() { return QbRssRules::bracketEpisodePattern(); }
+std::string QbWebClient::dashedEpisodePattern() { return QbRssRules::dashedEpisodePattern(); }
 std::string QbWebClient::autoMikanRuleJson(const QbMikanRuleSpec& spec, bool enabled) {
-    auto validated = spec;
-    validated.keyword = "*";
-    auto rule = nlohmann::json::parse(mikanRuleJson(validated));
-    // Smart filtering rejects unrecognized episodes and remembers the first accepted episode.
-    rule["mustContain"] = "";
-    rule["smartFilter"] = true;
-    rule["enabled"] = enabled;
-    return rule.dump();
+    return QbRssRules::autoMikanRuleJson(spec, enabled);
 }
-
 std::string QbWebClient::autoEpisodePreferencesJson(std::string_view currentPreferences) {
-    const auto current = nlohmann::json::parse(currentPreferences);
-    if (!current.is_object() || !current.contains("rss_smart_episode_filters") ||
-        !current["rss_smart_episode_filters"].is_string())
-        throw std::invalid_argument("invalid qB episode filters");
-    std::string filters = current["rss_smart_episode_filters"].get<std::string>();
-    std::istringstream lines(filters);
-    std::string line;
-    std::unordered_set<std::string> existing;
-    while (std::getline(lines, line)) existing.insert(line);
-    for (const auto& pattern : {bracketEpisodePattern(), dashedEpisodePattern()}) {
-        if (existing.contains(pattern)) continue;
-        if (!filters.empty() && filters.back() != '\n') filters += '\n';
-        filters += pattern;
-    }
-    return nlohmann::json{{"rss_smart_episode_filters", filters},
-                          {"rss_download_repack_proper_episodes", false}}.dump();
+    return QbRssRules::autoEpisodePreferencesJson(currentPreferences);
 }
-
-std::optional<std::string> QbWebClient::readyMikanFeedPath(std::string_view items,
-                                                             std::string_view url) {
-    const auto root = nlohmann::json::parse(items);
-    if (!root.is_object()) throw std::invalid_argument("invalid qB RSS items");
-    for (auto it = root.begin(); it != root.end(); ++it) {
-        const auto& feed = it.value();
-        if (!feed.is_object() || feed.value("url", std::string{}) != url) continue;
-        if (feed.value("isLoading", true) || feed.value("hasError", false) ||
-            !feed.contains("articles") || !feed["articles"].is_array() ||
-            feed["articles"].empty()) return std::nullopt;
-        return it.key();
-    }
-    return std::nullopt;
+std::string QbWebClient::autoMikanHistoryJson(const QbMikanRuleSpec& spec, std::string_view rules,
+                                          std::string_view items, std::string_view torrents) {
+    return QbRssRules::autoMikanHistoryJson(spec, rules, items, torrents);
+}
+std::optional<std::string> QbWebClient::readyMikanFeedPath(std::string_view items, std::string_view url) {
+    return QbRssRules::readyMikanFeedPath(items, url);
 }
 
 bool QbWebClient::configured() const noexcept { return !username_.empty() && !password_.empty(); }
+
+std::vector<std::string> QbWebClient::completedPaths(std::string_view body) {
+    if (body.size() > 4 * 1024 * 1024) throw std::invalid_argument("qB response too large");
+    const auto data = nlohmann::json::parse(body);
+    if (!data.is_array()) throw std::invalid_argument("invalid qB response");
+    std::vector<std::string> paths;
+    for (const auto& torrent : data) {
+        if (!torrent.is_object()) continue;
+        const auto state = torrent.value("state", std::string{});
+        // 做种只读取源文件；校验、错误和未完成任务不能作为完成凭据。
+        if (torrent.value("progress", 0.0) < 1.0 ||
+            (state != "uploading" && state != "stalledUP" && state != "pausedUP" &&
+             state != "stoppedUP" && state != "queuedUP" && state != "forcedUP")) continue;
+        const auto name = torrent.value("content_path", std::string{});
+        const auto path = std::filesystem::path(std::u8string(name.begin(), name.end()));
+        if (!path.is_absolute() || path == path.root_path()) continue;
+        bool traversal = false;
+        for (const auto& part : path) if (part == "..") traversal = true;
+        if (!traversal) paths.push_back(name);
+    }
+    return paths;
+}
 
 void QbWebClient::inspect(Completion completion) const {
     if (!configured()) { completion({false, false, "qb_unconfigured"}); return; }
@@ -299,6 +214,7 @@ void QbWebClient::inspect(Completion completion) const {
                     const auto data = nlohmann::json::parse(response->getBody());
                     if (!data.is_array()) throw std::invalid_argument("invalid qB response");
                     QbStatus status{true, true, "", version};
+                    status.completedPaths = completedPaths(response->getBody());
                     for (const auto& torrent : data) {
                         if (!torrent.is_object()) continue;
                         ++status.torrentCount;
@@ -419,9 +335,7 @@ void QbWebClient::addMikanFeed(std::string url, ActionCompletion completion) con
 }
 
 std::string QbWebClient::mikanFeedForm(const std::string& url) {
-    const auto encoded = formEncode(url);
-    // qB 5.2 requires path even when it uses the feed URL as the default path.
-    return "url=" + encoded + "&path=" + encoded;
+    return QbRssRules::mikanFeedForm(url);
 }
 
 void QbWebClient::addMikanFeedWithAutoRule(std::string url, std::string savePath,
@@ -479,14 +393,23 @@ void QbWebClient::addMikanFeedWithAutoRule(std::string url, std::string savePath
                 if (rules.contains(spec.ruleName)) {
                     completion({false, "qb_rule_exists"}); return;
                 }
+                for (const auto& rule : rules) {
+                    if (!rule.is_object() || !rule.value("enabled", false)) continue;
+                    const auto feeds = rule.value("affectedFeeds", nlohmann::json::array());
+                    if (std::find(feeds.begin(), feeds.end(), spec.feedUrl) != feeds.end()) {
+                        completion({false, "qb_rule_exists"}); return;
+                    }
+                }
                 std::optional<std::string> feedPath;
+                std::string feedItems;
                 for (int attempt = 0; attempt < 30 && !feedPath; ++attempt) {
                     const auto items = send(drogon::Get, "/api/v2/rss/items?withData=true", "", *cookie);
                     if (!items || items->statusCode() != drogon::k200OK ||
                         items->getBody().size() > 4 * 1024 * 1024) {
                         completion({false, "qb_api_unavailable"}); return;
                     }
-                    feedPath = readyMikanFeedPath(items->getBody(), spec.feedUrl);
+                    feedItems = std::string(items->getBody());
+                    feedPath = readyMikanFeedPath(feedItems, spec.feedUrl);
                     if (!feedPath) std::this_thread::sleep_for(std::chrono::milliseconds(500));
                 }
                 if (!feedPath) { completion({false, "qb_feed_not_ready"}); return; }
@@ -511,13 +434,18 @@ void QbWebClient::addMikanFeedWithAutoRule(std::string url, std::string savePath
                         completion({false, "qb_preferences_rejected"}); return;
                     }
                 }
-                // Baseline existing articles before enabling the new download rule.
-                const auto marked = send(drogon::Post, "/api/v2/rss/markAsRead",
-                    "itemPath=" + formEncode(*feedPath), *cookie);
-                if (!marked || marked->statusCode() != drogon::k200OK) {
-                    completion({false, "qb_mark_read_failed"}); return;
+                const auto tasks = send(drogon::Get, "/api/v2/torrents/info", "", *cookie);
+                if (!tasks || tasks->statusCode() != drogon::k200OK || tasks->getBody().size() > 8 * 1024 * 1024) {
+                    completion({false, "qb_api_unavailable"}); return;
                 }
-                // Inserting a disabled rule resets qB's queued old articles before activation.
+                const auto history = nlohmann::json::parse(autoMikanHistoryJson(
+                    spec, rulesResponse->getBody(), feedItems, tasks->getBody()));
+                auto activeRule = nlohmann::json::parse(ruleJson);
+                activeRule["previouslyMatchedEpisodes"] = history;
+                ruleJson = activeRule.dump();
+                activeRule["enabled"] = false;
+                pendingJson = activeRule.dump();
+                // 先创建禁用规则，再启用；已读状态不作为下载完成的证据。
                 const auto pending = send(drogon::Post, "/api/v2/rss/setRule",
                     "ruleName=" + formEncode(spec.ruleName) +
                     "&ruleDef=" + formEncode(pendingJson), *cookie);

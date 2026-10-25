@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Alert, Button, Card, Input, List, Space, Spin, Tag, Typography } from 'antd'
-import { getNovels, readNovel } from '../api/client'
+import { getNovels, readNovel } from '../api/novels'
 import type { NovelWork } from '../api/types'
 
 export function NovelLibraryPage() {

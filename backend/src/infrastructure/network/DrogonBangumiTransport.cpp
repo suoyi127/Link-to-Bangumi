@@ -102,6 +102,15 @@ void DrogonBangumiTransport::subject(std::int64_t id, Completion completion) {
     request->setPath("/v0/subjects/" + std::to_string(id));
     send(request, std::move(completion));
 }
+void DrogonBangumiTransport::episodes(std::int64_t id, int offset, Completion completion) {
+    if (id <= 0 || offset < 0 || offset >= 1000) { completion(std::nullopt, "invalid_episode_query"); return; }
+    auto request = drogon::HttpRequest::newHttpRequest();
+    request->setMethod(drogon::Get);
+    request->setPath("/v0/episodes?subject_id=" + std::to_string(id) + "&type=0&limit=100&offset=" + std::to_string(offset));
+    request->setPathEncode(false);
+    send(request, std::move(completion));
+}
+
 void DrogonBangumiTransport::searchGames(std::string keyword, Completion completion) {
     auto request = drogon::HttpRequest::newHttpRequest();
     request->setMethod(drogon::Post); request->setPath("/v0/search/subjects?limit=20"); request->setPathEncode(false);

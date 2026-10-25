@@ -16,6 +16,9 @@ public:
     virtual void search(std::string keyword, Completion completion) = 0;
     virtual void searchAliases(std::string keyword, Completion completion) = 0;
     virtual void subject(std::int64_t id, Completion completion) = 0;
+    virtual void episodes(std::int64_t, int, Completion completion) {
+        completion(std::nullopt, "bangumi_episodes_unavailable");
+    }
     virtual void searchBooks(std::string, Completion completion) {
         completion(std::nullopt, "bangumi_book_search_unavailable");
     }

@@ -122,3 +122,14 @@ TEST_CASE("Bangumi matcher ranks animation titles conservatively") {
     CHECK(thresholdMargin.items[1].score == 0.92);
     CHECK(thresholdMargin.autoBindEligible);
 }
+
+TEST_CASE("Bangumi verifies exact normalized aliases and keeps ambiguous seasons manual") {
+    const BangumiSubject subject{1, "アン・シャーリー", "安妮·雪莉", "2025-04-05", "", 24, 2, {"Anne Shirley"}};
+    const auto matched = rankBangumiCandidates({"Anne_Shirley"}, {subject});
+    REQUIRE(matched.items.size() == 1);
+    CHECK(matched.autoBindEligible);
+    auto otherSeason = subject;
+    otherSeason.id = 2;
+    CHECK_FALSE(rankBangumiCandidates({"Anne.Shirley"}, {subject, otherSeason}).autoBindEligible);
+    CHECK_FALSE(rankBangumiCandidates({"Anne"}, {subject}).autoBindEligible);
+}

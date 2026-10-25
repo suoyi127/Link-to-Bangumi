@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, Button, Card, Col, Row, Space, Spin, Statistic, Table, Typography } from 'antd'
-import { getAnime, getInbox, getScans, startImportScan, startSourceScan, syncMetadata } from '../api/client'
+import { getAnime, syncMetadata } from '../api/anime'
+import { getInbox, getScans, startImportScan, startSourceScan } from '../api/media'
 import type { MetadataSync, Scan } from '../api/types'
 import { HealthStatus } from './HealthStatus'
 

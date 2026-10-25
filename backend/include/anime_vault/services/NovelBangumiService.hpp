@@ -1,4 +1,5 @@
 #pragma once
+#include "anime_vault/services/CoverScraper.hpp"
 #include "anime_vault/services/NovelService.hpp"
 #include "anime_vault/ports/BangumiTransport.hpp"
 #include <map>

@@ -1,6 +1,8 @@
+#include "anime_vault/infrastructure/NativeLibraryFileAccess.hpp"
+#include "anime_vault/infrastructure/database/SqliteDatabase.hpp"
+#include "anime_vault/infrastructure/database/SqliteNovelRepository.hpp"
 #include "anime_vault/services/NovelService.hpp"
 #include "anime_vault/services/NovelBangumiService.hpp"
-#include "anime_vault/infrastructure/database/SqliteDatabase.hpp"
 #include "anime_vault/infrastructure/ProcessLauncher.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <fstream>
@@ -23,7 +25,7 @@ struct ReaderLauncher : ProcessLauncher {
 };
 TEST_CASE("Deleting a novel requires all files to be unavailable and keeps source files") {
     NovelFixture fixture; fixture.file("Book Vol.01.txt"); fixture.file("Book Vol.02.txt");
-    SqliteDatabase db(fixture.root / "test.db"); db.migrate(); NovelService service(db);
+    SqliteDatabase db(fixture.root / "test.db"); db.migrate(); SqliteNovelRepository serviceRepository(db); NativeLibraryFileAccess serviceFiles; NovelService service(serviceRepository, serviceFiles);
     service.importPath(fixture.root / "books");
     const auto work = service.list().front();
     fs::remove(fixture.root / "books" / "Book Vol.01.txt");
@@ -42,7 +44,7 @@ TEST_CASE("Deleting a novel requires all files to be unavailable and keeps sourc
 }
 TEST_CASE("Novel listing cleans unavailable volumes without removing the novel work") {
     NovelFixture fixture; fixture.file("Book.txt");
-    SqliteDatabase db(fixture.root / "test.db"); db.migrate(); NovelService service(db);
+    SqliteDatabase db(fixture.root / "test.db"); db.migrate(); SqliteNovelRepository serviceRepository(db); NativeLibraryFileAccess serviceFiles; NovelService service(serviceRepository, serviceFiles);
     service.importPath(fixture.root / "books" / "Book.txt");
     const auto id = service.list().front().id;
     fs::remove(fixture.root / "books" / "Book.txt");
@@ -59,7 +61,7 @@ TEST_CASE("Novel listing cleans unavailable volumes without removing the novel w
 TEST_CASE("Novel volume cleanup is independent of other books in the same root") {
     NovelFixture fixture;
     fixture.file("Story Vol.01.txt"); fixture.file("Story Vol.02.txt"); fixture.file("Other.txt");
-    SqliteDatabase db(fixture.root / "test.db"); db.migrate(); NovelService service(db);
+    SqliteDatabase db(fixture.root / "test.db"); db.migrate(); SqliteNovelRepository serviceRepository(db); NativeLibraryFileAccess serviceFiles; NovelService service(serviceRepository, serviceFiles);
     service.importPath(fixture.root / "books");
     fs::remove(fixture.root / "books" / "Story Vol.02.txt");
     const auto works = service.list();
@@ -73,7 +75,7 @@ TEST_CASE("Novel volume cleanup is independent of other books in the same root")
 TEST_CASE("Novel import groups volumes without modifying source files") {
     NovelFixture fixture; fixture.file("Story Vol.01.epub"); fixture.file("Story Vol.02.txt"); fixture.file("ignored.mkv");
     SqliteDatabase db(fixture.root / "test.db"); db.migrate();
-    NovelService service(db);
+    SqliteNovelRepository serviceRepository(db); NativeLibraryFileAccess serviceFiles; NovelService service(serviceRepository, serviceFiles);
     auto imported = service.importPath(fixture.root / "books");
     REQUIRE(imported.fileCount == 2);
     REQUIRE(service.list().size() == 1);
@@ -96,7 +98,7 @@ TEST_CASE("Novel import groups volumes without modifying source files") {
 }
 TEST_CASE("Novel file import preserves binding and manual metadata on rescan") {
     NovelFixture fixture; fixture.file("Book.pdf");
-    SqliteDatabase db(fixture.root / "test.db"); db.migrate(); NovelService service(db);
+    SqliteDatabase db(fixture.root / "test.db"); db.migrate(); SqliteNovelRepository serviceRepository(db); NativeLibraryFileAccess serviceFiles; NovelService service(serviceRepository, serviceFiles);
     service.importPath(fixture.root / "books" / "Book.pdf");
     auto work = service.list().front();
     service.edit(work.id, "中文书名", "作者", "简介");
@@ -121,7 +123,7 @@ TEST_CASE("Novel import recognizes Chinese and bracketed volume markers") {
     const auto a = fixture.root / "books" / fs::path(u8"中文小说 第01卷.epub");
     const auto b = fixture.root / "books" / fs::path(u8"中文小说 (02).txt");
     std::ofstream(a) << "book"; std::ofstream(b) << "book";
-    SqliteDatabase db(fixture.root / "test.db"); db.migrate(); NovelService service(db);
+    SqliteDatabase db(fixture.root / "test.db"); db.migrate(); SqliteNovelRepository serviceRepository(db); NativeLibraryFileAccess serviceFiles; NovelService service(serviceRepository, serviceFiles);
     service.importPath(fixture.root / "books");
     REQUIRE(service.list().size() == 1);
 }
@@ -139,7 +141,7 @@ struct BookCovers : CoverImageFetcher {
 };
 TEST_CASE("Novel scraping binds a book and caches a checked cover independently from anime") {
     NovelFixture fixture; fixture.file("Story Vol.01.epub"); fixture.file("Story Vol.02.txt");
-    SqliteDatabase db(fixture.root / "test.db"); db.migrate(); NovelService service(db); service.importPath(fixture.root / "books");
+    SqliteDatabase db(fixture.root / "test.db"); db.migrate(); SqliteNovelRepository serviceRepository(db); NativeLibraryFileAccess serviceFiles; NovelService service(serviceRepository, serviceFiles); service.importPath(fixture.root / "books");
     BookTransport transport; BookCovers covers; auto scraper = std::make_shared<NovelBangumiService>(service, transport, covers);
     const auto id = service.list().front().id;
     NovelScrapeResult result; scraper->scrape(id, false, {}, [&](auto r) { result = r; });
@@ -152,7 +154,7 @@ TEST_CASE("Novel scraping binds a book and caches a checked cover independently 
 }
 TEST_CASE("An older asynchronous novel binding cannot replace a newer requested binding") {
     NovelFixture fixture; fixture.file("Story.epub");
-    SqliteDatabase db(fixture.root / "test.db"); db.migrate(); NovelService service(db); service.importPath(fixture.root / "books");
+    SqliteDatabase db(fixture.root / "test.db"); db.migrate(); SqliteNovelRepository serviceRepository(db); NativeLibraryFileAccess serviceFiles; NovelService service(serviceRepository, serviceFiles); service.importPath(fixture.root / "books");
     BookTransport transport; transport.defer = true; BookCovers covers; auto scraper = std::make_shared<NovelBangumiService>(service, transport, covers);
     const auto id = service.list().front().id;
     scraper->scrape(id, false, 870, [](auto) {}); scraper->scrape(id, false, 871, [](auto) {});
@@ -162,7 +164,7 @@ TEST_CASE("An older asynchronous novel binding cannot replace a newer requested 
 }
 TEST_CASE("Imported novels scrape serially instead of starting one network thread per book") {
     NovelFixture fixture; fixture.file("Story.epub"); fixture.file("Other.epub");
-    SqliteDatabase db(fixture.root / "test.db"); db.migrate(); NovelService service(db); service.importPath(fixture.root / "books");
+    SqliteDatabase db(fixture.root / "test.db"); db.migrate(); SqliteNovelRepository serviceRepository(db); NativeLibraryFileAccess serviceFiles; NovelService service(serviceRepository, serviceFiles); service.importPath(fixture.root / "books");
     auto works = service.list(); for (const auto& w : works) service.edit(w.id, "Story", "", "");
     BookTransport transport; transport.defer = true; BookCovers covers; auto scraper = std::make_shared<NovelBangumiService>(service, transport, covers);
     scraper->queue({works[0].id, works[1].id});

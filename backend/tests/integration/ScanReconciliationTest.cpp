@@ -1,4 +1,4 @@
-#include "anime_vault/api/MediaService.hpp"
+#include "anime_vault/application/MediaService.hpp"
 #include "anime_vault/infrastructure/database/SqliteDatabase.hpp"
 #include "anime_vault/infrastructure/database/SqliteMediaRepository.hpp"
 
@@ -40,7 +40,7 @@ TEST_CASE("successful source scan hides vanished file but keeps an observed unst
     fixture.video(pending);
     SqliteDatabase db(fixture.root / "vault.db"); db.migrate();
     SqliteMediaRepository repo(db);
-    anime_vault::api::MediaService service(repo, fixture.source, fixture.library, fixture.imported);
+    anime_vault::MediaService service(repo, fixture.source, fixture.library, fixture.imported);
     REQUIRE(service.createScan(std::chrono::seconds{0}).status == "completed");
     const auto first = repo.listInbox();
     REQUIRE(first.size() == 2);
@@ -70,7 +70,7 @@ TEST_CASE("source reconciliation does not hide imported or organized library med
     fixture.video(organizedTarget);
     SqliteDatabase db(fixture.root / "vault.db"); db.migrate();
     SqliteMediaRepository repo(db);
-    anime_vault::api::MediaService service(repo, fixture.source, fixture.library, fixture.imported);
+    anime_vault::MediaService service(repo, fixture.source, fixture.library, fixture.imported);
     REQUIRE(service.createScan(std::chrono::seconds{0}).status == "completed");
     fixture.waitForRateLimit();
     REQUIRE(service.createImportScan(std::chrono::seconds{0}).status == "completed");
@@ -92,7 +92,7 @@ TEST_CASE("library listing omits anime whose only file vanished but retains manu
     fixture.video(file);
     SqliteDatabase db(fixture.root / "vault.db"); db.migrate();
     SqliteMediaRepository repo(db);
-    anime_vault::api::MediaService service(repo, fixture.source, fixture.library, fixture.imported);
+    anime_vault::MediaService service(repo, fixture.source, fixture.library, fixture.imported);
     REQUIRE(service.createScan(std::chrono::seconds{0}).status == "completed");
     REQUIRE(repo.listAnime().size() == 1);
     REQUIRE(sqlite3_exec(db.handle(),
@@ -103,4 +103,34 @@ TEST_CASE("library listing omits anime whose only file vanished but retains manu
     const auto visible = repo.listAnime();
     REQUIRE(visible.size() == 1);
     REQUIRE(visible.front().displayTitle == "Manual empty");
+}
+
+TEST_CASE("verified completed scan imports immediately and excludes other sources") {
+    const auto root = std::filesystem::temp_directory_path() / ("av-completed-" + std::to_string(std::random_device{}()));
+    struct Cleanup { std::filesystem::path root; ~Cleanup() { std::error_code ec; std::filesystem::remove_all(root, ec); } } cleanup{root};
+    std::filesystem::create_directories(root / "source");
+    std::filesystem::create_directories(root / "library");
+    std::filesystem::create_directories(root / "imports");
+    std::ofstream(root / "source" / "Ready - 01.mkv").put('x');
+    std::ofstream(root / "source" / "Partial - 02.mkv").put('x');
+    SqliteDatabase database(root / "test.db"); database.migrate();
+    SqliteMediaRepository repository(database);
+    MediaService service(repository, root / "source", root / "library", root / "imports");
+    const auto result = service.createCompletedScan({root / "source" / "Ready - 01.mkv", root / "outside.mkv"});
+    CHECK(result.processedCount == 1);
+    REQUIRE(repository.listInbox().size() == 1);
+    CHECK(repository.listInbox().front().filename == "Ready - 01.mkv");
+    CHECK(service.createCompletedScan({root / "source" / "Ready - 01.mkv"}).id == 0);
+    const auto item = repository.listInbox().front();
+    const auto updated = service.editEpisode(item.id, {"2.5", "sp"});
+    CHECK(updated.episodeNumber == "2.5");
+    CHECK(updated.episodeType == "sp");
+    CHECK(updated.animeId == item.animeId);
+    CHECK(updated.sourcePath == item.sourcePath);
+    CHECK(repository.getAnime(*item.animeId)->media.front().episodeNumber == "2.5");
+    CHECK_THROWS_AS(service.editEpisode(item.id, {"invalid", "normal"}), MediaError);
+    CHECK_THROWS_AS(service.editEpisode(item.id, {"2", "invalid"}), MediaError);
+    REQUIRE(std::filesystem::remove(root / "source" / "Ready - 01.mkv"));
+    CHECK(service.createCompletedScan({root / "source" / "Ready - 01.mkv"}).id == 0);
+    CHECK(repository.getMedia(item.id)->status == "missing");
 }

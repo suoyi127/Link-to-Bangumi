@@ -29,13 +29,15 @@ inline std::u32string normalizeTitle(std::string_view text) {
             (width == 3 && point < 0x800) || (width == 4 && point < 0x10000) ||
             point > 0x10ffff || (point >= 0xd800 && point <= 0xdfff)) return {};
         i += width;
+        // ANi 繁体发布与 Mikan 简体别名中的确定字形对应，不进行模糊译名替换。
+        if (point == U'鐵') point = U'铁';
         if (point >= U'A' && point <= U'Z') point += U'a' - U'A';
         if (point >= 0xff10 && point <= 0xff19) point = U'0' + point - 0xff10;
         if (point >= 0xff21 && point <= 0xff3a) point = U'a' + point - 0xff21;
         if (point >= 0xff41 && point <= 0xff5a) point = U'a' + point - 0xff41;
         const bool asciiLetter = point >= U'a' && point <= U'z';
         const bool asciiDigit = point >= U'0' && point <= U'9';
-        const bool separator = point == 0x00a0 || point == 0x1680 ||
+        const bool separator = point == 0x00a0 || point == 0x00b7 || point == 0x1680 ||
             (point >= 0x2000 && point <= 0x206f) ||
             (point >= 0x3000 && point <= 0x3002) ||
             (point >= 0x3008 && point <= 0x301f) ||

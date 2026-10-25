@@ -1,23 +1,20 @@
 #include "anime_vault/api/NovelController.hpp"
+#include "anime_vault/api/HttpSupport.hpp"
 #include "anime_vault/api/LocalRequest.hpp"
 #include <drogon/drogon.h>
-#include <atomic>
 #include <set>
 
 namespace anime_vault::api {
 namespace {
 using Request = drogon::HttpRequestPtr;
 using Callback = std::function<void(const drogon::HttpResponsePtr&)>;
-std::atomic_uint64_t sequence{0};
 struct RemoveNovelRequest { bool confirmed{}; };
 struct RemoveNovelResponse { std::int64_t removedId{}; };
 void reply(Callback callback, Json::Value payload, int status = 200) {
-    auto id = "novel-" + std::to_string(++sequence); payload["requestId"] = id;
-    auto response = drogon::HttpResponse::newHttpJsonResponse(payload);
-    response->setStatusCode(static_cast<drogon::HttpStatusCode>(status)); response->addHeader("X-Request-Id", id); callback(response);
+    deliver(std::move(callback), requestContext({}, RequestIdPolicy::Novel), status, std::move(payload));
 }
 void failure(Callback callback, const std::string& code, int status = 400) {
-    Json::Value j; j["error"]["code"] = code; j["error"]["message"] = code; reply(std::move(callback), j, status);
+    reply(std::move(callback), errorJson(code, code), status);
 }
 bool local(const Request& r) {
     return localRequestAllowed(r);
@@ -27,14 +24,18 @@ const Json::Value& body(const Request& request, const std::set<std::string>& fie
     if (request->body().size() > 24000) throw NovelError("request_too_large");
     const auto j = request->getJsonObject();
     if (!j || !j->isObject()) throw NovelError("invalid_request");
-    for (const auto& name : j->getMemberNames()) if (!fields.contains(name)) throw NovelError("invalid_request");
+    if (!hasOnlyFields(*j, fields)) throw NovelError("invalid_request");
     return *j;
 }
 std::string stringField(const Json::Value& j, const char* key) {
-    if (!j[key].isString()) throw NovelError("invalid_request"); return j[key].asString();
+    const auto value = readStringField(j, key);
+    if (!value) throw NovelError("invalid_request");
+    return *value;
 }
 std::int64_t idField(const Json::Value& j, const char* key) {
-    if (!j[key].isInt64() || j[key].asInt64() <= 0) throw NovelError("invalid_request"); return j[key].asInt64();
+    const auto value = readPositiveIdField(j, key);
+    if (!value) throw NovelError("invalid_request");
+    return *value;
 }
 Json::Value workJson(const NovelWork& w) {
     Json::Value j; j["id"] = Json::Int64(w.id); j["title"] = w.title; j["author"] = w.author; j["summary"] = w.summary;
@@ -50,8 +51,7 @@ Json::Value workJson(const NovelWork& w) {
 }
 void handleError(Callback callback, const std::exception& error) {
     const auto* known = dynamic_cast<const NovelError*>(&error); const auto code = known ? known->code : "novel_storage_error";
-    const int status = code == "novel_storage_error" ? 500 : code.find("not_found") != std::string::npos ? 404 :
-        code == "cross_site_request_forbidden" ? 403 : code == "request_too_large" ? 413 : code == "novel_has_accessible_files" ? 409 : 400;
+    const int status = novelErrorStatus(code);
     failure(std::move(callback), code, status);
 }
 Json::Value scrapeJson(const NovelScrapeResult& result) {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Alert, Button, Input, Space, Typography } from 'antd'
-import { getPlayers, savePlayer } from '../api/client'
+import { getPlayers, savePlayer } from '../api/media'
 import type { PlayerCatalog } from '../api/types'
 
 export function PlayerSettings() {

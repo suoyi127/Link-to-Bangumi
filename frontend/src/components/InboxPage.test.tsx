@@ -1,6 +1,9 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
-import * as client from '../api/client'
+import * as animeApi from '../api/anime'
+import * as mediaApi from '../api/media'
+import * as requestApi from '../api/request'
+import * as settingsApi from '../api/settings'
 import type { Media } from '../api/types'
 import { InboxPage } from './InboxPage'
 
@@ -16,9 +19,9 @@ it('offers folder import beside qB and external sources', async () => {
 
 it('registers and scans a selected local folder in its own resource tab', async () => {
   const { inbox } = setup('folder_import')
-  const folders = vi.spyOn(client, 'getFolderImports').mockResolvedValue({ items: [] })
-  const add = vi.spyOn(client, 'addFolderImport').mockResolvedValue({ id: 4, path: 'D:\\Anime' })
-  const scan = vi.spyOn(client, 'scanFolderImport').mockResolvedValue({ id: 9, source: 'folder_import', status: 'completed', discoveredCount: 1, processedCount: 1, errorCount: 0, errorSummary: '' })
+  const folders = vi.spyOn(mediaApi, 'getFolderImports').mockResolvedValue({ items: [] })
+  const add = vi.spyOn(mediaApi, 'addFolderImport').mockResolvedValue({ id: 4, path: 'D:\\Anime' })
+  const scan = vi.spyOn(mediaApi, 'scanFolderImport').mockResolvedValue({ id: 9, source: 'folder_import', status: 'completed', discoveredCount: 1, processedCount: 1, errorCount: 0, errorSummary: '' })
   render(<InboxPage onOpenAnime={vi.fn()} />)
   fireEvent.click(screen.getByRole('tab', { name: '文件夹导入' }))
   await waitFor(() => expect(folders).toHaveBeenCalled())
@@ -34,21 +37,21 @@ function setup(origin: string) {
   vi.stubGlobal('matchMedia', vi.fn().mockImplementation(() => ({ matches: false, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn() })))
   const getComputedStyle = window.getComputedStyle.bind(window)
   vi.spyOn(window, 'getComputedStyle').mockImplementation((element) => getComputedStyle(element))
-  vi.spyOn(client, 'getSettings').mockResolvedValue({ sourcePath: '/source', importPath: '/imports', libraryPath: '/library', dataPath: '/data', bangumiConfigured: false, qbWebUiConfigured: false, qbDownloadConfigured: true, qbDownloadDirectory: '/source', qbDownloadEnvironmentOverride: false, preferredOperation: 'hardlink', scanIntervalSeconds: 3600, mpvExecutable: '', qbWebUiUrl: '' })
-  const inbox = vi.spyOn(client, 'getInbox').mockResolvedValue({ items: [media(origin)], total: 1, nextOffset: null })
-  const correction = vi.spyOn(client, 'correctMedia').mockResolvedValue({ ...media(origin), title: '新标题', animeId: 9 })
-  const preview = vi.spyOn(client, 'previewOrganization').mockResolvedValue({ id: 12, targetPath: '/library/new.mkv', operation: 'copy', expiresAt: '2099-01-01T00:00:00Z', conflicts: [] })
-  const execute = vi.spyOn(client, 'executeOrganization').mockRejectedValueOnce(new client.ApiError('execution_in_progress', 409, 'req-1')).mockResolvedValue({ jobId: 4, targetPath: '/library/new.mkv', bytes: 1, status: 'completed' })
-  const search = vi.spyOn(client, 'searchBangumi').mockResolvedValue({ items: [{ id: 44, name: '候选', nameCn: '候选中文', date: '', coverUrl: '', episodeCount: 12, type: 2, score: 0.9 }], autoBindEligible: true, fromCache: false, localMatch: { animeId: 9, displayTitle: '本地匹配' } })
+  vi.spyOn(settingsApi, 'getSettings').mockResolvedValue({ sourcePath: '/source', importPath: '/imports', libraryPath: '/library', dataPath: '/data', bangumiConfigured: false, qbWebUiConfigured: false, qbDownloadConfigured: true, qbDownloadDirectory: '/source', qbDownloadEnvironmentOverride: false, preferredOperation: 'hardlink', scanIntervalSeconds: 3600, mpvExecutable: '', qbWebUiUrl: '' })
+  const inbox = vi.spyOn(mediaApi, 'getInbox').mockResolvedValue({ items: [media(origin)], total: 1, nextOffset: null })
+  const correction = vi.spyOn(mediaApi, 'correctMedia').mockResolvedValue({ ...media(origin), title: '新标题', animeId: 9 })
+  const preview = vi.spyOn(mediaApi, 'previewOrganization').mockResolvedValue({ id: 12, targetPath: '/library/new.mkv', operation: 'copy', expiresAt: '2099-01-01T00:00:00Z', conflicts: [] })
+  const execute = vi.spyOn(mediaApi, 'executeOrganization').mockRejectedValueOnce(new requestApi.ApiError('execution_in_progress', 409, 'req-1')).mockResolvedValue({ jobId: 4, targetPath: '/library/new.mkv', bytes: 1, status: 'completed' })
+  const search = vi.spyOn(animeApi, 'searchBangumi').mockResolvedValue({ items: [{ id: 44, name: '候选', nameCn: '候选中文', date: '', coverUrl: '', episodeCount: 12, type: 2, score: 0.9 }], autoBindEligible: true, fromCache: false, localMatch: { animeId: 9, displayTitle: '本地匹配' } })
   return { inbox, correction, preview, execute, search }
 }
 
 it('uses the saved preferred operation as the initial preview choice', async () => {
   const { preview } = setup('external_import')
-  vi.mocked(client.getSettings).mockResolvedValue({ sourcePath: '/source', importPath: '/imports', libraryPath: '/library', dataPath: '/data', bangumiConfigured: false, qbWebUiConfigured: false, qbDownloadConfigured: true, qbDownloadDirectory: '/source', qbDownloadEnvironmentOverride: false, preferredOperation: 'copy', scanIntervalSeconds: 3600, mpvExecutable: '', qbWebUiUrl: '' })
+  vi.mocked(settingsApi.getSettings).mockResolvedValue({ sourcePath: '/source', importPath: '/imports', libraryPath: '/library', dataPath: '/data', bangumiConfigured: false, qbWebUiConfigured: false, qbDownloadConfigured: true, qbDownloadDirectory: '/source', qbDownloadEnvironmentOverride: false, preferredOperation: 'copy', scanIntervalSeconds: 3600, mpvExecutable: '', qbWebUiUrl: '' })
   render(<InboxPage onOpenAnime={vi.fn()} />)
   fireEvent.click(await screen.findByRole('button', { name: '编辑 旧标题' }))
-  await waitFor(() => expect(client.getSettings).toHaveBeenCalled())
+  await waitFor(() => expect(settingsApi.getSettings).toHaveBeenCalled())
   fireEvent.click(screen.getByRole('button', { name: '生成预览' }))
   await waitFor(() => expect(preview).toHaveBeenCalledWith(7, 'copy'))
 }, 60000)
@@ -217,7 +220,7 @@ it('does not replace the selected row when a previous correction completes', asy
 it('ignores Bangumi results from a previously selected row', async () => {
   const { inbox, search } = setup('external_import')
   inbox.mockResolvedValue({ items: [media('external_import'), { ...media('external_import'), id: 8, filename: 'b.mkv', title: '第二部' }], total: 2, nextOffset: null })
-  let finish!: (value: Awaited<ReturnType<typeof client.searchBangumi>>) => void
+  let finish!: (value: Awaited<ReturnType<typeof animeApi.searchBangumi>>) => void
   search.mockImplementation(() => new Promise((resolve) => { finish = resolve }))
   render(<InboxPage onOpenAnime={vi.fn()} />)
   fireEvent.click(await screen.findByRole('button', { name: '编辑 旧标题' }))

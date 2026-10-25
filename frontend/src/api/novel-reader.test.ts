@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { saveNovelReader } from './client'
+import { saveNovelReader } from './novels'
 
 afterEach(() => vi.restoreAllMocks())
 it('does not send response metadata back when saving the reader', async () => {

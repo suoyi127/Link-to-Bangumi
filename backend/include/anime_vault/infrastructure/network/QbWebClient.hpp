@@ -1,6 +1,6 @@
 #pragma once
 
-#include "anime_vault/services/MikanTitleParser.hpp"
+#include "anime_vault/services/QbRssRules.hpp"
 #include <drogon/HttpClient.h>
 
 #include <functional>
@@ -9,33 +9,12 @@
 #include <string_view>
 
 namespace anime_vault {
-struct QbStatus {
-    bool configured{};
-    bool connected{};
-    std::string errorCode;
-    std::string version;
-    int torrentCount{};
-    int completedCount{};
-};
-
-using QbMikanCatalog = MikanCatalog;
-struct QbActionResult {
-    bool success{};
-    std::string errorCode;
-};
-struct QbMikanRuleSpec {
-    std::string ruleName;
-    std::string feedUrl;
-    std::string keyword;
-    std::string savePath;
-};
-struct QbEndpoint { std::string address, hostHeader; int port{}; };
-
 // qB Web API 适配器；连接地址限制为本机回环，避免凭据发往非本机服务。
 class QbWebClient final {
 public:
     using Completion = std::function<void(QbStatus)>;
     QbWebClient(std::string baseUrl, std::string username, std::string password);
+    static std::vector<std::string> completedPaths(std::string_view body);
     static QbEndpoint parseEndpoint(std::string_view baseUrl);
     static bool looksLikeQbWebUi(std::string_view body);
     void inspect(Completion completion) const;
@@ -54,6 +33,8 @@ public:
     static std::string mikanFeedForm(const std::string& url);
     static std::string mikanRuleJson(const QbMikanRuleSpec& spec);
     static std::string autoMikanRuleJson(const QbMikanRuleSpec& spec, bool enabled = true);
+    static std::string autoMikanHistoryJson(const QbMikanRuleSpec& spec, std::string_view rules,
+                                            std::string_view items, std::string_view torrents);
     static std::string bracketEpisodePattern();
     static std::string dashedEpisodePattern();
     static std::string autoEpisodePreferencesJson(std::string_view currentPreferences);

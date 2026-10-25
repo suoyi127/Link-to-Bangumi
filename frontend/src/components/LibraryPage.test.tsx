@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import * as client from '../api/client'
+import * as animeApi from '../api/anime'
 import type { Anime } from '../api/types'
 import { LibraryPage } from './LibraryPage'
 
@@ -13,7 +13,7 @@ beforeEach(() => {
 const anime = (id: number): Anime => ({ id, displayTitle: `番剧 ${id}`, originalTitle: '', season: '第 1 季', coverUrl: '', locked: false })
 
 it('toggles grid/list, uses a local cover fallback and follows server nextOffset', async () => {
-  const get = vi.spyOn(client, 'getAnime').mockResolvedValueOnce({ items: [anime(1)], nextOffset: 200 }).mockResolvedValueOnce({ items: [anime(201)], nextOffset: null })
+  const get = vi.spyOn(animeApi, 'getAnime').mockResolvedValueOnce({ items: [anime(1)], nextOffset: 200 }).mockResolvedValueOnce({ items: [anime(201)], nextOffset: null })
   render(<LibraryPage onOpenAnime={vi.fn()} />)
   expect(await screen.findByRole('button', { name: '打开 番剧 1' })).toBeInTheDocument()
   expect(screen.getAllByText('暂无封面').length).toBeGreaterThan(0)
@@ -26,7 +26,7 @@ it('toggles grid/list, uses a local cover fallback and follows server nextOffset
 }, 20000)
 
 it('shows a local placeholder if a nonempty cover URL fails to load', async () => {
-  vi.spyOn(client, 'getAnime').mockResolvedValue({ items: [{ ...anime(1), coverUrl: 'https://example.invalid/cover.png' }], nextOffset: null })
+  vi.spyOn(animeApi, 'getAnime').mockResolvedValue({ items: [{ ...anime(1), coverUrl: 'https://example.invalid/cover.png' }], nextOffset: null })
   render(<LibraryPage onOpenAnime={vi.fn()} />)
   const image = await screen.findByRole('img', { name: '番剧 1 封面' })
   fireEvent.error(image)
@@ -35,7 +35,7 @@ it('shows a local placeholder if a nonempty cover URL fails to load', async () =
 }, 20000)
 
 it('filters the current library page and keeps binding status visible on poster cards', async () => {
-  vi.spyOn(client, 'getAnime').mockResolvedValue({
+  vi.spyOn(animeApi, 'getAnime').mockResolvedValue({
     items: [{ ...anime(1), displayTitle: '透明之夜', bangumiSubjectId: 123 }, anime(2)], nextOffset: null,
   })
   render(<LibraryPage onOpenAnime={vi.fn()} />)
@@ -46,8 +46,8 @@ it('filters the current library page and keeps binding status visible on poster 
 }, 20000)
 
 it('shows weekly local schedule and returns to the original list view', async () => {
-  vi.spyOn(client, 'getAnime').mockResolvedValue({ items: [anime(1)], nextOffset: null })
-  vi.spyOn(client, 'getAnimeCalendar').mockResolvedValue({
+  vi.spyOn(animeApi, 'getAnime').mockResolvedValue({ items: [anime(1)], nextOffset: null })
+  vi.spyOn(animeApi, 'getAnimeCalendar').mockResolvedValue({
     days: Array.from({ length: 7 }, (_, index) => ({ weekday: index + 1, items: index === 2 ? [{ ...anime(2), displayTitle: '排期番剧' }] : [] })),
     fromCache: false, stale: false, updatedAt: 0, errorCode: '',
   })
@@ -68,8 +68,8 @@ it('shows weekly local schedule and returns to the original list view', async ()
 }, 20000)
 
 it('allows calendar retry after a network error and shows stale-cache notice', async () => {
-  vi.spyOn(client, 'getAnime').mockResolvedValue({ items: [], nextOffset: null })
-  const calendar = vi.spyOn(client, 'getAnimeCalendar').mockRejectedValueOnce(new Error('网络不可用')).mockResolvedValueOnce({
+  vi.spyOn(animeApi, 'getAnime').mockResolvedValue({ items: [], nextOffset: null })
+  const calendar = vi.spyOn(animeApi, 'getAnimeCalendar').mockRejectedValueOnce(new Error('网络不可用')).mockResolvedValueOnce({
     days: Array.from({ length: 7 }, (_, index) => ({ weekday: index + 1, items: [] })),
     fromCache: true, stale: true, updatedAt: 0, errorCode: 'bangumi_calendar_unavailable',
   })
@@ -80,4 +80,24 @@ it('allows calendar retry after a network error and shows stale-cache notice', a
   await screen.findByText('Bangumi 暂时不可用，正在显示最近缓存的排期。')
   expect(calendar).toHaveBeenCalledTimes(2)
   expect(screen.getByText('暂无符合排期的本地番剧')).toBeVisible()
+}, 20000)
+
+it('requests global import month sorting and resets pagination on sort change', async () => {
+  const get = vi.spyOn(animeApi, 'getAnime').mockResolvedValue({ items: [{ ...anime(1), importedMonth: '2026-09' }], nextOffset: 200 })
+  render(<LibraryPage onOpenAnime={vi.fn()} />)
+  await screen.findByRole('button', { name: '打开 番剧 1' })
+  expect(screen.getByText(/2026-09 导入/)).toBeVisible()
+  fireEvent.change(screen.getByLabelText('导入月份排序'), { target: { value: 'import_asc' } })
+  await waitFor(() => expect(get).toHaveBeenLastCalledWith(200, 0, expect.anything(), 'import_asc'))
+}, 20000)
+
+it('groups both views by import month including unknown dates', async () => {
+  vi.spyOn(animeApi, 'getAnime').mockResolvedValue({ items: [{ ...anime(1), importedMonth: '2026-10' }, { ...anime(2), importedMonth: '2026-09' }, anime(3)], nextOffset: null })
+  render(<LibraryPage onOpenAnime={vi.fn()} />)
+  const october = await screen.findByRole('region', { name: '2026 年 10 月' })
+  expect(october).toContainElement(screen.getByRole('button', { name: '打开 番剧 1' }))
+  expect(screen.getByRole('region', { name: '导入月份未知' })).toContainElement(screen.getByRole('button', { name: '打开 番剧 3' }))
+  fireEvent.click(screen.getByRole('button', { name: '列表视图' }))
+  expect(screen.getAllByRole('table')).toHaveLength(3)
+  expect(screen.getByRole('region', { name: '2026 年 09 月' })).toContainElement(screen.getByRole('button', { name: '打开 番剧 2' }))
 }, 20000)

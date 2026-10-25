@@ -199,7 +199,11 @@ TEST_CASE("organization execution route confirms a disposable import plan") {
     REQUIRE(folderScanResult == drogon::ReqResult::Ok);
     REQUIRE(folderScanResponse->statusCode() == drogon::k201Created);
     REQUIRE((*inboxGet("/api/inbox?origin=folder_import")->getJsonObject())["total"].asInt64() == 1);
-    const auto folderPage = inboxGet("/api/inbox?origin=folder_import");
+    auto folderPage = inboxGet("/api/inbox?origin=folder_import");
+    for (int attempt = 0; attempt < 100 && (*folderPage->getJsonObject())["items"][0]["title"].asString() == "Roman Title"; ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        folderPage = inboxGet("/api/inbox?origin=folder_import");
+    }
     REQUIRE((*folderPage->getJsonObject())["items"][0]["title"].asString() == "中文标题");
     REQUIRE((*inboxGet("/api/inbox?limit=101")->getJsonObject())["error"]["code"].asString() == "invalid_page");
     REQUIRE((*inboxGet("/api/inbox?offset=-1")->getJsonObject())["error"]["code"].asString() == "invalid_page");

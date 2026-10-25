@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import * as client from '../api/client'
+import * as novelsApi from '../api/novels'
 import { NovelLibraryPage } from './NovelLibraryPage'
 import { NovelSettings } from './NovelSettings'
 import { NovelResources } from './NovelResources'
@@ -9,7 +9,7 @@ const work = { id: 1, title: '中文小说', author: '作者', summary: '简介'
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 it('offers deletion only for a work with no accessible files and requires confirmation', async () => {
   const unavailable = { ...work, files: work.files.map((f) => ({ ...f, missing: true })) }
-  const get = vi.spyOn(client, 'getNovels').mockResolvedValue({ items: [work] })
+  const get = vi.spyOn(novelsApi, 'getNovels').mockResolvedValue({ items: [work] })
   const view = render(<NovelResources />)
   await screen.findByRole('button', { name: '编辑 中文小说' })
   expect(screen.queryByRole('button', { name: '删除词条 中文小说' })).not.toBeInTheDocument()
@@ -30,8 +30,8 @@ beforeEach(() => {
   vi.spyOn(window, 'getComputedStyle').mockImplementation((element) => computedStyle(element))
 })
 it('shows one novel work and offers reading only for available volumes', async () => {
-  vi.spyOn(client, 'getNovels').mockResolvedValue({ items: [work] })
-  const read = vi.spyOn(client, 'readNovel').mockResolvedValue({ started: true })
+  vi.spyOn(novelsApi, 'getNovels').mockResolvedValue({ items: [work] })
+  const read = vi.spyOn(novelsApi, 'readNovel').mockResolvedValue({ started: true })
   render(<NovelLibraryPage />)
   fireEvent.click(await screen.findByRole('button', { name: '查看 中文小说' }))
   expect(screen.getByText('第一卷')).toBeInTheDocument()
@@ -43,10 +43,10 @@ it('shows one novel work and offers reading only for available volumes', async (
   expect(screen.queryByText('D:/Books/one.epub')).not.toBeInTheDocument()
 })
 it('imports a local folder and saves a reader in settings', async () => {
-  vi.spyOn(client, 'getNovelReader').mockResolvedValue({ type: 'system', executable: '' })
-  vi.spyOn(client, 'getNovelSources').mockResolvedValue({ items: [] })
-  const save = vi.spyOn(client, 'saveNovelReader').mockResolvedValue({ type: 'custom', executable: 'D:/reader.exe' })
-  const add = vi.spyOn(client, 'importNovels').mockResolvedValue({ fileCount: 2, sourceId: 1, scraping: true })
+  vi.spyOn(novelsApi, 'getNovelReader').mockResolvedValue({ type: 'system', executable: '' })
+  vi.spyOn(novelsApi, 'getNovelSources').mockResolvedValue({ items: [] })
+  const save = vi.spyOn(novelsApi, 'saveNovelReader').mockResolvedValue({ type: 'custom', executable: 'D:/reader.exe' })
+  const add = vi.spyOn(novelsApi, 'importNovels').mockResolvedValue({ fileCount: 2, sourceId: 1, scraping: true, queuedCount: 2 })
   render(<NovelSettings />)
   fireEvent.change(await screen.findByLabelText('默认阅读器'), { target: { value: 'custom' } })
   fireEvent.change(screen.getByLabelText('阅读器可执行文件'), { target: { value: 'D:/reader.exe' } })
@@ -58,8 +58,8 @@ it('imports a local folder and saves a reader in settings', async () => {
   expect(await screen.findByText(/已扫描 2 个小说文件/)).toBeInTheDocument()
 })
 it('keeps novel metadata editing in the resource page', async () => {
-  vi.spyOn(client, 'getNovels').mockResolvedValue({ items: [work] })
-  const save = vi.spyOn(client, 'editNovel').mockResolvedValue({ ...work, title: '修改标题' })
+  vi.spyOn(novelsApi, 'getNovels').mockResolvedValue({ items: [work] })
+  const save = vi.spyOn(novelsApi, 'editNovel').mockResolvedValue({ ...work, title: '修改标题' })
   render(<NovelResources />)
   fireEvent.click(await screen.findByRole('button', { name: '编辑 中文小说' }))
   fireEvent.change(screen.getByLabelText('小说作品标题'), { target: { value: '修改标题' } })
@@ -67,7 +67,7 @@ it('keeps novel metadata editing in the resource page', async () => {
   await waitFor(() => expect(save).toHaveBeenCalledWith(1, { title: '修改标题', author: '作者', summary: '简介' }))
 })
 it('updates missing volumes on window focus without leaving the novel detail', async () => {
-  const get = vi.spyOn(client, 'getNovels').mockResolvedValueOnce({ items: [work] }).mockResolvedValue({ items: [{ ...work, files: work.files.map((f) => ({ ...f, missing: true })) }] })
+  const get = vi.spyOn(novelsApi, 'getNovels').mockResolvedValueOnce({ items: [work] }).mockResolvedValue({ items: [{ ...work, files: work.files.map((f) => ({ ...f, missing: true })) }] })
   render(<NovelLibraryPage />)
   fireEvent.click(await screen.findByRole('button', { name: '查看 中文小说' }))
   expect(screen.getAllByRole('button', { name: '阅读' })[0]).toBeEnabled()
@@ -79,7 +79,7 @@ it('updates missing volumes on window focus without leaving the novel detail', a
 
 it('does not restore deleted novel volumes from an older refresh response', async () => {
   let resolveOld!: (value: { items: typeof work[] }) => void
-  vi.spyOn(client, 'getNovels').mockResolvedValueOnce({ items: [work] })
+  vi.spyOn(novelsApi, 'getNovels').mockResolvedValueOnce({ items: [work] })
     .mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve }))
     .mockResolvedValue({ items: [] })
   render(<NovelLibraryPage />)
@@ -90,4 +90,17 @@ it('does not restore deleted novel volumes from an older refresh response', asyn
   await act(async () => resolveOld({ items: [work] }))
   expect(screen.queryByRole('heading', { name: '卷与文件' })).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '查看 中文小说' })).not.toBeInTheDocument()
+})
+
+it.each([
+  { bound: true, coverUpdated: false, errorCode: 'cover_failed', message: '已绑定，封面未更新（cover_failed）。' },
+  { bound: false, coverUpdated: false, errorCode: 'bangumi_unavailable', message: '未自动绑定（bangumi_unavailable）；请搜索候选或输入 Bangumi 条目 ID。' },
+])('shows novel scrape outcome for $errorCode without losing a partial success', async (result) => {
+  vi.spyOn(novelsApi, 'getNovels').mockResolvedValue({ items: [work] })
+  vi.spyOn(novelsApi, 'scrapeNovel').mockResolvedValue(result)
+  render(<NovelResources />)
+  fireEvent.click(await screen.findByRole('button', { name: '编辑 中文小说' }))
+  fireEvent.click(screen.getByRole('button', { name: '自动匹配／刷新刮削' }))
+  expect(await screen.findByText(result.message)).toBeInTheDocument()
+  expect(screen.getByLabelText('小说作品标题')).toHaveValue(work.title)
 })

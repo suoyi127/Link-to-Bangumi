@@ -67,7 +67,7 @@ button, input, select { font: inherit; }
 .anime-cover { border-radius: 9px 9px 0 0; }
 .anime-cover > span { font-size: 12px; letter-spacing: 1px; }
 .calendar-day { background: #fff; border: 1px solid #e6ecef; padding: 20px; border-radius: 12px; }
-.calendar-week-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; align-items: start; }
+.calendar-week-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; align-items: start; }
 .calendar-day h4 { margin-top: 0; margin-bottom: 20px; }
 .calendar-day h4 .ant-typography { font-size: 11px; margin-left: 7px; font-weight: 400; }
 .calendar-day .ant-list-item { margin-bottom: 0; }
@@ -82,7 +82,7 @@ button, input, select { font: inherit; }
 .dashboard-page .ant-table table { min-width: 580px; }
 .mobile-nav { display: none; }
 @media (max-width: 1100px) { .settings-grid { grid-template-columns: minmax(0, 1fr); } .app-content { padding: 24px; } .app-header.ant-layout-header { padding-inline: 24px; } }
-@media (max-width: 1300px) { .calendar-week-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
 @media (max-width: 991px) {
   .app-sidebar { display: none; }
   .mobile-nav { display: flex; gap: 6px; padding: 12px 20px; background: #fff; border-bottom: 1px solid #e8edef; }
@@ -105,3 +105,11 @@ button, input, select { font: inherit; }
 .novel-detail-header { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 24px; margin-bottom: 24px; }
 .novel-file-editor { display: flex; flex-direction: column; gap: 10px; border: 1px solid #e6ecef; border-radius: 10px; padding: 16px; }
 @media (max-width: 600px) { .novel-detail-header { grid-template-columns: 100px minmax(0, 1fr); gap: 14px; } .mobile-nav { overflow-x: auto; } .mobile-nav button { flex-shrink: 0; } }
+
+.calendar-posters { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 140px)); gap: 12px; }
+.calendar-posters > div { min-width: 0; }
+.calendar-posters .ant-card-cover { height: 170px; overflow: hidden; }
+.calendar-posters .ant-card-cover > * { height: 100%; }
+.calendar-posters .ant-card-cover img { width: 100%; height: 100%; object-fit: cover; }
+.mikan-feed-details { width: 100%; }
+.mikan-feed-details summary { cursor: pointer; padding: 8px 0; }

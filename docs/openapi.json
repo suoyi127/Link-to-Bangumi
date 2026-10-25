@@ -1,0 +1,7253 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Link to Bangumi 本机 HTTP API",
+    "version": "0.1.2",
+    "description": "接口契约以 42d86a2 为基线，于 2026-10-26 对重构后源码复核。描述当前接口及已知差异；中文说明见 api.md。HTTP 成功仍需检查业务字段。字符串字节限制见 x-max-utf8-bytes。无远程用户认证，instanceToken 不是认证令牌。"
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:8848",
+      "description": "开发默认端口；桌面版请改用实际端口。"
+    }
+  ],
+  "tags": [
+    {
+      "name": "健康"
+    },
+    {
+      "name": "扫描与媒体"
+    },
+    {
+      "name": "番剧"
+    },
+    {
+      "name": "整理与播放"
+    },
+    {
+      "name": "设置"
+    },
+    {
+      "name": "qB 与 RSS"
+    },
+    {
+      "name": "小说"
+    },
+    {
+      "name": "游戏"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "检查后端实例",
+        "tags": [
+          "健康"
+        ],
+        "x-source": "backend/src/api/HealthController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/scans": {
+      "get": {
+        "operationId": "getApiScans",
+        "summary": "分页读取扫描记录",
+        "tags": [
+          "扫描与媒体"
+        ],
+        "x-source": "backend/src/api/ScanController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ScanPage"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 50,
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 0,
+              "minimum": 0,
+              "maximum": 1000000
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "可选回显；未提供时生成序号。"
+          }
+        ],
+        "description": "无请求体，仅 limit/offset。",
+        "x-reject-unknown-query": true
+      },
+      "post": {
+        "operationId": "postApiScans",
+        "summary": "扫描 qB 下载来源",
+        "tags": [
+          "扫描与媒体"
+        ],
+        "x-source": "backend/src/api/ScanController.cpp",
+        "responses": {
+          "201": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Scan"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "409": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "可选回显；未提供时生成序号。"
+          }
+        ],
+        "description": "无体无查询。默认稳定窗口 60 秒；扫描内部失败仍返回 201 和 status=failed；响应后继续刮削。",
+        "x-reject-unknown-query": true
+      }
+    },
+    "/api/imports/scan": {
+      "post": {
+        "operationId": "postApiImportsScan",
+        "summary": "扫描固定外来导入目录",
+        "tags": [
+          "扫描与媒体"
+        ],
+        "x-source": "backend/src/api/ScanController.cpp",
+        "responses": {
+          "201": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Scan"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "409": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "可选回显；未提供时生成序号。"
+          }
+        ],
+        "description": "无体无查询。默认稳定窗口 60 秒；扫描失败仍可 201，刮削在响应后继续。",
+        "x-reject-unknown-query": true
+      }
+    },
+    "/api/scans/{id}": {
+      "get": {
+        "operationId": "getApiScansId",
+        "summary": "读取扫描结果",
+        "tags": [
+          "扫描与媒体"
+        ],
+        "x-source": "backend/src/api/ScanController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Scan"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "404": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "使用已返回的资源标识。"
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "可选回显；未提供时生成序号。"
+          }
+        ]
+      }
+    },
+    "/api/folder-imports": {
+      "get": {
+        "operationId": "getApiFolderImports",
+        "summary": "读取登记文件夹",
+        "tags": [
+          "扫描与媒体"
+        ],
+        "x-source": "backend/src/api/ScanController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/FolderImport"
+                          }
+                        }
+                      },
+                      "required": [
+                        "items"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "可选回显；未提供时生成序号。"
+          }
+        ],
+        "description": "无体无查询。",
+        "x-reject-unknown-query": true
+      },
+      "post": {
+        "operationId": "postApiFolderImports",
+        "summary": "登记原位置文件夹",
+        "tags": [
+          "扫描与媒体"
+        ],
+        "x-source": "backend/src/api/ScanController.cpp",
+        "responses": {
+          "201": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/FolderImport"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "409": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "可选回显；未提供时生成序号。"
+          }
+        ],
+        "description": "不复制或移动文件。重复路径返回已有记录，仍为 201。",
+        "x-max-body-bytes": 4096,
+        "x-reject-unknown-query": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FolderPathRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/folder-imports/{id}/scan": {
+      "post": {
+        "operationId": "postApiFolderImportsIdScan",
+        "summary": "立即扫描登记文件夹",
+        "tags": [
+          "扫描与媒体"
+        ],
+        "x-source": "backend/src/api/ScanController.cpp",
+        "responses": {
+          "201": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Scan"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "404": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "409": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "使用已返回的资源标识。"
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "可选回显；未提供时生成序号。"
+          }
+        ],
+        "description": "无体无查询；跳过稳定等待，响应后继续刮削。",
+        "x-reject-unknown-query": true
+      }
+    },
+    "/api/inbox": {
+      "get": {
+        "operationId": "getApiInbox",
+        "summary": "分页读取资源列表",
+        "tags": [
+          "扫描与媒体"
+        ],
+        "x-source": "backend/src/api/ScanController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/InboxPage"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 100,
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 0,
+              "minimum": 0,
+              "maximum": 1000000
+            }
+          },
+          {
+            "name": "origin",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "qb_download",
+                "external_import",
+                "folder_import"
+              ]
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "可选回显；未提供时生成序号。"
+          }
+        ],
+        "description": "无请求体；来源可选。返回 total；missing 记录被排除。",
+        "x-reject-unknown-query": true
+      }
+    },
+    "/api/inbox/{id}/parse": {
+      "post": {
+        "operationId": "postApiInboxIdParse",
+        "summary": "修正媒体标题与集数",
+        "tags": [
+          "扫描与媒体"
+        ],
+        "x-source": "backend/src/api/ScanController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Media"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "404": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "使用已返回的资源标识。"
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "可选回显；未提供时生成序号。"
+          }
+        ],
+        "description": "显式 bangumiSubjectId 被拒绝，请通过确认绑定接口处理。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorrectionRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/media/{id}/episode": {
+      "put": {
+        "operationId": "putApiMediaIdEpisode",
+        "summary": "修改集数资料",
+        "tags": [
+          "扫描与媒体"
+        ],
+        "x-source": "backend/src/api/ScanController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Media"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "404": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "使用已返回的资源标识。"
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "可选回显；未提供时生成序号。"
+          }
+        ],
+        "x-max-body-bytes": 1024,
+        "x-reject-unknown-query": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EpisodeEditRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/enrichment/sync": {
+      "post": {
+        "operationId": "postApiEnrichmentSync",
+        "summary": "执行 Mikan 与 Bangumi 补全",
+        "tags": [
+          "扫描与媒体"
+        ],
+        "x-source": "backend/src/api/ScanController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/MetadataSync"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "可选回显；未提供时生成序号。"
+          }
+        ],
+        "description": "无体无查询。普通补全最多 5 项；Mikan 失败通过 mikanErrorCode 报告。",
+        "x-reject-unknown-query": true
+      }
+    },
+    "/api/anime": {
+      "get": {
+        "operationId": "getApiAnime",
+        "summary": "分页读取番剧",
+        "tags": [
+          "番剧"
+        ],
+        "x-source": "backend/src/api/AnimeController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/AnimePage"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 50,
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 0,
+              "minimum": 0,
+              "maximum": 1000000
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "import_desc",
+                "import_asc"
+              ],
+              "default": "import_desc"
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "可选回显；未提供时生成序号。"
+          }
+        ],
+        "description": "无请求体。",
+        "x-reject-unknown-query": true
+      }
+    },
+    "/api/anime/{id}": {
+      "get": {
+        "operationId": "getApiAnimeId",
+        "summary": "读取番剧详情和媒体分页",
+        "tags": [
+          "番剧"
+        ],
+        "x-source": "backend/src/api/AnimeController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/AnimeDetail"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "404": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "使用已返回的资源标识。"
+          },
+          {
+            "name": "mediaLimit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 50,
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "mediaOffset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 0,
+              "minimum": 0,
+              "maximum": 1000000
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "可选回显；未提供时生成序号。"
+          }
+        ],
+        "x-reject-unknown-query": true
+      },
+      "put": {
+        "operationId": "putApiAnimeId",
+        "summary": "保存番剧人工资料",
+        "tags": [
+          "番剧"
+        ],
+        "x-source": "backend/src/api/AnimeController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/AnimeDetail"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "404": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "使用已返回的资源标识。"
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "可选回显；未提供时生成序号。"
+          }
+        ],
+        "description": "不移动或重命名已整理文件。",
+        "x-max-body-bytes": 8192,
+        "x-reject-unknown-query": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnimeEditRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/anime-calendar": {
+      "get": {
+        "operationId": "getApiAnimeCalendar",
+        "summary": "读取本地番剧每周排期",
+        "tags": [
+          "番剧"
+        ],
+        "x-source": "backend/src/api/AnimeController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/AnimeCalendar"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "可选回显；未提供时生成序号。"
+          }
+        ],
+        "description": "无体无查询。缓存 6 小时，远端失败可使用 7 天内旧缓存；stale=true 仍为 200。",
+        "x-reject-unknown-query": true
+      }
+    },
+    "/api/bangumi/search": {
+      "get": {
+        "operationId": "getApiBangumiSearch",
+        "summary": "搜索动画候选及本地匹配",
+        "tags": [
+          "番剧"
+        ],
+        "x-source": "backend/src/api/AnimeController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/BangumiSearch"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "409": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "429": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "1–500 UTF-8 字节。",
+              "x-max-utf8-bytes": 500
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "可选回显；未提供时生成序号。"
+          }
+        ],
+        "description": "无请求体；只允许 q。失败可附 retryCount/retryAfter，retryAfter 为 Unix 秒绝对时刻。",
+        "x-reject-unknown-query": true
+      }
+    },
+    "/api/anime/{id}/bangumi": {
+      "put": {
+        "operationId": "putApiAnimeIdBangumi",
+        "summary": "确认绑定 Bangumi 动画",
+        "tags": [
+          "番剧"
+        ],
+        "x-source": "backend/src/api/AnimeController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/AnimeDetail"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "404": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "409": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "429": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "使用已返回的资源标识。"
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "可选回显；未提供时生成序号。"
+          }
+        ],
+        "description": "ID 被占用时 409 bangumi_subject_in_use，附 targetAnimeId/targetTitle。封面可能继续异步缓存。",
+        "x-max-body-bytes": 4096,
+        "x-reject-unknown-query": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BindRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/anime/{id}/merge/preview": {
+      "post": {
+        "operationId": "postApiAnimeIdMergePreview",
+        "summary": "预览合并到已绑定词条",
+        "tags": [
+          "番剧"
+        ],
+        "x-source": "backend/src/api/AnimeController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/AnimeMergePreview"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "404": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "409": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "413": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "使用已返回的资源标识。"
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "可选回显；未提供时生成序号。"
+          }
+        ],
+        "description": "保存 5 分钟有效的快照，不移动媒体文件。",
+        "x-max-body-bytes": 4096,
+        "x-reject-unknown-query": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergePreviewRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/anime/{id}/merge": {
+      "post": {
+        "operationId": "postApiAnimeIdMerge",
+        "summary": "确认预览中的词条合并",
+        "tags": [
+          "番剧"
+        ],
+        "x-source": "backend/src/api/AnimeController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/AnimeDetail"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "404": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "409": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "413": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "使用已返回的资源标识。"
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "可选回显；未提供时生成序号。"
+          }
+        ],
+        "description": "返回目标词条。凭证有效期内成功重试安全；快照变化需重新预览，不删除重复集数文件。",
+        "x-max-body-bytes": 4096,
+        "x-reject-unknown-query": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergeRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/anime/{id}/cover/refresh": {
+      "post": {
+        "operationId": "postApiAnimeIdCoverRefresh",
+        "summary": "刷新番剧封面缓存",
+        "tags": [
+          "番剧"
+        ],
+        "x-source": "backend/src/api/AnimeController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "coverUrl": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "coverUrl"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "404": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "409": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "使用已返回的资源标识。"
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "可选回显；未提供时生成序号。"
+          }
+        ],
+        "description": "无体无查询。",
+        "x-reject-unknown-query": true
+      }
+    },
+    "/api/covers/{animeId}/{subjectId}/{filename}": {
+      "get": {
+        "operationId": "getApiCoversAnimeidSubjectidFilename",
+        "summary": "读取番剧本地封面",
+        "tags": [
+          "番剧"
+        ],
+        "x-source": "backend/src/api/AnimeController.cpp",
+        "responses": {
+          "200": {
+            "description": "JPEG、PNG 或 WebP 图片字节，无 JSON requestId。",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "nosniff"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "404": {
+            "description": "空响应体，无 JSON 错误。"
+          }
+        },
+        "parameters": [
+          {
+            "name": "filename",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "使用已返回的资源标识。"
+          },
+          {
+            "name": "subjectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "使用已返回的资源标识。"
+          },
+          {
+            "name": "animeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "使用已返回的资源标识。"
+          }
+        ],
+        "description": "使用 coverUrl。无体无查询；未命中和输入错误均为空体 404。Cache-Control: private, max-age=86400。"
+      }
+    },
+    "/api/organize/preview": {
+      "post": {
+        "operationId": "postApiOrganizePreview",
+        "summary": "生成整理预览",
+        "tags": [
+          "整理与播放"
+        ],
+        "x-source": "backend/src/api/OrganizationController.cpp",
+        "responses": {
+          "201": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Preview"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "404": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "409": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "可选回显；未提供时生成序号。"
+          }
+        ],
+        "description": "计划有效 15 分钟；conflicts 非空不可执行；源大小和修改时间必须与登记快照一致。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationPreviewRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/organize/execute": {
+      "post": {
+        "operationId": "postApiOrganizeExecute",
+        "summary": "确认执行整理",
+        "tags": [
+          "整理与播放"
+        ],
+        "x-source": "backend/src/api/OrganizationController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Execution"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "404": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "409": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "429": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "可选回显；未提供时生成序号。"
+          }
+        ],
+        "description": "每秒最多 10 个新键；重试复用幂等键。拒绝覆盖目标，保留来源；execution_in_progress 不应换键盲重试。",
+        "x-max-body-bytes": 4096,
+        "x-reject-unknown-query": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationExecuteRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/players": {
+      "get": {
+        "operationId": "getApiPlayers",
+        "summary": "读取本机播放器目录",
+        "tags": [
+          "整理与播放"
+        ],
+        "x-source": "backend/src/api/PlaybackController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/PlayerCatalog"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "可选回显；未提供时生成序号。"
+          }
+        ],
+        "x-reject-unknown-query": true
+      },
+      "put": {
+        "operationId": "putApiPlayers",
+        "summary": "保存默认播放器",
+        "tags": [
+          "整理与播放"
+        ],
+        "x-source": "backend/src/api/PlaybackController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/PlayerCatalog"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "409": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "可选回显；未提供时生成序号。"
+          }
+        ],
+        "description": "执行本机来源检查；无查询。",
+        "x-max-body-bytes": 2048,
+        "x-reject-unknown-query": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlayerRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/media/{id}/play": {
+      "post": {
+        "operationId": "postApiMediaIdPlay",
+        "summary": "启动本机播放",
+        "tags": [
+          "整理与播放"
+        ],
+        "x-source": "backend/src/api/PlaybackController.cpp",
+        "responses": {
+          "202": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/PlaybackStarted"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "404": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "409": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "使用已返回的资源标识。"
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "可选回显；未提供时生成序号。"
+          }
+        ],
+        "description": "无体使用默认播放器；有体必须恰好 playerId。执行本机来源检查。202 仅表示启动请求已交给程序。",
+        "x-max-body-bytes": 128,
+        "x-reject-unknown-query": true,
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlayRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings": {
+      "get": {
+        "operationId": "getApiSettings",
+        "summary": "读取生效设置及保存偏好",
+        "tags": [
+          "设置"
+        ],
+        "x-source": "backend/src/api/SettingsController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Settings"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "可选回显；未提供时生成序号。"
+          }
+        ],
+        "x-reject-unknown-query": true
+      },
+      "put": {
+        "operationId": "putApiSettings",
+        "summary": "保存四项旧版通用偏好",
+        "tags": [
+          "设置"
+        ],
+        "x-source": "backend/src/api/SettingsController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Settings"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "可选回显；未提供时生成序号。"
+          }
+        ],
+        "description": "不代替 /api/players 和 /api/qb/config。",
+        "x-max-body-bytes": 4096,
+        "x-reject-unknown-query": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreferencesRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/qb-download-directory": {
+      "put": {
+        "operationId": "putApiSettingsQbDownloadDirectory",
+        "summary": "保存 qB 下载来源目录",
+        "tags": [
+          "设置"
+        ],
+        "x-source": "backend/src/api/SettingsController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SettingsSavedDirectory"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "409": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "可选回显；未提供时生成序号。"
+          }
+        ],
+        "description": "不移动文件；需重启。返回 sourcePath/qbDownloadConfigured 仍为本进程生效值；环境变量覆盖时禁止修改。",
+        "x-max-body-bytes": 8192,
+        "x-reject-unknown-query": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectoryRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/audit-logs": {
+      "get": {
+        "operationId": "getApiAuditLogs",
+        "summary": "分页读取审计记录",
+        "tags": [
+          "设置"
+        ],
+        "x-source": "backend/src/api/SettingsController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/AuditLogPage"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 50,
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 0,
+              "minimum": 0,
+              "maximum": 1000000
+            }
+          },
+          {
+            "name": "animeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "可选回显；未提供时生成序号。"
+          }
+        ],
+        "x-reject-unknown-query": true
+      }
+    },
+    "/api/qb/config": {
+      "get": {
+        "operationId": "getApiQbConfig",
+        "summary": "读取 qB 连接摘要",
+        "tags": [
+          "设置"
+        ],
+        "x-source": "backend/src/api/QbConfigController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/QbConfig"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "description": "无查询。保存即时生效；摘要不回传密码，清除后可回退环境配置。GET/DELETE 必须无体。",
+        "x-reject-unknown-query": true
+      },
+      "put": {
+        "operationId": "putApiQbConfig",
+        "summary": "保存 qB 连接",
+        "tags": [
+          "设置"
+        ],
+        "x-source": "backend/src/api/QbConfigController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/QbConfig"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "413": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "description": "无查询。保存即时生效；摘要不回传密码，清除后可回退环境配置。GET/DELETE 必须无体。",
+        "x-max-body-bytes": 2048,
+        "x-reject-unknown-query": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QbConfigRequest"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteApiQbConfig",
+        "summary": "清除保存的 qB 配置",
+        "tags": [
+          "设置"
+        ],
+        "x-source": "backend/src/api/QbConfigController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/QbConfig"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "description": "无查询。保存即时生效；摘要不回传密码，清除后可回退环境配置。GET/DELETE 必须无体。",
+        "x-reject-unknown-query": true
+      }
+    },
+    "/api/qb/config/test": {
+      "post": {
+        "operationId": "postApiQbConfigTest",
+        "summary": "测试 qB 连接草稿",
+        "tags": [
+          "设置"
+        ],
+        "x-source": "backend/src/api/QbConfigController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/QbStatus"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "413": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "description": "不保存。连接失败仍为 HTTP 200，检查 connected/errorCode。",
+        "x-max-body-bytes": 2048,
+        "x-reject-unknown-query": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QbConfigRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bangumi/config": {
+      "get": {
+        "operationId": "getApiBangumiConfig",
+        "summary": "读取 Bangumi 连接摘要",
+        "tags": [
+          "设置"
+        ],
+        "x-source": "backend/src/api/BangumiConfigController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/BangumiConfig"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "description": "无查询；GET/DELETE 必须无体。已保存值优先，清除后可回退环境值。",
+        "x-reject-unknown-query": true
+      },
+      "put": {
+        "operationId": "putApiBangumiConfig",
+        "summary": "保存 Bangumi User-Agent",
+        "tags": [
+          "设置"
+        ],
+        "x-source": "backend/src/api/BangumiConfigController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/BangumiConfig"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "413": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "description": "无查询；GET/DELETE 必须无体。已保存值优先，清除后可回退环境值。",
+        "x-max-body-bytes": 1024,
+        "x-reject-unknown-query": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BangumiConfigRequest"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteApiBangumiConfig",
+        "summary": "清除保存的 Bangumi 配置",
+        "tags": [
+          "设置"
+        ],
+        "x-source": "backend/src/api/BangumiConfigController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/BangumiConfig"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "description": "无查询；GET/DELETE 必须无体。已保存值优先，清除后可回退环境值。",
+        "x-reject-unknown-query": true
+      }
+    },
+    "/api/bangumi/config/test": {
+      "post": {
+        "operationId": "postApiBangumiConfigTest",
+        "summary": "测试 Bangumi 身份草稿",
+        "tags": [
+          "设置"
+        ],
+        "x-source": "backend/src/api/BangumiConfigController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/BangumiConnectionTest"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "413": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "description": "不保存、不走搜索缓存；网络失败仍为 HTTP 200。",
+        "x-max-body-bytes": 1024,
+        "x-reject-unknown-query": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BangumiConfigRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/qb/status": {
+      "get": {
+        "operationId": "getApiQbStatus",
+        "summary": "读取 qB 连接和任务计数",
+        "tags": [
+          "qB 与 RSS"
+        ],
+        "x-source": "backend/src/api/QbRssController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QbStatus"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "description": "没有请求 ID；连接失败通过 connected/errorCode 报告。"
+      }
+    },
+    "/api/qb/rss": {
+      "get": {
+        "operationId": "getApiQbRss",
+        "summary": "读取 Mikan RSS 标题目录",
+        "tags": [
+          "qB 与 RSS"
+        ],
+        "x-source": "backend/src/api/QbRssController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MikanCatalog"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "description": "没有请求 ID；读取失败通过 errorCode 报告。"
+      }
+    },
+    "/api/qb/rss/feeds": {
+      "post": {
+        "operationId": "postApiQbRssFeeds",
+        "summary": "添加 Mikan 订阅及自动集数规则",
+        "tags": [
+          "qB 与 RSS"
+        ],
+        "x-source": "backend/src/api/QbRssController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QbAction"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "409": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "description": "使用生效的 qB 来源目录。修改 qB RSS/自动下载偏好及全局智能集数表达式，影响其他智能过滤规则。没有请求 ID。",
+        "x-max-body-bytes": 2048,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MikanFeedRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/qb/rss/rules": {
+      "post": {
+        "operationId": "postApiQbRssRules",
+        "summary": "创建旧式关键词订阅规则",
+        "tags": [
+          "qB 与 RSS"
+        ],
+        "x-source": "backend/src/api/QbRssController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QbAction"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "409": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "description": "useRegex=false、smartFilter=false，不提供 /feeds 的自动集数去重。没有请求 ID。",
+        "x-max-body-bytes": 4096,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MikanRuleRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/novels": {
+      "get": {
+        "operationId": "getApiNovels",
+        "summary": "读取小说作品列表",
+        "tags": [
+          "小说"
+        ],
+        "x-source": "backend/src/api/NovelController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/NovelWork"
+                          }
+                        }
+                      },
+                      "required": [
+                        "items"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "description": "当前查询会逐卷核对并删除不可访问分卷的数据库记录，保留作品和磁盘文件；恢复文件后需重新导入。"
+      }
+    },
+    "/api/novels/{id}": {
+      "get": {
+        "operationId": "getApiNovelsId",
+        "summary": "读取小说作品",
+        "tags": [
+          "小说"
+        ],
+        "x-source": "backend/src/api/NovelController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/NovelWork"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "使用已返回的资源标识。"
+          }
+        ],
+        "description": "当前查询会逐卷核对并删除不可访问分卷的数据库记录，保留作品和磁盘文件；恢复文件后需重新导入。 当前复用全库核对。"
+      },
+      "put": {
+        "operationId": "putApiNovelsId",
+        "summary": "编辑小说人工资料",
+        "tags": [
+          "小说"
+        ],
+        "x-source": "backend/src/api/NovelController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/NovelWork"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "404": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "413": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "使用已返回的资源标识。"
+          }
+        ],
+        "description": "执行本机来源检查；字段白名单；请求体上限 24000 字节。",
+        "x-max-body-bytes": 24000,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NovelEditRequest"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteApiNovelsId",
+        "summary": "删除无可读分卷的作品词条",
+        "tags": [
+          "小说"
+        ],
+        "x-source": "backend/src/api/NovelController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Removed"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "404": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "409": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "413": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "使用已返回的资源标识。"
+          }
+        ],
+        "description": "执行本机来源检查；字段白名单；请求体上限 24000 字节。 尚有可读卷时 409 novel_has_accessible_files；不删除磁盘文件。",
+        "x-max-body-bytes": 24000,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/novel-files/{id}": {
+      "put": {
+        "operationId": "putApiNovelFilesId",
+        "summary": "编辑分卷归属和展示名",
+        "tags": [
+          "小说"
+        ],
+        "x-source": "backend/src/api/NovelController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/NovelWork"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "404": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "413": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "使用已返回的资源标识。"
+          }
+        ],
+        "description": "执行本机来源检查；字段白名单；请求体上限 24000 字节。 返回目标作品，不移动文件。",
+        "x-max-body-bytes": 24000,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NovelFileEditRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/novel-sources": {
+      "get": {
+        "operationId": "getApiNovelSources",
+        "summary": "读取小说导入来源",
+        "tags": [
+          "小说"
+        ],
+        "x-source": "backend/src/api/NovelController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/NovelSource"
+                          }
+                        }
+                      },
+                      "required": [
+                        "items"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        }
+      }
+    },
+    "/api/novel-imports": {
+      "post": {
+        "operationId": "postApiNovelImports",
+        "summary": "导入小说并排队刮削",
+        "tags": [
+          "小说"
+        ],
+        "x-source": "backend/src/api/NovelController.cpp",
+        "responses": {
+          "202": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/NovelImport"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "413": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "description": "执行本机来源检查；字段白名单；请求体上限 24000 字节。 同步登记 EPUB/TXT/PDF，再串行排队刮削；最多 20000 文件；scraping 表示已排队，不是完成。",
+        "x-max-body-bytes": 24000,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PathRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/novel-reader": {
+      "get": {
+        "operationId": "getApiNovelReader",
+        "summary": "读取小说阅读器",
+        "tags": [
+          "小说"
+        ],
+        "x-source": "backend/src/api/NovelController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/NovelReader"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        }
+      },
+      "put": {
+        "operationId": "putApiNovelReader",
+        "summary": "保存小说阅读器",
+        "tags": [
+          "小说"
+        ],
+        "x-source": "backend/src/api/NovelController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/NovelReader"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "413": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "description": "执行本机来源检查；字段白名单；请求体上限 24000 字节。",
+        "x-max-body-bytes": 24000,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NovelReaderRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/novel-files/{id}/read": {
+      "post": {
+        "operationId": "postApiNovelFilesIdRead",
+        "summary": "启动本机小说阅读器",
+        "tags": [
+          "小说"
+        ],
+        "x-source": "backend/src/api/NovelController.cpp",
+        "responses": {
+          "202": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Started"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "404": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "使用已返回的资源标识。"
+          }
+        ],
+        "description": "执行本机来源检查；必须无请求体。"
+      }
+    },
+    "/api/novel-bangumi/search": {
+      "get": {
+        "operationId": "getApiNovelBangumiSearch",
+        "summary": "搜索小说 Bangumi 候选",
+        "tags": [
+          "小说"
+        ],
+        "x-source": "backend/src/api/NovelController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/NovelCandidate"
+                          }
+                        }
+                      },
+                      "required": [
+                        "items"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "1–200 UTF-8 字节。",
+              "x-max-utf8-bytes": 200
+            }
+          }
+        ],
+        "description": "搜索失败包括非法查询均返回 503。"
+      }
+    },
+    "/api/novels/{id}/scrape": {
+      "post": {
+        "operationId": "postApiNovelsIdScrape",
+        "summary": "刮削小说作品或分卷",
+        "tags": [
+          "小说"
+        ],
+        "x-source": "backend/src/api/NovelController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/NovelScrape"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "413": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "使用已返回的资源标识。"
+          }
+        ],
+        "description": "执行本机来源检查；字段白名单；请求体上限 24000 字节。 回调中的业务失败仍为 200；需要 {} 或 {subjectId}。",
+        "x-max-body-bytes": 24000,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScrapeRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/novels/{id}/cover": {
+      "get": {
+        "operationId": "getApiNovelsIdCover",
+        "summary": "读取小说作品或分卷封面",
+        "tags": [
+          "小说"
+        ],
+        "x-source": "backend/src/api/NovelController.cpp",
+        "responses": {
+          "200": {
+            "description": "JPEG、PNG 或 WebP 图片字节，无 JSON requestId。",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "nosniff"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "使用已返回的资源标识。"
+          }
+        ],
+        "description": "成功无 requestId，Cache-Control:no-cache；未命中为 JSON 404 cover_unavailable。"
+      }
+    },
+    "/api/novel-files/{id}/scrape": {
+      "post": {
+        "operationId": "postApiNovelFilesIdScrape",
+        "summary": "刮削小说作品或分卷",
+        "tags": [
+          "小说"
+        ],
+        "x-source": "backend/src/api/NovelController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/NovelScrape"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "413": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "使用已返回的资源标识。"
+          }
+        ],
+        "description": "执行本机来源检查；字段白名单；请求体上限 24000 字节。 回调中的业务失败仍为 200；需要 {} 或 {subjectId}。",
+        "x-max-body-bytes": 24000,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScrapeRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/novel-files/{id}/cover": {
+      "get": {
+        "operationId": "getApiNovelFilesIdCover",
+        "summary": "读取小说作品或分卷封面",
+        "tags": [
+          "小说"
+        ],
+        "x-source": "backend/src/api/NovelController.cpp",
+        "responses": {
+          "200": {
+            "description": "JPEG、PNG 或 WebP 图片字节，无 JSON requestId。",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "nosniff"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "使用已返回的资源标识。"
+          }
+        ],
+        "description": "成功无 requestId，Cache-Control:no-cache；未命中为 JSON 404 cover_unavailable。"
+      }
+    },
+    "/api/games": {
+      "get": {
+        "operationId": "getApiGames",
+        "summary": "读取游戏库",
+        "tags": [
+          "游戏"
+        ],
+        "x-source": "backend/src/api/GameController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/GameResource"
+                          }
+                        }
+                      },
+                      "required": [
+                        "items"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "description": "逐项重新检查 EXE 可访问性。"
+      }
+    },
+    "/api/game-imports": {
+      "post": {
+        "operationId": "postApiGameImports",
+        "summary": "登记游戏并尝试刮削",
+        "tags": [
+          "游戏"
+        ],
+        "x-source": "backend/src/api/GameController.cpp",
+        "responses": {
+          "201": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/GameImport"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "413": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "description": "执行本机来源检查；字段白名单；请求体上限 28000 字节。 EXE 路径可剥离外层引号，拒绝重解析路径。重复路径复用词条；刮削失败仍可能 201。",
+        "x-max-body-bytes": 28000,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PathRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/games/{id}": {
+      "put": {
+        "operationId": "putApiGamesId",
+        "summary": "编辑游戏人工资料和路径",
+        "tags": [
+          "游戏"
+        ],
+        "x-source": "backend/src/api/GameController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/GameResource"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "404": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "409": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "413": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "使用已返回的资源标识。"
+          }
+        ],
+        "description": "执行本机来源检查；字段白名单；请求体上限 28000 字节。 原路径缺失时仍可编辑，替换路径须为可读取 EXE。",
+        "x-max-body-bytes": 28000,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GameEditRequest"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteApiGamesId",
+        "summary": "清理不可访问游戏词条",
+        "tags": [
+          "游戏"
+        ],
+        "x-source": "backend/src/api/GameController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Removed"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "404": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "409": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "413": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "使用已返回的资源标识。"
+          }
+        ],
+        "description": "执行本机来源检查；字段白名单；请求体上限 28000 字节。 可访问游戏返回 409 game_is_accessible；不删除文件。",
+        "x-max-body-bytes": 28000,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/games/{id}/launch": {
+      "post": {
+        "operationId": "postApiGamesIdLaunch",
+        "summary": "确认启动本机游戏",
+        "tags": [
+          "游戏"
+        ],
+        "x-source": "backend/src/api/GameController.cpp",
+        "responses": {
+          "202": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Started"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "404": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "413": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "使用已返回的资源标识。"
+          }
+        ],
+        "description": "执行本机来源检查；字段白名单；请求体上限 28000 字节。 工作目录为 EXE 所在目录；启动失败当前为 400。",
+        "x-max-body-bytes": 28000,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/game-bangumi/search": {
+      "get": {
+        "operationId": "getApiGameBangumiSearch",
+        "summary": "搜索游戏 Bangumi 候选",
+        "tags": [
+          "游戏"
+        ],
+        "x-source": "backend/src/api/GameController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/GameCandidate"
+                          }
+                        }
+                      },
+                      "required": [
+                        "items"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "1–200 UTF-8 字节。",
+              "x-max-utf8-bytes": 200
+            }
+          }
+        ],
+        "description": "远端或限流失败当前通常为 400。"
+      }
+    },
+    "/api/game-vndb/search": {
+      "get": {
+        "operationId": "getApiGameVndbSearch",
+        "summary": "搜索 VNDB 候选",
+        "tags": [
+          "游戏"
+        ],
+        "x-source": "backend/src/api/GameController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/VndbCandidate"
+                          }
+                        },
+                        "more": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "more"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "1–200 UTF-8 字节，无 NUL。",
+              "x-max-utf8-bytes": 200
+            }
+          }
+        ],
+        "description": "more=true 时不自动唯一绑定；不暴露翻页参数。"
+      }
+    },
+    "/api/games/{id}/scrape": {
+      "post": {
+        "operationId": "postApiGamesIdScrape",
+        "summary": "刮削游戏并在需要时回退 VNDB",
+        "tags": [
+          "游戏"
+        ],
+        "x-source": "backend/src/api/GameController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/GameScrape"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "413": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "使用已返回的资源标识。"
+          }
+        ],
+        "description": "执行本机来源检查；字段白名单；请求体上限 28000 字节。 需要 {} 或 {subjectId}；业务失败仍为 200。已选择 VNDB 来源时自动请求可能沿用 VNDB。",
+        "x-max-body-bytes": 28000,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScrapeRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/games/{id}/vndb/scrape": {
+      "post": {
+        "operationId": "postApiGamesIdVndbScrape",
+        "summary": "指定 VNDB 刮削游戏",
+        "tags": [
+          "游戏"
+        ],
+        "x-source": "backend/src/api/GameController.cpp",
+        "responses": {
+          "200": {
+            "description": "成功。业务状态另见响应字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/GameScrape"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestId"
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "同响应体 requestId。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "413": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "使用已返回的资源标识。"
+          }
+        ],
+        "description": "执行本机来源检查；字段白名单；请求体上限 28000 字节。 需要 {} 或 {vndbId}；业务失败包括无效 ID 仍可能 200。",
+        "x-max-body-bytes": 28000,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VndbScrapeRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/games/{id}/cover": {
+      "get": {
+        "operationId": "getApiGamesIdCover",
+        "summary": "读取游戏封面",
+        "tags": [
+          "游戏"
+        ],
+        "x-source": "backend/src/api/GameController.cpp",
+        "responses": {
+          "200": {
+            "description": "JPEG、PNG 或 WebP 图片字节，无 JSON requestId。",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "nosniff"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "500": {
+            "$ref": "#/components/responses/ApiError"
+          },
+          "default": {
+            "$ref": "#/components/responses/ApiError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "使用已返回的资源标识。"
+          }
+        ],
+        "description": "成功 Cache-Control:no-cache；未命中为 JSON 400 cover_unavailable，当前不同于小说 404。"
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "稳定的应用错误码。"
+              },
+              "message": {
+                "type": "string",
+                "description": "展示文案可能变化，不用作分支判断。"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "description": "部分接口缺省；不同控制器和进程间不保证唯一。"
+          },
+          "targetAnimeId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "targetTitle": {
+            "type": "string"
+          },
+          "retryCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "retryAfter": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix 秒的绝对重试时刻，不是等待秒数。"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "errorCode": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "Health": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok"
+            ]
+          },
+          "service": {
+            "type": "string",
+            "enum": [
+              "anime-vault"
+            ]
+          },
+          "instanceToken": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$",
+            "description": "可选实例身份标记，不是认证令牌。"
+          }
+        },
+        "required": [
+          "status",
+          "service"
+        ]
+      },
+      "Scan": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "qb_download",
+              "external_import",
+              "folder_import"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "completed / failed；内部过程还可能 running。"
+          },
+          "discoveredCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "processedCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "errorCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "errorSummary": {
+            "type": "string",
+            "enum": [
+              "",
+              "scan_failed"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "status",
+          "discoveredCount",
+          "processedCount",
+          "errorCount",
+          "errorSummary"
+        ]
+      },
+      "FolderImport": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "path"
+        ]
+      },
+      "Media": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "scanId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sourcePath": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "parsedTitle": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "season": {
+            "type": "string"
+          },
+          "episodeNumber": {
+            "type": "string"
+          },
+          "rawEpisodeNumber": {
+            "type": "string"
+          },
+          "episodeNumberSource": {
+            "type": "string",
+            "enum": [
+              "parsed",
+              "bangumi",
+              "manual"
+            ]
+          },
+          "episodeType": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "sp",
+              "ova",
+              "ncop",
+              "nced",
+              "unknown"
+            ]
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "status": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "qb_download",
+              "external_import",
+              "folder_import"
+            ]
+          },
+          "animeId": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "confidence": {
+            "type": "number"
+          },
+          "bangumiSubjectId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "id",
+          "scanId",
+          "sourcePath",
+          "filename",
+          "parsedTitle",
+          "title",
+          "season",
+          "episodeNumber",
+          "rawEpisodeNumber",
+          "episodeNumberSource",
+          "episodeType",
+          "sizeBytes",
+          "status",
+          "origin",
+          "animeId",
+          "confidence"
+        ]
+      },
+      "Anime": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "displayTitle": {
+            "type": "string"
+          },
+          "originalTitle": {
+            "type": "string"
+          },
+          "season": {
+            "type": "string"
+          },
+          "year": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "bangumiSubjectId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "coverUrl": {
+            "type": "string"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "importedMonth": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayTitle",
+          "originalTitle",
+          "season",
+          "coverUrl",
+          "locked",
+          "importedMonth"
+        ]
+      },
+      "AnimeDetail": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "displayTitle": {
+            "type": "string"
+          },
+          "originalTitle": {
+            "type": "string"
+          },
+          "season": {
+            "type": "string"
+          },
+          "year": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "bangumiSubjectId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "coverUrl": {
+            "type": "string"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "importedMonth": {
+            "type": "string"
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "media": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Media"
+            }
+          },
+          "nextMediaOffset": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "displayTitle",
+          "originalTitle",
+          "season",
+          "coverUrl",
+          "locked",
+          "importedMonth",
+          "aliases",
+          "media",
+          "nextMediaOffset"
+        ]
+      },
+      "ScanPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Scan"
+            }
+          },
+          "nextOffset": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          }
+        },
+        "required": [
+          "items",
+          "nextOffset"
+        ]
+      },
+      "MediaPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Media"
+            }
+          },
+          "nextOffset": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          }
+        },
+        "required": [
+          "items",
+          "nextOffset"
+        ]
+      },
+      "AnimePage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Anime"
+            }
+          },
+          "nextOffset": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          }
+        },
+        "required": [
+          "items",
+          "nextOffset"
+        ]
+      },
+      "AuditLogPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditLog"
+            }
+          },
+          "nextOffset": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          }
+        },
+        "required": [
+          "items",
+          "nextOffset"
+        ]
+      },
+      "InboxPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Media"
+            }
+          },
+          "nextOffset": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "items",
+          "nextOffset",
+          "total"
+        ]
+      },
+      "Preview": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "targetPath": {
+            "type": "string"
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "hardlink",
+              "copy",
+              "symlink"
+            ]
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC ISO 8601，预览有效 15 分钟。"
+          },
+          "conflicts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "targetPath",
+          "operation",
+          "expiresAt",
+          "conflicts"
+        ]
+      },
+      "Execution": {
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "targetPath": {
+            "type": "string"
+          },
+          "bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "completed"
+            ]
+          }
+        },
+        "required": [
+          "jobId",
+          "targetPath",
+          "bytes",
+          "status"
+        ]
+      },
+      "AnimeMergePreview": {
+        "type": "object",
+        "properties": {
+          "previewId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "sourceId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "targetId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "subjectId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "sourceTitle": {
+            "type": "string"
+          },
+          "targetTitle": {
+            "type": "string"
+          },
+          "mediaCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "aliasCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "duplicateEpisodeCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expiresAt": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix 秒，预览有效 5 分钟。"
+          }
+        },
+        "required": [
+          "previewId",
+          "sourceId",
+          "targetId",
+          "subjectId",
+          "sourceTitle",
+          "targetTitle",
+          "mediaCount",
+          "aliasCount",
+          "duplicateEpisodeCount",
+          "expiresAt"
+        ]
+      },
+      "PreferencesRequest": {
+        "type": "object",
+        "properties": {
+          "preferredOperation": {
+            "type": "string",
+            "enum": [
+              "hardlink",
+              "copy",
+              "symlink"
+            ]
+          },
+          "scanIntervalSeconds": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 60,
+            "maximum": 86400,
+            "description": "目前只保存偏好，不控制 qB 完成任务的 10 秒等待。"
+          },
+          "mpvExecutable": {
+            "type": "string",
+            "x-max-utf8-bytes": 1024
+          },
+          "qbWebUiUrl": {
+            "type": "string",
+            "description": "旧偏好字段，不代替 /api/qb/config 登录配置。",
+            "x-max-utf8-bytes": 2048
+          }
+        },
+        "required": [
+          "preferredOperation",
+          "scanIntervalSeconds",
+          "mpvExecutable",
+          "qbWebUiUrl"
+        ],
+        "additionalProperties": false
+      },
+      "Settings": {
+        "type": "object",
+        "properties": {
+          "preferredOperation": {
+            "type": "string",
+            "enum": [
+              "hardlink",
+              "copy",
+              "symlink"
+            ]
+          },
+          "scanIntervalSeconds": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 60,
+            "maximum": 86400,
+            "description": "目前只保存偏好，不控制 qB 完成任务的 10 秒等待。"
+          },
+          "mpvExecutable": {
+            "type": "string",
+            "x-max-utf8-bytes": 1024
+          },
+          "qbWebUiUrl": {
+            "type": "string",
+            "description": "旧偏好字段，不代替 /api/qb/config 登录配置。",
+            "x-max-utf8-bytes": 2048
+          },
+          "sourcePath": {
+            "type": "string"
+          },
+          "importPath": {
+            "type": "string"
+          },
+          "libraryPath": {
+            "type": "string"
+          },
+          "dataPath": {
+            "type": "string"
+          },
+          "bangumiConfigured": {
+            "type": "boolean"
+          },
+          "qbWebUiConfigured": {
+            "type": "boolean"
+          },
+          "qbDownloadConfigured": {
+            "type": "boolean"
+          },
+          "qbDownloadDirectory": {
+            "type": "string"
+          },
+          "qbDownloadEnvironmentOverride": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "preferredOperation",
+          "scanIntervalSeconds",
+          "mpvExecutable",
+          "qbWebUiUrl",
+          "sourcePath",
+          "importPath",
+          "libraryPath",
+          "dataPath",
+          "bangumiConfigured",
+          "qbWebUiConfigured",
+          "qbDownloadConfigured",
+          "qbDownloadDirectory",
+          "qbDownloadEnvironmentOverride"
+        ]
+      },
+      "SettingsSavedDirectory": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Settings"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "restartRequired": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              }
+            },
+            "required": [
+              "restartRequired"
+            ]
+          }
+        ]
+      },
+      "PlayerCatalog": {
+        "type": "object",
+        "properties": {
+          "selectedId": {
+            "type": "string",
+            "enum": [
+              "mpv",
+              "potplayer",
+              "vlc",
+              "mpchc",
+              "mpcbe",
+              "system",
+              "custom"
+            ]
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "enum": [
+                    "mpv",
+                    "potplayer",
+                    "vlc",
+                    "mpchc",
+                    "mpcbe",
+                    "system",
+                    "custom"
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "executable": {
+                  "type": "string"
+                },
+                "available": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "executable",
+                "available"
+              ]
+            }
+          }
+        },
+        "required": [
+          "selectedId",
+          "items"
+        ]
+      },
+      "PlaybackStarted": {
+        "type": "object",
+        "properties": {
+          "mediaId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "started"
+            ]
+          },
+          "playerId": {
+            "type": "string",
+            "enum": [
+              "mpv",
+              "potplayer",
+              "vlc",
+              "mpchc",
+              "mpcbe",
+              "system",
+              "custom"
+            ]
+          },
+          "playerName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "mediaId",
+          "status",
+          "playerId",
+          "playerName"
+        ]
+      },
+      "AuditLog": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "action": {
+            "type": "string"
+          },
+          "entityType": {
+            "type": "string"
+          },
+          "entityId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "数据库原始时间字符串。"
+          }
+        },
+        "required": [
+          "id",
+          "action",
+          "entityType",
+          "entityId",
+          "createdAt"
+        ]
+      },
+      "QbConfig": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "saved",
+              "environment",
+              "none"
+            ]
+          },
+          "configured": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "url",
+          "username",
+          "source",
+          "configured"
+        ]
+      },
+      "QbConfigRequest": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "仅 http://127.0.0.1:端口 或 http://[::1]:端口；不接受 localhost、HTTPS 或路径。"
+          },
+          "username": {
+            "type": "string",
+            "description": "非空且不含控制字符。",
+            "x-max-utf8-bytes": 128
+          },
+          "password": {
+            "type": "string",
+            "writeOnly": true,
+            "description": "不回传；已有保存配置时空字符串沿用旧密码。",
+            "x-max-utf8-bytes": 512
+          }
+        },
+        "required": [
+          "url",
+          "username",
+          "password"
+        ],
+        "additionalProperties": false
+      },
+      "QbStatus": {
+        "type": "object",
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "connected": {
+            "type": "boolean"
+          },
+          "errorCode": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "torrentCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "completedCount": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "configured",
+          "connected",
+          "errorCode",
+          "version",
+          "torrentCount",
+          "completedCount"
+        ]
+      },
+      "BangumiConfig": {
+        "type": "object",
+        "properties": {
+          "userAgent": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "saved",
+              "environment",
+              "none"
+            ]
+          },
+          "configured": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "userAgent",
+          "source",
+          "configured"
+        ]
+      },
+      "BangumiConfigRequest": {
+        "type": "object",
+        "properties": {
+          "userAgent": {
+            "type": "string",
+            "description": "非空、不含控制字符，最多 200 UTF-8 字节。",
+            "x-max-utf8-bytes": 200
+          }
+        },
+        "required": [
+          "userAgent"
+        ],
+        "additionalProperties": false
+      },
+      "BangumiConnectionTest": {
+        "type": "object",
+        "properties": {
+          "connected": {
+            "type": "boolean"
+          },
+          "errorCode": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "connected",
+          "errorCode"
+        ]
+      },
+      "QbAction": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "errorCode": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "success",
+          "errorCode"
+        ]
+      },
+      "MikanCatalog": {
+        "type": "object",
+        "properties": {
+          "feedCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "articleCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "pairCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "errorCode": {
+            "type": "string"
+          },
+          "feeds": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "articleCount": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "hasError": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "title",
+                "articleCount",
+                "hasError"
+              ]
+            }
+          }
+        },
+        "required": [
+          "feedCount",
+          "articleCount",
+          "pairCount",
+          "errorCode",
+          "feeds"
+        ]
+      },
+      "MetadataSync": {
+        "type": "object",
+        "properties": {
+          "mikanApplied": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "bangumiBound": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "mikanErrorCode": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "mikanApplied",
+          "bangumiBound",
+          "mikanErrorCode"
+        ]
+      },
+      "BangumiCandidate": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "nameCn": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          },
+          "coverUrl": {
+            "type": "string"
+          },
+          "episodeCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "type": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "score": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "nameCn",
+          "date",
+          "coverUrl",
+          "episodeCount",
+          "type",
+          "score"
+        ]
+      },
+      "BangumiSearch": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BangumiCandidate"
+            }
+          },
+          "autoBindEligible": {
+            "type": "boolean"
+          },
+          "fromCache": {
+            "type": "boolean"
+          },
+          "localMatch": {
+            "type": "object",
+            "properties": {
+              "animeId": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 1
+              },
+              "displayTitle": {
+                "type": "string"
+              },
+              "bangumiSubjectId": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 1
+              }
+            },
+            "required": [
+              "animeId",
+              "displayTitle"
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "items",
+          "autoBindEligible",
+          "fromCache",
+          "localMatch"
+        ]
+      },
+      "AnimeCalendar": {
+        "type": "object",
+        "properties": {
+          "days": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "weekday": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 1,
+                  "maximum": 7
+                },
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Anime"
+                  }
+                }
+              },
+              "required": [
+                "weekday",
+                "items"
+              ]
+            }
+          },
+          "fromCache": {
+            "type": "boolean"
+          },
+          "stale": {
+            "type": "boolean"
+          },
+          "updatedAt": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix 秒。"
+          },
+          "errorCode": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "days",
+          "fromCache",
+          "stale",
+          "updatedAt",
+          "errorCode"
+        ]
+      },
+      "NovelFile": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "workId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "path": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "missing": {
+            "type": "boolean"
+          },
+          "subjectId": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "coverUrl": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workId",
+          "path",
+          "label",
+          "missing",
+          "subjectId",
+          "coverUrl"
+        ]
+      },
+      "NovelWork": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "title": {
+            "type": "string"
+          },
+          "author": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "manualMetadata": {
+            "type": "boolean"
+          },
+          "coverUrl": {
+            "type": "string"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NovelFile"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "author",
+          "summary",
+          "subjectId",
+          "manualMetadata",
+          "coverUrl",
+          "files"
+        ]
+      },
+      "NovelSource": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "path": {
+            "type": "string"
+          },
+          "directory": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "path",
+          "directory"
+        ]
+      },
+      "NovelReader": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "system",
+              "custom"
+            ]
+          },
+          "executable": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "executable"
+        ]
+      },
+      "NovelReaderRequest": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "system",
+              "custom"
+            ]
+          },
+          "executable": {
+            "type": "string",
+            "description": "custom 时须为存在的绝对 EXE；system 保存为空。",
+            "x-max-utf8-bytes": 1024
+          }
+        },
+        "required": [
+          "type",
+          "executable"
+        ],
+        "additionalProperties": false
+      },
+      "NovelCandidate": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "nameCn": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "series": {
+            "type": "boolean"
+          },
+          "coverUrl": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "nameCn",
+          "platform",
+          "series",
+          "coverUrl"
+        ]
+      },
+      "NovelScrape": {
+        "type": "object",
+        "properties": {
+          "bound": {
+            "type": "boolean"
+          },
+          "coverUpdated": {
+            "type": "boolean"
+          },
+          "errorCode": {
+            "type": "string",
+            "description": "HTTP 200 仍须检查此字段；绑定成功不保证封面更新。"
+          }
+        },
+        "required": [
+          "bound",
+          "coverUpdated",
+          "errorCode"
+        ]
+      },
+      "GameResource": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "title": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "developer": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "manualMetadata": {
+            "type": "boolean"
+          },
+          "missing": {
+            "type": "boolean"
+          },
+          "coverUrl": {
+            "type": "string"
+          },
+          "vndbId": {
+            "type": "string"
+          },
+          "metadataSource": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "path",
+          "developer",
+          "summary",
+          "platform",
+          "subjectId",
+          "manualMetadata",
+          "missing",
+          "coverUrl",
+          "vndbId",
+          "metadataSource"
+        ]
+      },
+      "GameCandidate": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "nameCn": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "nameCn",
+          "platform"
+        ]
+      },
+      "VndbCandidate": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^v[1-9][0-9]{0,9}$"
+          },
+          "name": {
+            "type": "string"
+          },
+          "nameCn": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "nameCn",
+          "platform"
+        ]
+      },
+      "GameScrape": {
+        "type": "object",
+        "properties": {
+          "bound": {
+            "type": "boolean"
+          },
+          "coverUpdated": {
+            "type": "boolean"
+          },
+          "errorCode": {
+            "type": "string",
+            "description": "HTTP 200/201 仍须检查此字段。"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bound",
+          "coverUpdated",
+          "errorCode",
+          "source"
+        ]
+      },
+      "GameImport": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/GameScrape"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "game": {
+                "$ref": "#/components/schemas/GameResource"
+              }
+            },
+            "required": [
+              "game"
+            ]
+          }
+        ]
+      },
+      "NovelImport": {
+        "type": "object",
+        "properties": {
+          "sourceId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "fileCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "scraping": {
+            "type": "boolean"
+          },
+          "queuedCount": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "sourceId",
+          "fileCount",
+          "scraping",
+          "queuedCount"
+        ]
+      },
+      "Started": {
+        "type": "object",
+        "properties": {
+          "started": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "started"
+        ]
+      },
+      "Removed": {
+        "type": "object",
+        "properties": {
+          "removedId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "removedId"
+        ]
+      },
+      "FolderPathRequest": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "存在的绝对非根目录；禁止与已登记来源、qB、导入和媒体库重叠。无 NUL。",
+            "x-max-utf8-bytes": 2048
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "DirectoryRequest": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "空字符串清除；非空为存在的绝对非根目录，不与 import/library/data 重叠。无 NUL。",
+            "x-max-utf8-bytes": 4096
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "CorrectionRequest": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "非空安全路径片段。",
+            "x-max-utf8-bytes": 200
+          },
+          "season": {
+            "type": "string",
+            "x-max-utf8-bytes": 40
+          },
+          "episodeNumber": {
+            "type": "string",
+            "pattern": "^[0-9]+(?:\\.[0-9])?$",
+            "description": "非负 uint32 整数或一位小数，作为字符串传递；规范化时移除整数前导零。"
+          },
+          "episodeType": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "sp",
+              "ova",
+              "ncop",
+              "nced"
+            ]
+          }
+        },
+        "required": [
+          "title",
+          "season",
+          "episodeNumber",
+          "episodeType"
+        ],
+        "description": "只发送这四个字段；bangumiSubjectId 会被拒绝，其他额外字段当前未统一拒绝。",
+        "not": {
+          "required": [
+            "bangumiSubjectId"
+          ]
+        }
+      },
+      "EpisodeEditRequest": {
+        "type": "object",
+        "properties": {
+          "episodeNumber": {
+            "type": "string",
+            "pattern": "^[0-9]+(?:\\.[0-9])?$",
+            "description": "非负 uint32 整数或一位小数，作为字符串传递；规范化时移除整数前导零。"
+          },
+          "episodeType": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "sp",
+              "ova",
+              "ncop",
+              "nced"
+            ]
+          }
+        },
+        "required": [
+          "episodeNumber",
+          "episodeType"
+        ],
+        "additionalProperties": false
+      },
+      "AnimeEditRequest": {
+        "type": "object",
+        "properties": {
+          "displayTitle": {
+            "type": "string",
+            "description": "非空安全标题，禁止控制字符、Windows 禁用字符以及末尾空格或句点。",
+            "x-max-utf8-bytes": 200
+          },
+          "season": {
+            "type": "string",
+            "description": "不含控制字符。",
+            "x-max-utf8-bytes": 40
+          },
+          "coverUrl": {
+            "type": "string",
+            "description": "空字符串、http(s) URL 或 /api/covers/ 路径；不含控制字符。",
+            "x-max-utf8-bytes": 2048
+          }
+        },
+        "required": [
+          "displayTitle",
+          "season",
+          "coverUrl"
+        ],
+        "additionalProperties": false
+      },
+      "OrganizationPreviewRequest": {
+        "type": "object",
+        "properties": {
+          "mediaFileId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "hardlink",
+              "copy",
+              "symlink"
+            ],
+            "default": "hardlink"
+          }
+        },
+        "required": [
+          "mediaFileId"
+        ]
+      },
+      "OrganizationExecuteRequest": {
+        "type": "object",
+        "properties": {
+          "planId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "pattern": "^[!-~]{1,128}$",
+            "description": "同计划重试复用；1–128 个 ASCII 可见非空白字符。"
+          },
+          "confirmed": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "qbDownloadComplete": {
+            "type": "boolean",
+            "default": false,
+            "description": "qB 来源必须为 true；用户声明，不代表后端检查 qB 完成。"
+          }
+        },
+        "required": [
+          "planId",
+          "idempotencyKey",
+          "confirmed"
+        ],
+        "additionalProperties": false
+      },
+      "BindRequest": {
+        "type": "object",
+        "properties": {
+          "subjectId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "confirmed": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "subjectId",
+          "confirmed"
+        ],
+        "additionalProperties": false
+      },
+      "MergePreviewRequest": {
+        "type": "object",
+        "properties": {
+          "subjectId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "subjectId"
+        ],
+        "additionalProperties": false
+      },
+      "MergeRequest": {
+        "type": "object",
+        "properties": {
+          "previewId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "confirmed": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "previewId",
+          "confirmed"
+        ],
+        "additionalProperties": false
+      },
+      "PlayerRequest": {
+        "type": "object",
+        "properties": {
+          "playerId": {
+            "type": "string",
+            "enum": [
+              "mpv",
+              "potplayer",
+              "vlc",
+              "mpchc",
+              "mpcbe",
+              "system",
+              "custom"
+            ]
+          },
+          "executable": {
+            "type": "string",
+            "description": "system 必须为空，其他值为本机可发现或存在的绝对 EXE。",
+            "x-max-utf8-bytes": 1024
+          }
+        },
+        "required": [
+          "playerId",
+          "executable"
+        ],
+        "additionalProperties": false
+      },
+      "PlayRequest": {
+        "type": "object",
+        "properties": {
+          "playerId": {
+            "type": "string",
+            "enum": [
+              "mpv",
+              "potplayer",
+              "vlc",
+              "mpchc",
+              "mpcbe",
+              "system",
+              "custom"
+            ]
+          }
+        },
+        "required": [
+          "playerId"
+        ],
+        "additionalProperties": false
+      },
+      "MikanFeedRequest": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "https://[www.]mikanani.me 或 mikanani.kas.pub 的 /RSS/Bangumi、MyBangumi、Search；查询字符有白名单。",
+            "x-max-utf8-bytes": 1024
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "additionalProperties": false
+      },
+      "MikanRuleRequest": {
+        "type": "object",
+        "properties": {
+          "ruleName": {
+            "type": "string",
+            "description": "非空，无控制字符。",
+            "x-max-utf8-bytes": 80
+          },
+          "feedUrl": {
+            "type": "string",
+            "description": "https://[www.]mikanani.me 或 mikanani.kas.pub 的 /RSS/Bangumi、MyBangumi、Search；查询字符有白名单。",
+            "x-max-utf8-bytes": 1024
+          },
+          "keyword": {
+            "type": "string",
+            "description": "非空，无控制字符。",
+            "x-max-utf8-bytes": 120
+          }
+        },
+        "required": [
+          "ruleName",
+          "feedUrl",
+          "keyword"
+        ],
+        "additionalProperties": false
+      },
+      "NovelEditRequest": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "非空白，不含 NUL；最多 600 UTF-8 字节。",
+            "x-max-utf8-bytes": 600
+          },
+          "author": {
+            "type": "string",
+            "description": "不含 NUL；最多 600 UTF-8 字节。",
+            "x-max-utf8-bytes": 600
+          },
+          "summary": {
+            "type": "string",
+            "description": "不含 NUL；最多 20000 UTF-8 字节。",
+            "x-max-utf8-bytes": 20000
+          }
+        },
+        "required": [
+          "title",
+          "author",
+          "summary"
+        ],
+        "additionalProperties": false
+      },
+      "NovelFileEditRequest": {
+        "type": "object",
+        "properties": {
+          "workId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "label": {
+            "type": "string",
+            "description": "非空白，不含 NUL；最多 600 UTF-8 字节。",
+            "x-max-utf8-bytes": 600
+          }
+        },
+        "required": [
+          "workId",
+          "label"
+        ],
+        "additionalProperties": false
+      },
+      "PathRequest": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "后端机器上的绝对路径，不含 NUL；不同接口还有根目录及重解析路径检查。",
+            "x-max-utf8-bytes": 4096
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "ConfirmRequest": {
+        "type": "object",
+        "properties": {
+          "confirmed": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "confirmed"
+        ],
+        "additionalProperties": false
+      },
+      "ScrapeRequest": {
+        "type": "object",
+        "properties": {
+          "subjectId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "description": "发送 {} 自动匹配／刷新，或指定 subjectId 手工绑定；不能省略请求体。"
+      },
+      "VndbScrapeRequest": {
+        "type": "object",
+        "properties": {
+          "vndbId": {
+            "type": "string",
+            "description": "手工值格式不符时在 HTTP 200 的 errorCode 中返回 invalid_vndb_id。"
+          }
+        },
+        "additionalProperties": false
+      },
+      "GameEditRequest": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "非空白，不含 NUL；最多 600 UTF-8 字节。",
+            "x-max-utf8-bytes": 600
+          },
+          "developer": {
+            "type": "string",
+            "description": "不含 NUL；最多 600 UTF-8 字节。",
+            "x-max-utf8-bytes": 600
+          },
+          "summary": {
+            "type": "string",
+            "description": "不含 NUL；最多 20000 UTF-8 字节。",
+            "x-max-utf8-bytes": 20000
+          },
+          "path": {
+            "type": "string",
+            "description": "后端机器上的绝对路径，不含 NUL；不同接口还有根目录及重解析路径检查。",
+            "x-max-utf8-bytes": 4096
+          }
+        },
+        "required": [
+          "title",
+          "developer",
+          "summary",
+          "path"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "responses": {
+      "ApiError": {
+        "description": "应用错误；部分接口没有 requestId。具体状态映射和业务错误码见 api.md。框架拒绝的请求可能不是 JSON。",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  }
+}

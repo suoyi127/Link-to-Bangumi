@@ -1,4 +1,4 @@
-#include "anime_vault/api/MediaService.hpp"
+#include "anime_vault/application/MediaService.hpp"
 #include "anime_vault/infrastructure/database/SqliteDatabase.hpp"
 #include "anime_vault/infrastructure/database/SqliteMediaRepository.hpp"
 
@@ -24,11 +24,11 @@ TEST_CASE("unconfigured qB source cannot be scanned but external imports remain 
     anime_vault::SqliteDatabase db(root / "vault.db");
     db.migrate();
     anime_vault::SqliteMediaRepository repository(db);
-    anime_vault::api::MediaService service(repository, source, library, imported, false);
+    anime_vault::MediaService service(repository, source, library, imported, false);
     try {
         service.createScan(std::chrono::seconds{0});
         FAIL("unconfigured qB source should be unavailable");
-    } catch (const anime_vault::api::ApiError& error) {
+    } catch (const anime_vault::MediaError& error) {
         REQUIRE(error.code == "qb_download_dir_unconfigured");
     }
     REQUIRE(service.createImportScan(std::chrono::seconds{0}).source == "external_import");
@@ -48,7 +48,7 @@ TEST_CASE("download target validation pins the original qB source root") {
     anime_vault::SqliteDatabase db(root / "vault.db");
     db.migrate();
     anime_vault::SqliteMediaRepository repository(db);
-    anime_vault::api::MediaService service(repository, source, library, imported);
+    anime_vault::MediaService service(repository, source, library, imported);
     REQUIRE_NOTHROW(service.validateQbSourceReady());
     fs::rename(source, root / "former-source");
     std::error_code linkError;
@@ -56,7 +56,7 @@ TEST_CASE("download target validation pins the original qB source root") {
     try {
         service.validateQbSourceReady();
         FAIL("changed or missing qB root must not receive new downloads");
-    } catch (const anime_vault::api::ApiError& error) {
+    } catch (const anime_vault::MediaError& error) {
         REQUIRE((error.code == "source_root_changed" || error.code == "source_root_unavailable"));
     }
 }
@@ -80,13 +80,13 @@ TEST_CASE("registered folder scans stay separate and reconcile only their own mi
     anime_vault::SqliteDatabase db(root / "vault.db");
     db.migrate();
     anime_vault::SqliteMediaRepository repository(db);
-    anime_vault::api::MediaService service(repository, source, library, imported);
+    anime_vault::MediaService service(repository, source, library, imported);
     const auto folderOne = service.addFolderImport(pathText(first));
     const auto folderTwo = service.addFolderImport(pathText(second));
     REQUIRE(service.listFolderImports().size() == 2);
     fs::create_directory(first / "nested");
-    REQUIRE_THROWS_AS(service.addFolderImport(pathText(first / "nested")), anime_vault::api::ApiError);
-    REQUIRE_THROWS_AS(service.addFolderImport(pathText(imported)), anime_vault::api::ApiError);
+    REQUIRE_THROWS_AS(service.addFolderImport(pathText(first / "nested")), anime_vault::MediaError);
+    REQUIRE_THROWS_AS(service.addFolderImport(pathText(imported)), anime_vault::MediaError);
     REQUIRE(service.createFolderScan(folderOne.id).processedCount == 1);
     std::this_thread::sleep_for(std::chrono::milliseconds(1100));
     REQUIRE(service.createFolderScan(folderTwo.id).processedCount == 1);
@@ -113,7 +113,7 @@ TEST_CASE("folder scan creates a scrapeable anime for a titled video without an 
     anime_vault::SqliteDatabase db(root / "vault.db");
     db.migrate();
     anime_vault::SqliteMediaRepository repository(db);
-    anime_vault::api::MediaService service(repository, source, library, imported);
+    anime_vault::MediaService service(repository, source, library, imported);
     const auto folderId = service.addFolderImport([&] {
         const auto bytes = folder.u8string();
         return std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size());
@@ -164,13 +164,14 @@ TEST_CASE("media service scans inbox and previews without creating a target") {
         "INSERT INTO anime(display_title) VALUES('Moonbound');",
         nullptr, nullptr, nullptr) == SQLITE_OK);
     repository.bindAnime(1, {734, "Moonbound", "", "", "", 12, 2});
-    anime_vault::api::MediaService service(repository, source, library, import);
+    anime_vault::MediaService service(repository, source, library, import);
     const auto first = service.createScan(std::chrono::seconds{0});
     REQUIRE(first.id > 0);
     std::this_thread::sleep_for(std::chrono::milliseconds(1100));
     const auto second = service.createScan(std::chrono::seconds{0});
     REQUIRE(second.processedCount == 1);
-    const auto inbox = service.listInbox();
+    REQUIRE(service.listInbox().empty());
+    const auto inbox = repository.getAnime(1)->media;
     REQUIRE(inbox.size() == 1);
     REQUIRE(inbox.front().episodeNumber == "1");
     REQUIRE(inbox.front().bangumiSubjectId == 734);
@@ -181,15 +182,17 @@ TEST_CASE("media service scans inbox and previews without creating a target") {
     std::this_thread::sleep_for(std::chrono::milliseconds(1100));
     const auto secondImport = service.createImportScan(std::chrono::seconds{0});
     REQUIRE(secondImport.processedCount == 1);
-    const auto combinedInbox = service.listInbox();
+    auto combinedInbox = inbox;
+    const auto unresolved = service.listInbox();
+    REQUIRE(unresolved.size() == 1);
+    combinedInbox.insert(combinedInbox.end(), unresolved.begin(), unresolved.end());
     REQUIRE(combinedInbox.size() == 2);
     REQUIRE(combinedInbox.at(0).origin == "qb_download");
     REQUIRE(combinedInbox.at(1).origin == "external_import");
-    REQUIRE(service.listInboxPage(0, 100).total == 2);
+    REQUIRE(service.listInboxPage(0, 100).total == 1);
     const auto qbPage = service.listInboxPage(0, 100, "qb_download");
-    REQUIRE(qbPage.total == 1);
-    REQUIRE(qbPage.items.size() == 1);
-    REQUIRE(qbPage.items.front().origin == "qb_download");
+    REQUIRE(qbPage.total == 0);
+    REQUIRE(qbPage.items.empty());
     const auto importPage = service.listInboxPage(0, 100, "external_import");
     REQUIRE(importPage.total == 1);
     REQUIRE(importPage.items.size() == 1);
@@ -206,27 +209,27 @@ TEST_CASE("media service scans inbox and previews without creating a target") {
     REQUIRE(importedPreview.targetPath ==
         (fs::canonical(library) / "Imported Moon" / "Imported Moon [02].mkv").string());
     REQUIRE_FALSE(fs::exists(importedPreview.targetPath));
-    anime_vault::api::MediaService missingImport(repository, source, library, root / "missing");
+    anime_vault::MediaService missingImport(repository, source, library, root / "missing");
     REQUIRE(missingImport.createScan(std::chrono::seconds{0}).status == "completed");
     try {
         missingImport.createImportScan(std::chrono::seconds{0});
         FAIL("missing import root must fail only on import action");
-    } catch (const anime_vault::api::ApiError& error) {
-        REQUIRE(error.status == 409);
+    } catch (const anime_vault::MediaError& error) {
+        REQUIRE(error.kind == anime_vault::MediaFailureKind::conflict);
         REQUIRE(error.code == "import_root_unavailable");
     }
     try {
-        anime_vault::api::MediaService overlappingImport(repository, source, library, source);
+        anime_vault::MediaService overlappingImport(repository, source, library, source);
         FAIL("overlapping import root must be rejected before library creation");
-    } catch (const anime_vault::api::ApiError& error) {
-        REQUIRE(error.status == 409);
+    } catch (const anime_vault::MediaError& error) {
+        REQUIRE(error.kind == anime_vault::MediaFailureKind::conflict);
         REQUIRE(error.code == "overlapping_roots");
     }
     try {
-        anime_vault::api::MediaService overlappingLibrary(repository, source, source / "new-library", import);
+        anime_vault::MediaService overlappingLibrary(repository, source, source / "new-library", import);
         FAIL("nested library root must be rejected before it is created");
-    } catch (const anime_vault::api::ApiError& error) {
-        REQUIRE(error.status == 409);
+    } catch (const anime_vault::MediaError& error) {
+        REQUIRE(error.kind == anime_vault::MediaFailureKind::conflict);
         REQUIRE(error.code == "overlapping_roots");
     }
     REQUIRE(sqlite3_exec(db.handle(),
@@ -243,7 +246,7 @@ TEST_CASE("media service scans inbox and previews without creating a target") {
     try {
         (void)service.preview(inbox.front().id, "move");
         FAIL("unsupported operation must be rejected");
-    } catch (const anime_vault::api::ApiError& error) {
+    } catch (const anime_vault::MediaError& error) {
         REQUIRE(error.code == "invalid_operation");
     }
     fs::create_directories(fs::path(preview.targetPath).parent_path());
@@ -257,13 +260,13 @@ TEST_CASE("media service scans inbox and previews without creating a target") {
     REQUIRE(repository.getPlan(copyConflict.id)->operation == "copy");
     REQUIRE(repository.getPlan(copyConflict.id)->executionState == "conflict:target_exists");
     fs::last_write_time(video, fs::last_write_time(video) + std::chrono::seconds(1));
-    REQUIRE_THROWS_AS(service.preview(inbox.front().id), anime_vault::api::ApiError);
+    REQUIRE_THROWS_AS(service.preview(inbox.front().id), anime_vault::MediaError);
     repository.updateMediaCorrection(inbox.front().id, {"", "", "1", "unknown", 0.5, std::nullopt});
     try {
         service.preview(inbox.front().id);
         FAIL("unknown episode type must be rejected");
-    } catch (const anime_vault::api::ApiError& error) {
-        REQUIRE(error.status == 400);
+    } catch (const anime_vault::MediaError& error) {
+        REQUIRE(error.kind == anime_vault::MediaFailureKind::invalidInput);
         REQUIRE(error.code == "invalid_episode_type");
     }
 }
@@ -288,11 +291,12 @@ TEST_CASE("automatic scan does not turn a remote alias into a user alias") {
     REQUIRE(sqlite3_exec(db.handle(), "INSERT INTO anime(display_title) VALUES('Local');",
         nullptr, nullptr, nullptr) == SQLITE_OK);
     repository.bindAnime(1, {111, "Remote Old", "", "", "", 12, 2});
-    anime_vault::api::MediaService service(repository, source, library, imported);
+    anime_vault::MediaService service(repository, source, library, imported);
     service.createScan(std::chrono::seconds{0});
     std::this_thread::sleep_for(std::chrono::milliseconds(1100));
     REQUIRE(service.createScan(std::chrono::seconds{0}).processedCount == 1);
-    REQUIRE(service.listInbox().front().bangumiSubjectId == 111);
+    REQUIRE(service.listInbox().empty());
+    REQUIRE(repository.getAnime(1)->media.front().bangumiSubjectId == 111);
     repository.bindAnime(1, {222, "Remote New", "", "", "", 12, 2});
     REQUIRE_FALSE(repository.findAnimeByTitle("Remote Old"));
 }

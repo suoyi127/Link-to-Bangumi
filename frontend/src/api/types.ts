@@ -1,3 +1,5 @@
+// 请求标识只属于响应最外层，列表中的业务记录不携带该字段。
+export type ApiResponse<T> = T & { requestId?: string }
 // 分页约定：nextOffset 为 null 表示没有下一页。
 export type Page<T> = { items: T[]; nextOffset: number | null }
 // 三种来源采用不同的扫描和路径校验边界。
@@ -5,8 +7,9 @@ export type InboxOrigin = 'qb_download' | 'external_import' | 'folder_import'
 export type FolderImport = { id: number; path: string }
 export type InboxPage = Page<Media> & { total: number }
 export type Scan = { id: number; source: string; status: string; discoveredCount: number; processedCount: number; errorCount: number; errorSummary: string }
-export type Media = { id: number; scanId: number; sourcePath: string; filename: string; parsedTitle: string; title: string; season: string; episodeNumber: string; episodeType: string; sizeBytes: number; status: string; origin: string; animeId: number | null; confidence: number; bangumiSubjectId?: number }
-export type Anime = { id: number; displayTitle: string; originalTitle: string; season: string; year?: number; bangumiSubjectId?: number; coverUrl: string; locked: boolean }
+export type Media = { id: number; scanId: number; sourcePath: string; filename: string; parsedTitle: string; title: string; season: string; episodeNumber: string; rawEpisodeNumber?: string; episodeNumberSource?: 'parsed' | 'bangumi' | 'manual'; episodeType: string; sizeBytes: number; status: string; origin: string; animeId: number | null; confidence: number; bangumiSubjectId?: number }
+export type AnimeSort = 'import_desc' | 'import_asc'
+export type Anime = { importedMonth?: string; id: number; displayTitle: string; originalTitle: string; season: string; year?: number; bangumiSubjectId?: number; coverUrl: string; locked: boolean }
 export type AnimeDetail = Anime & { aliases: string[]; media: Media[]; nextMediaOffset: number | null }
 export type AnimeCalendar = { days: { weekday: number; items: Anime[] }[]; fromCache: boolean; stale: boolean; updatedAt: number; errorCode: string }
 export type BangumiCandidate = { id: number; name: string; nameCn: string; date: string; coverUrl: string; episodeCount: number; type: number; score: number }
@@ -39,5 +42,10 @@ export type GameResource = {
   vndbId: string; metadataSource: string
 }
 export type GameCandidate = { id: number; name: string; nameCn: string; platform: string }
-export type GameScrape = { bound: boolean; coverUpdated: boolean; errorCode: string; source?: string }
+export type GameScrape = { bound: boolean; coverUpdated: boolean; errorCode: string; source: string }
 export type VndbCandidate = { id: string; name: string; nameCn: string; platform: string }
+
+export type AnimeMergePreview = { previewId: string; sourceId: number; targetId: number; subjectId: number; sourceTitle: string; targetTitle: string; mediaCount: number; aliasCount: number; duplicateEpisodeCount: number; expiresAt: number }
+
+export type PlaybackResult = { mediaId: number; status: 'started'; playerId: string; playerName: string }
+export type NovelImport = { fileCount: number; sourceId: number; scraping: boolean; queuedCount: number }

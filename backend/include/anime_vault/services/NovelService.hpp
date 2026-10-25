@@ -1,37 +1,11 @@
 #pragma once
-#include "anime_vault/infrastructure/database/SqliteDatabase.hpp"
-#include "anime_vault/services/CoverScraper.hpp"
-#include <stdexcept>
-#include <vector>
-
+#include "anime_vault/ports/NovelRepository.hpp"
+#include "anime_vault/ports/LibraryFileAccess.hpp"
 namespace anime_vault {
 class ProcessLauncher;
-struct NovelError : std::runtime_error {
-    explicit NovelError(std::string code) : std::runtime_error(code), code(std::move(code)) {}
-    std::string code;
-};
-struct NovelFile {
-    std::int64_t id{}, workId{};
-    std::string path, label;
-    bool missing{};
-    std::optional<std::int64_t> subjectId;
-    bool hasCover{};
-};
-struct NovelWork {
-    std::int64_t id{};
-    std::string title, author, summary;
-    std::optional<std::int64_t> subjectId;
-    bool manualMetadata{}, hasCover{};
-    std::vector<NovelFile> files;
-};
-struct NovelSource { std::int64_t id{}; std::string path; bool directory{}; };
-struct NovelImportResult { std::int64_t sourceId{}; int fileCount{}; std::vector<std::int64_t> workIds; };
-struct ReaderConfig { std::string type{"system"}, executable; };
-
-// 小说只登记原文件；作品与卷的绑定独立保存，扫描不覆盖人工编辑。
 class NovelService {
 public:
-    explicit NovelService(SqliteDatabase& db) : db_(db) {}
+    NovelService(NovelRepository& repository, LibraryFileAccess& files) : repository_(repository), files_(files) {}
     std::vector<NovelWork> list() const;
     NovelWork get(std::int64_t id) const;
     void removeUnavailableWork(std::int64_t id);
@@ -48,6 +22,7 @@ public:
                   const std::string& bytes, const std::string& mime);
     std::optional<CachedCover> cover(std::int64_t id, bool file) const;
 private:
-    SqliteDatabase& db_;
+    NovelRepository& repository_;
+    LibraryFileAccess& files_;
 };
 }

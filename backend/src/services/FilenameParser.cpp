@@ -1,4 +1,5 @@
 #include "anime_vault/services/FilenameParser.hpp"
+#include "anime_vault/services/ReleaseTextNormalization.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -141,7 +142,8 @@ std::optional<EpisodeMatch> detectEpisode(const std::string& text) {
         R"((?:^|[ -])S([0-9]{1,2})E([0-9]{1,3})(?=$|[ \[]))", insensitive);
     static const std::regex epPattern(R"((?:^|[ -])EP?([0-9]{1,3})(?=$|[ \[]))", insensitive);
     static const std::regex bracketPattern(R"(([0-9]{1,3})(?:v([0-9]+))?)", insensitive);
-    static const std::regex dashPattern(R"( - ([0-9]{1,3})(?=$|[ \[]))");
+    static const std::regex spacedDashPattern(R"( +-[ ]*([0-9]{1,3})(?:v([0-9]+))?(?=$|[ \[]))", insensitive);
+    static const std::regex dashPattern(R"(\s*-\s*([0-9]{1,3})(?:v([0-9]+))?(?=$|[ \[]))");
     static const std::regex decimalPattern(R"( - ([0-9]{1,3}\.[0-9])(?=$|[ \[]))");
     static const std::regex specialPattern(
         R"((?:^| - )(SP|OVA|NCOP|NCED)([0-9]{1,3})(?=$|[ \[]))", insensitive);
@@ -162,7 +164,8 @@ std::optional<EpisodeMatch> detectEpisode(const std::string& text) {
 
     for (const auto& token : brackets(text)) {
         std::smatch match;
-        if (std::regex_match(token.text, match, bracketPattern)) {
+        const auto tokenText = trim(token.text);
+        if (std::regex_match(tokenText, match, bracketPattern)) {
             EpisodeMatch found;
             found.number = EpisodeNumber::parse(match[1].str());
             found.type = EpisodeType::normal;
@@ -175,7 +178,14 @@ std::optional<EpisodeMatch> detectEpisode(const std::string& text) {
         }
     }
 
-    if (auto found = matchPattern(text, dashPattern, 1, EpisodeType::normal)) return found;
+    std::smatch dashMatch;
+    const auto* selectedDash = &spacedDashPattern;
+    if (!std::regex_search(text, dashMatch, *selectedDash)) selectedDash = &dashPattern;
+    if (std::regex_search(text, dashMatch, *selectedDash)) {
+        auto found = matchPattern(text, *selectedDash, 1, EpisodeType::normal);
+        if (found && dashMatch[2].matched) found->version = unsignedNumber(dashMatch[2].str());
+        return found;
+    }
     if (auto found = matchPattern(text, decimalPattern, 1, EpisodeType::normal)) return found;
 
     std::smatch specialMatch;
@@ -213,7 +223,7 @@ std::string cleanTitle(const std::string& text, std::size_t end) {
 
 ParseResult FilenameParser::parse(std::string_view filename) const {
     static const std::regex multiplePattern(
-        R"( - [0-9]{1,3}(?:-[0-9]{1,3}|\+[0-9]{1,3})(?=$|[ \[]))");
+        R"((?: +-[ ]*[0-9]{1,3}(?:v[0-9]+)?[ ]*(?:-|\+)[ ]*[0-9]{1,3}(?:v[0-9]+)?|-[ ]*[0-9]{1,3}(?:v[0-9]+)?(?:-|\+)[0-9]{1,3}(?:v[0-9]+)?|-[0-9]{2,3}(?:v[0-9]+)?[ ]*(?:-|\+)[ ]*[0-9]{1,3}(?:v[0-9]+)?)(?=$|[ \[]))", std::regex::icase);
     static const std::regex batchPattern(R"( Complete Batch(?=$| \[))", std::regex::icase);
     ParseResult result;
     result.originalName = filename;
@@ -222,7 +232,7 @@ ParseResult FilenameParser::parse(std::string_view filename) const {
         return result;
     }
 
-    auto text = normalize(removeExtension(filename));
+    auto text = normalize(normalizeReleaseText(removeExtension(filename)));
     if (text.empty() || text == "[]" || text == "...") {
         result.warnings.push_back("invalid_filename");
         return result;
@@ -244,6 +254,13 @@ ParseResult FilenameParser::parse(std::string_view filename) const {
         result.season = episode->season;
         result.version = episode->version;
         result.title = cleanTitle(text, episode->start);
+        // 标题中的明确季数只记录为季信息，累计集数留待绑定词条后映射。
+        if (!result.season) {
+            static const std::regex titleSeason(R"(\bSeason +([0-9]{1,2})$)", std::regex::icase);
+            std::smatch match;
+            if (std::regex_search(result.title, match, titleSeason))
+                result.season = unsignedNumber(match[1].str());
+        }
         result.confidence = episode->ambiguous ? 0.70 : 0.95;
         if (episode->ambiguous) result.warnings.push_back("ambiguous_episode");
     } else {

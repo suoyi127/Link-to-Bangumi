@@ -11,6 +11,7 @@ struct MikanTitlePair {
     std::string canonicalTitle;
     std::string alias;
     int episode{};
+    bool feedScoped{};
 };
 
 struct MikanCatalog {
@@ -29,6 +30,7 @@ struct MikanCatalog {
 // Parses bilingual RSS metadata only; it never describes the downloaded filename.
 class MikanTitleParser final {
 public:
+    static std::vector<MikanTitlePair> parseAll(std::string_view articleTitle);
     static std::optional<MikanTitlePair> parse(std::string_view articleTitle);
 };
 }

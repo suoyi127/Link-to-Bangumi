@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Alert, Space } from 'antd'
-import { getPlayers } from '../api/client'
+import { getPlayers } from '../api/media'
 import type { PlayerCatalog } from '../api/types'
 
 export function PlaybackPlayerSelect({ value, onChange }: { value: string; onChange: (id: string) => void }) {

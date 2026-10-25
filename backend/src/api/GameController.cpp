@@ -1,7 +1,7 @@
 #include "anime_vault/api/GameController.hpp"
+#include "anime_vault/api/HttpSupport.hpp"
 #include "anime_vault/api/LocalRequest.hpp"
 #include <drogon/drogon.h>
-#include <atomic>
 #include <set>
 namespace anime_vault::api {
 namespace {
@@ -12,15 +12,12 @@ struct GameEditRequest { std::string title, developer, summary, path; };
 struct GameConfirmRequest { bool confirmed{}; };
 struct GameScrapeRequest { std::optional<std::int64_t> subjectId; };
 struct GameVndbRequest { std::optional<std::string> vndbId; };
-std::atomic_uint64_t sequence{0};
 void reply(Callback callback, Json::Value payload, int status = 200) {
-    const auto id = "game-" + std::to_string(++sequence); payload["requestId"] = id;
-    auto response = drogon::HttpResponse::newHttpJsonResponse(payload);
-    response->setStatusCode(static_cast<drogon::HttpStatusCode>(status)); response->addHeader("X-Request-Id", id); callback(response);
+    deliver(std::move(callback), requestContext({}, RequestIdPolicy::Game), status, std::move(payload));
 }
 void failure(Callback callback, const std::string& code) {
-    const int status = code == "game_storage_error" ? 500 : code == "game_not_found" ? 404 : code == "cross_site_request_forbidden" ? 403 : code == "request_too_large" ? 413 : code == "game_is_accessible" || code == "game_path_already_imported" ? 409 : 400;
-    Json::Value payload; payload["error"]["code"] = code; payload["error"]["message"] = code; reply(std::move(callback), payload, status);
+    const int status = gameErrorStatus(code);
+    reply(std::move(callback), errorJson(code, code), status);
 }
 void error(Callback callback, const std::exception& error) {
     const auto* known = dynamic_cast<const GameError*>(&error); failure(std::move(callback), known ? known->code : "game_storage_error");
@@ -30,11 +27,13 @@ const Json::Value& body(const Request& request, const std::set<std::string>& fie
     if (!localRequestAllowed(request)) throw GameError("cross_site_request_forbidden");
     if (request->body().size() > 28000) throw GameError("request_too_large");
     const auto json = request->getJsonObject(); if (!json || !json->isObject()) throw GameError("invalid_request");
-    for (const auto& name : json->getMemberNames()) if (!fields.contains(name)) throw GameError("invalid_request");
+    if (!hasOnlyFields(*json, fields)) throw GameError("invalid_request");
     return *json;
 }
 std::string stringField(const Json::Value& json, const char* key) {
-    if (!json[key].isString()) throw GameError("invalid_request"); return json[key].asString();
+    const auto value = readStringField(json, key);
+    if (!value) throw GameError("invalid_request");
+    return *value;
 }
 GameConfirmRequest confirmation(const Request& request) {
     const auto& json = body(request, {"confirmed"});
