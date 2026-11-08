@@ -420,6 +420,21 @@ it('clears a previous saved-connection status error when testing qB again', asyn
   expect(screen.queryByText('旧连接状态错误')).not.toBeInTheDocument()
 })
 
+it('shows a Mikan subscription issue even when there are no pending episodes', async () => {
+  vi.spyOn(settingsApi, 'getSettings').mockResolvedValue(settings)
+  vi.spyOn(settingsApi, 'getAuditLogs').mockResolvedValue({ items: [], nextOffset: null })
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async path => {
+    if (path !== '/api/watch-sync') throw Error(String(path))
+    return Response.json({ enabled: true, connected: true, username: 'mika', pending: 0, issues: [], errorCode: '',
+      subscriptionPending: 1, subscriptionIssues: [{ mikanId: 7, errorCode: 'bangumi_unauthorized' }] })
+  })
+  render(<SettingsPage />)
+  expect(await screen.findByText(/分集待同步 0 项 · 订阅待收藏 1 项/)).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: 'Mikan 番剧 #7' })).toBeInTheDocument()
+  expect(screen.getByText(/Bangumi 拒绝了令牌/)).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /收藏并同步/ })).not.toBeInTheDocument()
+})
+
 it('saves a private sync token and requires consent to add an uncollected work', async () => {
   vi.spyOn(settingsApi, 'getSettings').mockResolvedValue(settings)
   vi.spyOn(settingsApi, 'getAuditLogs').mockResolvedValue({ items: [], nextOffset: null })
@@ -428,15 +443,21 @@ it('saves a private sync token and requires consent to add an uncollected work',
     if (path === '/api/watch-sync/collect') return Response.json({ ...idle, enabled: true, username: 'mika', connected: true })
     if (path !== '/api/watch-sync') throw Error(String(path))
     if (init?.method !== 'PUT') return Response.json(idle)
-    return Response.json({ enabled: true, connected: true, username: 'mika', pending: 1, errorCode: '', issues: [{ mediaId: 9, title: '星夜', episodeNumber: '02', episodeType: 'normal', errorCode: 'subject_not_collected' }] })
+    return Response.json({ enabled: true, connected: true, username: 'mika', pending: 1, errorCode: '', issues: [{ mediaId: 9, title: '星夜', episodeNumber: '02', episodeType: 'normal', errorCode: 'subject_not_collected' }],
+      subscriptionPending: 2, subscriptionIssues: [{ mikanId: 42, errorCode: 'mikan_subject_unmapped' }, { mikanId: 43, errorCode: 'mikan_unavailable' }] })
   })
   render(<SettingsPage />)
   const token = await screen.findByLabelText('Bangumi 个人访问令牌')
   expect(token).toHaveAttribute('type', 'password')
+  expect(screen.getByText(/分集待同步 0 项 · 订阅待收藏 0 项/)).toBeInTheDocument()
   fireEvent.change(token, { target: { value: 'test-token' } })
   fireEvent.click(screen.getByRole('checkbox', { name: '同步本地已看状态到 Bangumi' }))
   fireEvent.click(screen.getByRole('button', { name: '保存观看同步设置' }))
   const collect = await screen.findByRole('button', { name: '收藏并同步 星夜' })
+  expect(screen.getByText(/分集待同步 1 项 · 订阅待收藏 2 项/)).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: 'Mikan 番剧 #42' })).toHaveAttribute('href', 'https://mikanani.me/Home/Bangumi/42')
+  expect(screen.getByText(/Mikan 番剧页缺少对应的 Bangumi 条目/)).toBeInTheDocument()
+  expect(screen.getByText(/暂时无法读取 Mikan 番剧页/)).toBeInTheDocument()
   expect(fetch).toHaveBeenCalledWith('/api/watch-sync', expect.objectContaining({ method: 'PUT', body: '{"enabled":true,"token":"test-token"}' }))
   expect(token).toHaveValue('')
   expect(fetch).not.toHaveBeenCalledWith('/api/watch-sync/collect', expect.anything())

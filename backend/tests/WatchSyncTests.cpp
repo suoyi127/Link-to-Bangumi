@@ -2,6 +2,7 @@
 #include "anime_vault/infrastructure/database/SqliteDatabase.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <sqlite3.h>
+#include "anime_vault/infrastructure/database/MikanDownloadStore.hpp"
 #include <map>
 
 using namespace anime_vault;
@@ -22,8 +23,7 @@ TEST_CASE("watch sync isolates accounts and maps specials before collecting with
         db,
         [&](auto method, auto path, auto body, auto token) -> WatchResponse {
             if (path == "/v0/me")
-                return {200,
-                        token == "second" ? R"({"id":2,"username":"other"})" : R"({"id":1,"username":"user"})"};
+                return {200, token == "second" ? R"({"id":2,"username":"other"})" : R"({"id":1,"username":"user"})"};
             REQUIRE(token == "first");
             if (path.starts_with("/v0/episodes?"))
                 return {
@@ -72,12 +72,96 @@ TEST_CASE("watch sync isolates accounts and maps specials before collecting with
     REQUIRE(service.status().pending == 0);
 }
 
+TEST_CASE("new single-show subscriptions collect once for the subscribing account after enrollment") {
+    SqliteDatabase db(":memory:");
+    db.migrate();
+    MikanDownloadStore feeds(db);
+    const std::string url = "https://mikanani.me/RSS/Bangumi?bangumiId=4011";
+    std::map<std::int64_t, std::string> credentials;
+    bool alreadyCollected = false, offline = false;
+    int posts = 0, pages = 0;
+    WatchSyncService sync(
+        db,
+        [&](auto method, auto path, auto body, auto token) -> WatchResponse {
+            if (path == "/v0/me")
+                return {200, token == "other" ? R"({"id":2,"username":"other"})" : R"({"id":1,"username":"user"})"};
+            REQUIRE(token == "first");
+            if (path == "/v0/subjects/255209")
+                return {200, R"({"id":255209,"type":2})"};
+            if (path == "/v0/users/user/collections/255209")
+                return alreadyCollected ? WatchResponse{200, R"({"subject_id":255209,"type":4})"}
+                                        : WatchResponse{404, ""};
+            REQUIRE(method == "POST");
+            REQUIRE(path == "/v0/users/-/collections/255209");
+            REQUIRE(body == R"({"type":3})");
+            alreadyCollected = true;
+            ++posts;
+            return {204, ""};
+        },
+        [&](auto account) { return credentials[account]; },
+        [&](auto account, auto value) { credentials[account] = value; },
+        [&](auto id) -> WatchResponse {
+            REQUIRE(id == 4011);
+            ++pages;
+            if (offline)
+                return {0, ""};
+            return {
+                200,
+                R"(<p class="bangumi-info">Bangumi番组计划链接：<br /><a href="https://bgm.tv/subject/255209">subject</a></p>)"};
+        });
+    SECTION("older feeds are not backfilled on preference edits") {
+        feeds.subscribe("qb", {url}, 4011,feeds.collectionAccount());
+        sync.configure({true, "first"});
+        feeds.subscribe("qb", {url, "New group"}, 4011,feeds.collectionAccount());
+        feeds.activateCollection("qb", url);
+        sync.processOne();
+        REQUIRE(pages == 0);
+        REQUIRE(posts == 0);
+        return;
+    }
+    sync.configure({true, "first"});
+    SECTION("account changes while waiting for qB") {
+        const auto owner=feeds.collectionAccount();
+        sync.configure({true,"other"});
+        feeds.subscribe("qb",{url},4011,owner);
+        feeds.activateCollection("qb",url);
+        sync.processOne();
+        REQUIRE(pages==0); REQUIRE(sync.status().subscriptionPending==0);
+        sync.configure({true,"first"});
+        sync.processOne();
+        REQUIRE(posts==1); return;
+    }
+    feeds.subscribe("qb", {url}, 4011,feeds.collectionAccount());
+    REQUIRE(sync.status().subscriptionPending == 1);
+    sync.processOne();
+    REQUIRE(pages == 0);
+    feeds.activateCollection("qb", url);
+    SECTION("preserve an existing collection") { alreadyCollected = true; }
+    SECTION("create missing collection") {}
+    SECTION("retry and isolate accounts") {
+        offline = true;
+        sync.processOne();
+        REQUIRE(sync.status().subscriptionIssues.at(0).errorCode == "mikan_unavailable");
+        sync.configure({true, "other"});
+        sync.processOne();
+        REQUIRE(sync.status().subscriptionPending == 0);
+        offline = false;
+        sync.configure({true, "first"});
+    }
+    const int expected = alreadyCollected ? 0 : 1;
+    sync.processOne();
+    REQUIRE(posts == expected);
+    REQUIRE(sync.status().subscriptionPending == 0);
+    feeds.subscribe("qb", {url + "&subgroupid=5"}, 4011,feeds.collectionAccount());
+    feeds.activateCollection("qb", url);
+    sync.processOne();
+    REQUIRE(posts == expected);
+}
+
 TEST_CASE("revoked credentials retain later completions for the same account") {
     SqliteDatabase db(":memory:");
     db.migrate();
-    auto sql = [&](const char* s) {
-        REQUIRE(sqlite3_exec(db.handle(), s, nullptr, nullptr, nullptr) == SQLITE_OK);
-    };
+    auto sql = [&](const char* s) { REQUIRE(sqlite3_exec(db.handle(), s, nullptr, nullptr, nullptr) == SQLITE_OK); };
     sql("INSERT INTO anime(id,display_title,bangumi_subject_id) VALUES(1,'A',100);"
         "INSERT INTO media_file(id,anime_id,source_path,filename,episode_number,episode_type,size_bytes,status,"
         "episode_number_source,raw_episode_number) VALUES (1,1,'a','a','1','normal',1,'inbox','bangumi','13'),"

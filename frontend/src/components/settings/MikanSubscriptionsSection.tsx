@@ -24,6 +24,7 @@ export function MikanSubscriptionsSection({ settings, qbPathPending, controller 
         </select></label>
       </Space>
       <Space.Compact><Input aria-label="Mikan RSS 地址" value={feedUrl} onChange={(event) => setFeedUrl(event.target.value)} maxLength={1024} placeholder="https://mikanani.me/RSS/Bangumi?..." /><Button loading={addingFeed} disabled={!settings.qbWebUiConfigured || !settings.qbDownloadConfigured || qbPathPending || !feedUrl.trim()} onClick={() => void addFeed()}>添加 Mikan 订阅</Button></Space.Compact>
+      <Typography.Text type="secondary">开启 Bangumi 观看同步后，新添加的单番订阅会自动将作品加入「在看」。已有收藏保留原状态，聚合和搜索订阅不触发收藏。</Typography.Text>
       <Typography.Title level={5}>qB 自动下载规则</Typography.Title>
       <Typography.Text type="secondary">先将订阅加入 qB，再填写该订阅的完整地址。关键词按文章标题包含匹配；同名规则不会覆盖。下载目标固定为 {settings.sourcePath}。</Typography.Text>
       {ruleMessage && <Alert type={ruleMessage.startsWith('自动') ? 'success' : 'warning'} message={ruleMessage} />}

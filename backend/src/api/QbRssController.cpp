@@ -76,6 +76,10 @@ void registerQbRssEndpoints(std::shared_ptr<QbConnectionManager> qb, std::filesy
         {drogon::Post});
     drogon::app().registerHandler("/api/qb/rss/feeds", [downloads, qbDownloadError, validateSourceReady](const drogon::HttpRequestPtr& request,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
+        if (!localRequestAllowed(request)) {
+            deliver(std::move(callback),RequestContext{},403,errorJson("rss_origin_forbidden","local page required"));
+            return;
+        }
         const auto body = request->body().size() <= 2048 ? request->getJsonObject() : nullptr;
         if (!body || !body->isObject() || !(*body)["url"].isString() ||
             !anime_vault::QbWebClient::validMikanFeedUrl((*body)["url"].asString())) {

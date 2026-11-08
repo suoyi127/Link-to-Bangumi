@@ -26,6 +26,7 @@ class MikanDownloadWorker {
         QbWebClient::ActionCompletion complete;
         SyncCompletion onSync;
         bool preview{};
+        std::int64_t seriesId{}, account{};
     };
     void run(std::stop_token token);
     void syncRules(bool preview, MikanRuleSync &result);

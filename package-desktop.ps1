@@ -36,6 +36,9 @@ try {
     Copy-Item -LiteralPath (Join-Path $backendOutput 'anime_vault_server.exe') -Destination (Join-Path $package 'backend')
     Get-ChildItem -LiteralPath $backendOutput -Filter '*.dll' -File |
         Copy-Item -Destination (Join-Path $package 'backend')
+    $lexborLicenseDir = Join-Path $package 'backend/licenses/lexbor'
+    New-Item -Path $lexborLicenseDir -ItemType Directory -Force | Out-Null
+    Copy-Item -Path (Join-Path $repo 'backend/third_party/lexbor/*.txt') -Destination $lexborLicenseDir
     Copy-Item -Path (Join-Path $repo 'frontend/dist/*') -Destination (Join-Path $package 'web') -Recurse
     Get-ChildItem -LiteralPath $publish -File |
         Where-Object { $_.Extension -ne '.pdb' } |

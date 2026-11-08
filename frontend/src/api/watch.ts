@@ -7,6 +7,8 @@ export type ContinueEpisode = Pick<WatchProgress, 'mediaId' | 'position' | 'dura
 export type WatchSync = {
   enabled: boolean; connected: boolean; username: string; pending: number; errorCode: string
   issues: { mediaId: number; title?: string; episodeNumber?: string; errorCode: string }[]
+  subscriptionPending?: number
+  subscriptionIssues?: { mikanId: number; errorCode: string }[]
 }
 export const getWatchProgress = (animeId: number, signal: AbortSignal) =>
   request<{ items: WatchProgress[] }>(`/api/watch-progress?animeId=${animeId}`, { signal })

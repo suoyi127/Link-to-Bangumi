@@ -47,7 +47,7 @@ int SqliteDatabase::schemaVersion() const {
 void SqliteDatabase::migrate() {
     std::lock_guard lock(mutex_);
     const int version = schemaVersion();
-    if (version > 18 || version < 0) throw std::runtime_error("unsupported schema version");
+    if (version > 19 || version < 0) throw std::runtime_error("unsupported schema version");
     if (version < 15 && sqlite3_create_function(db_,"mikan_fold",1,SQLITE_UTF8 | SQLITE_DETERMINISTIC,nullptr,
         [](sqlite3_context* ctx,int,sqlite3_value** args) {
             try {
@@ -58,8 +58,8 @@ void SqliteDatabase::migrate() {
         },nullptr,nullptr) != SQLITE_OK) throw std::runtime_error("cannot register Mikan title migration");
     const char* migrations[] = {kInitialSql, kCorrectionSql, kSourceSnapshotSql,
                                 kMediaOriginSql, kOrganizationExecutionSql, kParsedTitleSql,
-                                kFolderImportSql, kNovelSql, kGameSql, kGameVndbSql, kEpisodeMappingSql, kAnimeMergeSql, kGameSteamSql, kMikanDownloadSql, kMikanSubtitleSql, kGameImportAliasSql, kMikanRuleSyncSql, kWatchProgressSql};
-    for (int next = version + 1; next <= 18; ++next) {
+                                kFolderImportSql, kNovelSql, kGameSql, kGameVndbSql, kEpisodeMappingSql, kAnimeMergeSql, kGameSteamSql, kMikanDownloadSql, kMikanSubtitleSql, kGameImportAliasSql, kMikanRuleSyncSql, kWatchProgressSql, kSubscriptionCollectionSql};
+    for (int next = version + 1; next <= 19; ++next) {
         exec(db_, "BEGIN IMMEDIATE");
         try {
             exec(db_, migrations[next - 1]);

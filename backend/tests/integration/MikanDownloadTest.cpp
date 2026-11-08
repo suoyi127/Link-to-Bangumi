@@ -102,7 +102,7 @@ TEST_CASE("Version 14 traditional download history still deduplicates simplified
         ALTER TABLE mikan_download DROP COLUMN subtitle_scripts;
         INSERT INTO mikan_download VALUES('local','old','["進擊的巨人",1,0,"3"]','url1','','',1);
         INSERT INTO mikan_title_alias VALUES('local','old','進擊','進擊的巨人');
-        DROP VIEW watch_episode_state; DROP VIEW watch_episode; DROP TABLE watch_progress; DROP TABLE watch_sync_queue; DROP TABLE watch_sync_account; DROP TABLE watch_clock; DROP TABLE watch_bangumi_episode;
+        DROP TABLE subscription_collection; DROP VIEW watch_episode_state; DROP VIEW watch_episode; DROP TABLE watch_progress; DROP TABLE watch_sync_queue; DROP TABLE watch_sync_account; DROP TABLE watch_clock; DROP TABLE watch_bangumi_episode;
         DROP TABLE mikan_rule_baseline; DROP TABLE mikan_rule_history;
         PRAGMA user_version=14;
     )sql",
@@ -219,6 +219,7 @@ TEST_CASE("Managed RSS endpoint retries rejected additions and records successfu
         data["single"] = {{"title", "Mikan Project - Example"},
                           {"url", single},
                           {"articles", {article("[Other] Different Name - 03 [720p]", 3)}}};
+        data["another"] = {{"url", single + "&subgroupid=999"}, {"articles", Json::array()}};
         return data.dump();
     });
     mock("/api/v2/torrents/add", [&](auto req, auto) {
@@ -248,14 +249,18 @@ TEST_CASE("Managed RSS endpoint retries rejected additions and records successfu
     for (int i = 0; i < 100 && !drogon::app().isRunning(); ++i)
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     auto http = drogon::HttpClient::newHttpClient(base);
-    auto enroll = [&]() {
+    REQUIRE(sqlite3_exec(db.handle(), "UPDATE watch_sync_account SET account=11,enabled=1,connected=1", nullptr,
+                         nullptr, nullptr) == SQLITE_OK);
+    auto enroll = [&](std::string address = feed, bool foreign = false) {
         ::Json::Value body;
-        body["url"] = feed;
+        body["url"] = address;
         body["preferredGroup"] = "Team";
         body["preferredResolution"] = "1080p";
         auto req = drogon::HttpRequest::newHttpJsonRequest(body);
         req->setMethod(drogon::Post);
         req->setPath("/api/qb/rss/feeds");
+        if (foreign)
+            req->addHeader("Origin", "https://untrusted.example");
         const auto [status, response] = http->sendRequest(req, 8.0);
         REQUIRE(status == drogon::ReqResult::Ok);
         REQUIRE(response);
@@ -315,5 +320,18 @@ TEST_CASE("Managed RSS endpoint retries rejected additions and records successfu
     REQUIRE(again["alreadyManaged"].asInt() == 1);
     REQUIRE(again["retained"].asInt() == 1);
     REQUIRE(submissions.load() == 3);
+    const auto another = single + "&subgroupid=999";
+    REQUIRE((*enroll(another, true))["error"]["code"].asString() == "rss_origin_forbidden");
+    REQUIRE((*enroll(another))["success"].asBool());
+    REQUIRE((*enroll(another))["success"].asBool());
+    sqlite3_stmt *check = nullptr;
+    REQUIRE(sqlite3_prepare_v2(db.handle(), "SELECT account,mikan_id,ready FROM subscription_collection", -1, &check,
+                               nullptr) == SQLITE_OK);
+    REQUIRE(sqlite3_step(check) == SQLITE_ROW);
+    CHECK(sqlite3_column_int(check, 0) == 11);
+    CHECK(sqlite3_column_int(check, 1) == 42);
+    CHECK(sqlite3_column_int(check, 2) == 1);
+    CHECK(sqlite3_step(check) == SQLITE_DONE);
+    sqlite3_finalize(check);
 }
 } // namespace

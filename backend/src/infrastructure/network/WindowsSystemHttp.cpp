@@ -1,4 +1,5 @@
 #include "anime_vault/infrastructure/network/WindowsSystemHttp.hpp"
+#include "MikanPageHosts.hpp"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -6,10 +7,13 @@
 
 #include <array>
 #include <memory>
+#include <string_view>
 #include <thread>
 
 namespace anime_vault {
 namespace {
+constexpr std::size_t maxMikanPageBytes = 2 * 1024 * 1024;
+
 struct Handle {
     HINTERNET value{};
     ~Handle() { if (value) WinHttpCloseHandle(value); }
@@ -18,7 +22,14 @@ struct Handle {
 WindowsHttpResult perform(const std::string& host, const std::string& path,
                           const std::string& method, const std::string& userAgent,
                           const std::string& body, std::size_t maxBytes, const std::string& token = {}) {
-    if ((host != "api.bgm.tv" && host != "lain.bgm.tv" && host != "api.vndb.org" && host != "t.vndb.org" && host != "api.steampowered.com" &&
+    const bool mikanHost = host == "mikanani.me" || host == "mikanani.kas.pub";
+    if (mikanHost) {
+        constexpr std::string_view prefix = "/Home/Bangumi/";
+        if (!path.starts_with(prefix) || path.size() == prefix.size() || path.size() > prefix.size() + 19 ||
+            path.find_first_not_of("0123456789", prefix.size()) != std::string::npos ||
+            method != "GET" || !body.empty() || !token.empty() || maxBytes > maxMikanPageBytes) return {};
+    }
+    if ((host != "api.bgm.tv" && host != "lain.bgm.tv" && !mikanHost && host != "api.vndb.org" && host != "t.vndb.org" && host != "api.steampowered.com" &&
          host != "store.steampowered.com" && host != "shared.akamai.steamstatic.com" && host != "shared.fastly.steamstatic.com" &&
          host != "cdn.akamai.steamstatic.com" && host != "cdn.cloudflare.steamstatic.com" && host != "steamcdn-a.akamaihd.net") || path.empty() || path[0] != '/' ||
         path.size() > 2048 || (method != "GET" && method != "POST" && !(method=="PUT" && !token.empty())) || body.size() > 4096)
@@ -75,6 +86,14 @@ WindowsHttpResult authenticatedBangumiRequest(const std::string& path,const std:
         const std::string& agent,const std::string& body,const std::string& token) {
     if (token.empty()) return {};
     return perform("api.bgm.tv",path,method,agent,body,512*1024,token);
+}
+
+WindowsHttpResult mikanSeriesPage(std::int64_t id, const std::string& agent) {
+    if (id <= 0) return {};
+    const auto path = "/Home/Bangumi/" + std::to_string(id);
+    return detail::fetchMikanPage([&](const std::string& host) {
+        return perform(host, path, "GET", agent, {}, maxMikanPageBytes);
+    });
 }
 
 void windowsSystemHttpsRequest(std::string host, std::string path, std::string method,

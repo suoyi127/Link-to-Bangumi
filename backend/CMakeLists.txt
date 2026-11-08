@@ -2,6 +2,7 @@
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(Threads REQUIRED)
+find_package(lexbor CONFIG REQUIRED)
 # 按行嵌入字典，离线运行时不依赖外部文件或系统语言设置。
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/generated")
 foreach(dictionary TSCharacters TSPhrases)
@@ -35,6 +36,7 @@ file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/015_mikan_subtitle.sql" ANIME_
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/016_game_import_alias.sql" ANIME_VAULT_GAME_IMPORT_ALIAS_SQL)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/017_mikan_rule_sync.sql" ANIME_VAULT_MIKAN_RULE_SYNC_SQL)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/018_watch_progress.sql" ANIME_VAULT_WATCH_PROGRESS_SQL)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/019_subscription_collection.sql" ANIME_VAULT_SUBSCRIPTION_COLLECTION_SQL)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/migrations/001_initial.sql"
   "${CMAKE_CURRENT_SOURCE_DIR}/migrations/002_media_correction.sql"
@@ -53,7 +55,8 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/migrations/015_mikan_subtitle.sql"
   "${CMAKE_CURRENT_SOURCE_DIR}/migrations/016_game_import_alias.sql"
   "${CMAKE_CURRENT_SOURCE_DIR}/migrations/017_mikan_rule_sync.sql"
-  "${CMAKE_CURRENT_SOURCE_DIR}/migrations/018_watch_progress.sql")
+  "${CMAKE_CURRENT_SOURCE_DIR}/migrations/018_watch_progress.sql"
+  "${CMAKE_CURRENT_SOURCE_DIR}/migrations/019_subscription_collection.sql")
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/infrastructure/database/InitialSql.hpp.in"
   "${CMAKE_CURRENT_BINARY_DIR}/generated/InitialSql.hpp" @ONLY)
 
@@ -91,6 +94,7 @@ add_library(anime_vault_core STATIC
   src/services/FilenameParser.cpp
   src/services/QbRssRules.cpp
   src/services/MikanDownloads.cpp
+  src/services/MikanSubjectLink.cpp
   src/services/MikanTitleParser.cpp
   src/services/DirectoryScanner.cpp
   src/services/TargetPlanner.cpp
@@ -109,6 +113,11 @@ target_include_directories(anime_vault_core PUBLIC
 )
 target_compile_features(anime_vault_core PUBLIC cxx_std_20)
 target_link_libraries(anime_vault_core PRIVATE anime_vault_chinese anime_vault_storage nlohmann_json::nlohmann_json Threads::Threads)
+if(TARGET lexbor::lexbor)
+  target_link_libraries(anime_vault_core PRIVATE lexbor::lexbor)
+else()
+  target_link_libraries(anime_vault_core PRIVATE lexbor::lexbor_static)
+endif()
 if(WIN32)
   target_link_libraries(anime_vault_core PRIVATE shell32 ole32 Advapi32)
 endif()

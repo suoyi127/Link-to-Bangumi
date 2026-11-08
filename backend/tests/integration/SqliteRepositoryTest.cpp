@@ -55,7 +55,7 @@ TEST_CASE("scan and inbox records survive reopening a migrated database") {
     {
         SqliteDatabase db(path);
         db.migrate();
-        REQUIRE(db.schemaVersion() == 18);
+        REQUIRE(db.schemaVersion() == 19);
         SqliteMediaRepository repo(db);
         const auto scanId = repo.createScan({0, "D:/sample", "running", 1, 0, 0, ""});
         const auto mediaId = repo.insertMedia({0, scanId, "D:/sample/01.mkv", "01.mkv", "1.5", "normal", 1234, "inbox", 0.9});
@@ -108,7 +108,7 @@ TEST_CASE("scan and inbox records survive reopening a migrated database") {
     {
         SqliteDatabase db(path);
         db.migrate();
-        REQUIRE(db.schemaVersion() == 18);
+        REQUIRE(db.schemaVersion() == 19);
         SqliteMediaRepository repo(db);
         const auto scans = repo.listScans();
         const auto media = repo.listInbox();
@@ -139,7 +139,7 @@ TEST_CASE("schema migration six backfills parsed titles from existing correction
         "VALUES(1,'D:/old.mkv','old.mkv','1','normal',1,'inbox',1.0,'Previously Corrected');"
         "INSERT INTO media_file(scan_id,source_path,filename,episode_number,episode_type,size_bytes,status,confidence) "
         "VALUES(1,'D:/unparsed.mkv','unparsed.mkv','','unknown',1,'inbox',0.0);"
-        "DROP VIEW watch_episode_state; DROP VIEW watch_episode; DROP TABLE watch_progress; DROP TABLE watch_sync_queue; DROP TABLE watch_sync_account; DROP TABLE watch_clock; DROP TABLE watch_bangumi_episode;"
+        "DROP TABLE subscription_collection; DROP VIEW watch_episode_state; DROP VIEW watch_episode; DROP TABLE watch_progress; DROP TABLE watch_sync_queue; DROP TABLE watch_sync_account; DROP TABLE watch_clock; DROP TABLE watch_bangumi_episode;"
         "DROP INDEX media_file_folder_import;"
         "ALTER TABLE media_file DROP COLUMN folder_import_id;"
         "DROP TABLE folder_import;"
@@ -147,7 +147,7 @@ TEST_CASE("schema migration six backfills parsed titles from existing correction
         "ALTER TABLE media_file DROP COLUMN parsed_title; ALTER TABLE media_file DROP COLUMN raw_episode_number;"
         "ALTER TABLE media_file DROP COLUMN episode_number_source; DROP TABLE bangumi_episode_mapping; DROP TABLE anime_merge_preview; DROP TRIGGER anime_identity_insert; DROP TABLE anime_identity; PRAGMA user_version=5;", nullptr, nullptr, nullptr) == SQLITE_OK);
     db.migrate();
-    REQUIRE(db.schemaVersion() == 18);
+    REQUIRE(db.schemaVersion() == 19);
     SqliteMediaRepository repo(db);
     const auto media = repo.getMedia(1);
     REQUIRE(media);
@@ -165,7 +165,7 @@ TEST_CASE("migration eleven preserves existing numbers and manual provenance") {
         SqliteDatabase db(path);
         db.migrate();
         REQUIRE(sqlite3_exec(db.handle(),
-            "DROP VIEW watch_episode_state; DROP VIEW watch_episode; DROP TABLE watch_progress; DROP TABLE watch_sync_queue; DROP TABLE watch_sync_account; DROP TABLE watch_clock; DROP TABLE watch_bangumi_episode;"
+            "DROP TABLE subscription_collection; DROP VIEW watch_episode_state; DROP VIEW watch_episode; DROP TABLE watch_progress; DROP TABLE watch_sync_queue; DROP TABLE watch_sync_account; DROP TABLE watch_clock; DROP TABLE watch_bangumi_episode;"
             "ALTER TABLE media_file DROP COLUMN raw_episode_number; ALTER TABLE media_file DROP COLUMN episode_number_source;"
             "DROP TABLE mikan_rule_history; DROP TABLE mikan_rule_baseline; DROP TABLE game_import_alias; DROP TABLE mikan_title_alias; DROP TABLE mikan_pending; DROP TABLE mikan_download; DROP TABLE mikan_subscription; DROP INDEX game_steam_app_id; ALTER TABLE game_resource DROP COLUMN steam_app_id;"
             "ALTER TABLE game_resource DROP COLUMN steam_install_path; ALTER TABLE game_resource DROP COLUMN steam_manifest_path;"
@@ -192,7 +192,7 @@ TEST_CASE("migration eleven preserves existing numbers and manual provenance") {
     SqliteDatabase db(path);
     db.migrate();
     SqliteMediaRepository repo(db);
-    REQUIRE(db.schemaVersion() == 18);
+    REQUIRE(db.schemaVersion() == 19);
     REQUIRE(repo.getMedia(1)->rawEpisodeNumber == "27");
     REQUIRE(repo.getMedia(2)->episodeNumber == "7");
 }

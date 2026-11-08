@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <string>
@@ -12,6 +13,7 @@ struct WindowsHttpResult {
 WindowsHttpResult authenticatedBangumiRequest(const std::string& path,const std::string& method,
                                               const std::string& agent,const std::string& body,
                                               const std::string& token);
+WindowsHttpResult mikanSeriesPage(std::int64_t id, const std::string& agent);
 
 // Windows desktop proxy settings are distinct from WinHTTP's machine defaults.
 // This adapter follows the user's system proxy without routing via qB's RSS bridge.

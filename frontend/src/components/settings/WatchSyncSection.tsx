@@ -22,6 +22,8 @@ const issueText: Record<string, string> = {
   watch_sync_unavailable: 'Bangumi 同步服务暂不可用',
   sync_busy: '同步服务正忙，请稍后再试',
   collection_not_pending: '该作品的待收藏状态已变化，请查看最新同步状态',
+  mikan_subject_unmapped: 'Mikan 番剧页缺少对应的 Bangumi 条目，请打开番剧页核对。',
+  mikan_unavailable: '暂时无法读取 Mikan 番剧页，请稍后查看同步状态。',
 }
 
 export function WatchSyncSection() {
@@ -47,12 +49,13 @@ export function WatchSyncSection() {
   const checked = enabled ?? data?.enabled ?? false
   return <SettingsSection title="Bangumi 观看同步">
     <Typography.Text type="secondary">启用后，新标记为已看的分集会同步到 Bangumi。标为未看只重置本地记录。播放位置保存在本机。关闭同步并保存会清除本机保存的令牌。</Typography.Text>
+    <Typography.Text type="secondary">同步开启期间，新添加的 Mikan 单番订阅会将尚未收藏的作品加入 Bangumi「在看」。已收藏作品保留原状态。聚合和搜索订阅不触发收藏。</Typography.Text>
     {error && <Alert type="warning" message={`同步状态读取失败：${error}`} />}
     {feedback && <Alert type="error" message={feedback} />}
     {notice && <Alert type="success" message={notice} />}
     {!data && !error && <Spin aria-label="正在读取同步状态" />}
     {data && <>
-      <Typography.Text>{data.enabled ? data.connected ? `已连接 Bangumi · ${data.username}` : '同步已开启 · 未连接' : '同步已关闭'} · 待同步 {data.pending} 项</Typography.Text>
+      <Typography.Text>{data.enabled ? data.connected ? `已连接 Bangumi · ${data.username}` : '同步已开启 · 未连接' : '同步已关闭'} · 分集待同步 {data.pending} 项 · 订阅待收藏 {data.subscriptionPending ?? 0} 项</Typography.Text>
       {data.errorCode && <Alert type="warning" message={issueText[data.errorCode] || data.errorCode} />}
       <Checkbox checked={checked} disabled={busy} onChange={event => setEnabled(event.target.checked)}>同步本地已看状态到 Bangumi</Checkbox>
       <label>Bangumi 个人访问令牌<Input.Password aria-label="Bangumi 个人访问令牌" autoComplete="new-password" maxLength={2048} value={token} disabled={busy} placeholder={data.connected ? '留空以沿用已保存的令牌' : '输入个人访问令牌'} onChange={event => setToken(event.target.value)} /></label>
@@ -67,6 +70,10 @@ export function WatchSyncSection() {
           </Popconfirm>}
         </Space></List.Item>
       }} />}
+      {!!data.subscriptionIssues?.length && <List size="small" rowKey="mikanId" dataSource={data.subscriptionIssues} renderItem={issue => <List.Item><Space wrap>
+        <a href={`https://mikanani.me/Home/Bangumi/${issue.mikanId}`} target="_blank" rel="noopener noreferrer">Mikan 番剧 #{issue.mikanId}</a>
+        <Typography.Text>{issueText[issue.errorCode] || `收藏失败（${issue.errorCode}）`}</Typography.Text>
+      </Space></List.Item>} />}
     </>}
   </SettingsSection>
 }

@@ -1,4 +1,5 @@
 #include "anime_vault/services/WatchSyncService.hpp"
+#include "anime_vault/services/MikanSubjectLink.hpp"
 #include "anime_vault/domain/EpisodeNumber.hpp"
 #include "anime_vault/infrastructure/database/SqliteDatabase.hpp"
 #include "../infrastructure/database/SqliteSupport.hpp"
@@ -15,9 +16,7 @@ void parameter(sqlite3_stmt* s, int i, Id value) {
     if (sqlite3_bind_int64(s, i, value) != SQLITE_OK)
         throw std::runtime_error("sqlite bind failed");
 }
-void parameter(sqlite3_stmt* s, int i, const std::string& value) {
-    sqlite_support::bind(s, i, value);
-}
+void parameter(sqlite3_stmt* s, int i, const std::string& value) { sqlite_support::bind(s, i, value); }
 template <class... Args> auto query(SqliteDatabase& db, const char* sql, const Args&... args) {
     auto s = prepare(db.handle(), sql);
     [[maybe_unused]] int i = 0;
@@ -36,9 +35,7 @@ bool row(sqlite3_stmt* s) {
         return false;
     throw std::runtime_error("watch database read failed");
 }
-Id integer(sqlite3_stmt* s, int i) {
-    return sqlite3_column_int64(s, i);
-}
+Id integer(sqlite3_stmt* s, int i) { return sqlite3_column_int64(s, i); }
 Id accountId(SqliteDatabase& db) {
     std::lock_guard lock(db.mutex());
     auto q = query(db, "SELECT account FROM watch_sync_account");
@@ -82,18 +79,18 @@ struct Target {
 };
 std::optional<Target> target(SqliteDatabase& db, Id media) {
     std::lock_guard lock(db.mutex());
-    auto q = query(
-        db,
-        "SELECT q.id,q.media_id,a.bangumi_subject_id,q.account,c.episode_id,q.blocked_subject,"
-        "m.episode_type,m.episode_number,m.raw_episode_number,m.episode_number_source,s.username "
-        "FROM watch_sync_queue q JOIN watch_sync_account s ON s.account=q.account AND s.enabled AND s.connected "
-        "JOIN watch_progress p ON p.media_id=q.media_id AND p.watched "
-        "JOIN media_file m ON m.id=q.media_id LEFT JOIN anime a ON a.id=m.anime_id "
-        "LEFT JOIN watch_bangumi_episode c ON c.media_id=m.id AND c.subject=a.bangumi_subject_id "
-        "AND c.episode_type=m.episode_type AND c.number=m.episode_number AND c.raw_number=m.raw_episode_number "
-        "AND c.source=m.episode_number_source "
-        "WHERE ((?=0 AND q.retry_at<=unixepoch()) OR q.media_id=?) ORDER BY q.retry_at,q.id LIMIT 1",
-        media, media);
+    auto q =
+        query(db,
+              "SELECT q.id,q.media_id,a.bangumi_subject_id,q.account,c.episode_id,q.blocked_subject,"
+              "m.episode_type,m.episode_number,m.raw_episode_number,m.episode_number_source,s.username "
+              "FROM watch_sync_queue q JOIN watch_sync_account s ON s.account=q.account AND s.enabled AND s.connected "
+              "JOIN watch_progress p ON p.media_id=q.media_id AND p.watched "
+              "JOIN media_file m ON m.id=q.media_id LEFT JOIN anime a ON a.id=m.anime_id "
+              "LEFT JOIN watch_bangumi_episode c ON c.media_id=m.id AND c.subject=a.bangumi_subject_id "
+              "AND c.episode_type=m.episode_type AND c.number=m.episode_number AND c.raw_number=m.raw_episode_number "
+              "AND c.source=m.episode_number_source "
+              "WHERE ((?=0 AND q.retry_at<=unixepoch()) OR q.media_id=?) ORDER BY q.retry_at,q.id LIMIT 1",
+              media, media);
     auto s = q.get();
     if (!row(s))
         return {};
@@ -145,10 +142,11 @@ Id resolve(const WatchSyncService::Request& request, const Target& t, const std:
     const int type = episodeType(t.type);
     Id candidate = 0, total = -1;
     for (Id offset = 0; total < 0 || offset < total;) {
-        auto page = document(request("GET",
-                                     "/v0/episodes?subject_id=" + std::to_string(t.subject) + "&type=" +
-                                         std::to_string(type) + "&limit=100&offset=" + std::to_string(offset),
-                                     "", token));
+        auto page =
+            document(request("GET",
+                             "/v0/episodes?subject_id=" + std::to_string(t.subject) + "&type=" + std::to_string(type) +
+                                 "&limit=100&offset=" + std::to_string(offset),
+                             "", token));
         auto count = jsonId(page, "total");
         if (count < 0 || count > 10000 || (total >= 0 && count != total) || !page.contains("data") ||
             !page["data"].is_array())
@@ -174,13 +172,25 @@ Id resolve(const WatchSyncService::Request& request, const Target& t, const std:
         throw WatchSyncError(409, "episode_unmapped");
     return candidate;
 }
-bool collected(const WatchSyncService::Request& request, const Target& t, const std::string& token) {
-    auto response =
-        request("GET", "/v0/users/" + t.username + "/collections/" + std::to_string(t.subject), "", token);
+std::pair<Id, std::string> verifiedAccount(const WatchSyncService::Request& request, const std::string& token) {
+    auto me = document(request("GET", "/v0/me", "", token));
+    const auto id = jsonId(me, "id");
+    if (id <= 0 || !me.contains("username") || !me["username"].is_string())
+        throw WatchSyncError(502, "bangumi_invalid_response");
+    auto username = me["username"].get<std::string>();
+    if (username.empty() || username.size() > 100 ||
+        username.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") !=
+            std::string::npos)
+        throw WatchSyncError(502, "bangumi_invalid_response");
+    return {id, std::move(username)};
+}
+bool collected(const WatchSyncService::Request& request, Id subject, const std::string& username,
+               const std::string& token) {
+    auto response = request("GET", "/v0/users/" + username + "/collections/" + std::to_string(subject), "", token);
     if (response.status == 404)
         return false;
     auto data = document(response);
-    if (jsonId(data, "subject_id") != t.subject || jsonId(data, "type") < 1 || jsonId(data, "type") > 5)
+    if (jsonId(data, "subject_id") != subject || jsonId(data, "type") < 1 || jsonId(data, "type") > 5)
         throw WatchSyncError(502, "bangumi_invalid_response");
     return true;
 }
@@ -196,11 +206,10 @@ void recordFailure(SqliteDatabase& db, const Target& t, const WatchSyncError& e)
 }
 } // namespace
 
-WatchSyncService::WatchSyncService(SqliteDatabase& db, Request request, Read read, Save save)
-    : db_(db), request_(std::move(request)), read_(std::move(read)), save_(std::move(save)) {}
-WatchSyncService::~WatchSyncService() {
-    stop();
-}
+WatchSyncService::WatchSyncService(SqliteDatabase& db, Request request, Read read, Save save, SeriesPage seriesPage)
+    : db_(db), seriesPage_(std::move(seriesPage)), request_(std::move(request)), read_(std::move(read)),
+      save_(std::move(save)) {}
+WatchSyncService::~WatchSyncService() { stop(); }
 
 WatchSyncStatus WatchSyncService::status() const {
     std::lock_guard lock(db_.mutex());
@@ -225,6 +234,15 @@ WatchSyncStatus WatchSyncService::status() const {
         auto v = issues.get();
         result.issues.push_back({integer(v, 0), column(v, 1), column(v, 2), column(v, 3), column(v, 4)});
     }
+    auto subs = query(db_, "SELECT count(*) FROM subscription_collection WHERE account=? AND completed=0", account);
+    row(subs.get());
+    result.subscriptionPending = integer(subs.get(), 0);
+    auto errors = query(db_,
+                        "SELECT mikan_id,error FROM subscription_collection WHERE account=? AND completed=0 AND "
+                        "error<>'' ORDER BY retry_at,mikan_id LIMIT 200",
+                        account);
+    while (row(errors.get()))
+        result.subscriptionIssues.push_back({integer(errors.get(), 0), column(errors.get(), 1)});
     if (result.errorCode.empty() && !result.issues.empty())
         result.errorCode = result.issues.front().errorCode;
     return result;
@@ -244,15 +262,7 @@ WatchSyncStatus WatchSyncService::configure(const WatchSyncSettings& settings) {
     }
     auto token = settings.token ? *settings.token : previous ? read_(previous) : "";
     requireToken(token);
-    auto me = document(request_("GET", "/v0/me", "", token));
-    const auto id = jsonId(me, "id");
-    if (id <= 0 || !me.contains("username") || !me["username"].is_string())
-        throw WatchSyncError(502, "bangumi_invalid_response");
-    auto username = me["username"].get<std::string>();
-    if (username.empty() || username.size() > 100 ||
-        username.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") !=
-            std::string::npos)
-        throw WatchSyncError(502, "bangumi_invalid_response");
+    const auto [id, username] = verifiedAccount(request_, token);
     save_(id, token);
     if (previous && previous != id)
         save_(previous, "");
@@ -260,12 +270,63 @@ WatchSyncStatus WatchSyncService::configure(const WatchSyncSettings& settings) {
     sqlite_support::Transaction tx(db_.handle());
     update(db_, "UPDATE watch_sync_account SET enabled=1,connected=1,username=?,account=?,error=''", username, id);
     update(db_, "UPDATE watch_sync_queue SET retry_at=0 WHERE account=?", id);
+    update(db_, "UPDATE subscription_collection SET retry_at=0 WHERE account=? AND completed=0", id);
     tx.commit();
     return status();
 }
 
+void WatchSyncService::processSubscription() {
+    Id account{}, series{};
+    {
+        std::lock_guard lock(db_.mutex());
+        auto q =
+            query(db_, "SELECT c.account,c.mikan_id FROM subscription_collection c JOIN watch_sync_account s "
+                       "ON s.account=c.account AND s.enabled=1 AND s.connected=1 WHERE c.ready=1 AND c.completed=0 "
+                       "AND c.retry_at<=unixepoch() ORDER BY c.retry_at,c.mikan_id LIMIT 1");
+        if (!row(q.get()))
+            return;
+        account = integer(q.get(), 0);
+        series = integer(q.get(), 1);
+    }
+    try {
+        auto token = read_(account);
+        if (token.empty())
+            throw WatchSyncError(401, "credential_missing");
+        if (!seriesPage_)
+            throw WatchSyncError(503, "mikan_unavailable");
+        const auto page = seriesPage_(series);
+        if (page.status != 200)
+            throw WatchSyncError(502, "mikan_unavailable");
+        auto subject = mikanLinkedSubject(page.body);
+        if (!subject)
+            throw WatchSyncError(409, "mikan_subject_unmapped");
+        const auto item = document(request_("GET", "/v0/subjects/" + std::to_string(*subject), "", token));
+        if (jsonId(item, "id") != *subject || jsonId(item, "type") != 2)
+            throw WatchSyncError(409, "mikan_subject_unmapped");
+
+        // 用令牌的当前用户名核验收藏；账号改名后也不能把「已看」误改为「在看」。
+        const auto [identity, username] = verifiedAccount(request_, token);
+        if (identity != account)
+            throw WatchSyncError(401, "bangumi_account_changed");
+        if (!collected(request_, *subject, username, token))
+            check(request_("POST", "/v0/users/-/collections/" + std::to_string(*subject), R"({"type":3})", token), 204);
+        std::lock_guard lock(db_.mutex());
+        update(db_, "UPDATE subscription_collection SET completed=1,error='' WHERE account=? AND mikan_id=?", account,
+               series);
+    } catch (const WatchSyncError& e) {
+        std::lock_guard lock(db_.mutex());
+        update(db_,
+               "UPDATE subscription_collection SET error=?,attempts=attempts+1,"
+               "retry_at=unixepoch()+MIN(3600,60*(1 << MIN(attempts,6))) WHERE account=? AND mikan_id=?",
+               std::string(e.what()), account, series);
+        if (e.status == 401)
+            update(db_, "UPDATE watch_sync_account SET connected=0,error=? WHERE account=?", std::string(e.what()),
+                   account);
+    }
+}
 void WatchSyncService::processOne() {
     std::lock_guard operation(operationMutex_);
+    processSubscription();
     auto work = target(db_, 0);
     if (!work)
         return;
@@ -283,13 +344,13 @@ void WatchSyncService::processOne() {
                    t.type, t.number, t.raw, t.source, episode);
             t.cached = episode;
         }
-        if (!collected(request_, t, token))
+        if (!collected(request_, t.subject, t.username, token))
             throw WatchSyncError(409, "subject_not_collected");
         // 请求期间媒体可能被改绑或撤销已看。重读当前归属，旧队列行不能覆盖新的观看事件。
         if (target(db_, t.media) != work)
             return;
-        auto response = request_("PUT", "/v0/users/-/collections/-/episodes/" + std::to_string(episode),
-                                 R"({"type":2})", token);
+        auto response =
+            request_("PUT", "/v0/users/-/collections/-/episodes/" + std::to_string(episode), R"({"type":2})", token);
         if (response.status == 404 || response.status == 400) {
             std::lock_guard lock(db_.mutex());
             update(db_, "DELETE FROM watch_bangumi_episode WHERE media_id=? AND episode_id=?", t.media, episode);
@@ -319,18 +380,17 @@ WatchSyncStatus WatchSyncService::collect(Id media) {
         if (token.empty())
             throw WatchSyncError(401, "credential_missing");
         // 旧用户名返回 404 也可能表示改名，先验证账号再判断是否需要新建收藏。
-        auto me = document(request_("GET", "/v0/me", "", token));
-        if (jsonId(me, "id") != t.account || !me.contains("username") || me["username"] != t.username)
+        const auto [identity, username] = verifiedAccount(request_, token);
+        if (identity != t.account || username != t.username)
             throw WatchSyncError(401, "bangumi_account_changed");
-        if (!collected(request_, t, token)) {
+        if (!collected(request_, t.subject, t.username, token)) {
             if (target(db_, media) != work)
                 throw WatchSyncError(409, "collection_not_pending");
             check(request_("POST", "/v0/users/-/collections/" + std::to_string(t.subject), R"({"type":3})", token),
                   204);
         }
         std::lock_guard lock(db_.mutex());
-        update(db_,
-               "UPDATE watch_sync_queue SET error='',retry_at=0,attempts=0 WHERE account=? AND blocked_subject=?",
+        update(db_, "UPDATE watch_sync_queue SET error='',retry_at=0,attempts=0 WHERE account=? AND blocked_subject=?",
                t.account, t.subject);
     } catch (const WatchSyncError& e) {
         recordFailure(db_, t, e);

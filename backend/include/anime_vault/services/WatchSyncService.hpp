@@ -26,11 +26,17 @@ struct WatchSyncIssue {
     std::int64_t mediaId{};
     std::string errorCode, title, episodeNumber, episodeType;
 };
+struct SubscriptionCollectionIssue {
+    std::int64_t mikanId{};
+    std::string errorCode;
+};
 struct WatchSyncStatus {
     bool enabled{}, connected{};
     std::string username, errorCode;
     std::int64_t pending{};
     std::vector<WatchSyncIssue> issues;
+    std::int64_t subscriptionPending{};
+    std::vector<SubscriptionCollectionIssue> subscriptionIssues;
 };
 struct WatchSyncError : std::runtime_error {
     WatchSyncError(int status, const std::string& code) : std::runtime_error(code), status(status) {}
@@ -39,11 +45,12 @@ struct WatchSyncError : std::runtime_error {
 
 class WatchSyncService {
   public:
-    using Request = std::function<WatchResponse(const std::string&, const std::string&, const std::string&,
-                                                const std::string&)>;
+    using Request =
+        std::function<WatchResponse(const std::string&, const std::string&, const std::string&, const std::string&)>;
     using Read = std::function<std::string(std::int64_t)>;
     using Save = std::function<void(std::int64_t, const std::string&)>;
-    WatchSyncService(SqliteDatabase& db, Request request, Read read, Save save);
+    using SeriesPage = std::function<WatchResponse(std::int64_t)>;
+    WatchSyncService(SqliteDatabase& db, Request request, Read read, Save save, SeriesPage seriesPage = {});
     ~WatchSyncService();
     WatchSyncStatus status() const;
     WatchSyncStatus configure(const WatchSyncSettings& settings);
@@ -54,7 +61,9 @@ class WatchSyncService {
     void stop();
 
   private:
+    void processSubscription();
     SqliteDatabase& db_;
+    SeriesPage seriesPage_;
     Request request_;
     Read read_;
     Save save_;

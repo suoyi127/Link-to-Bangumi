@@ -7,6 +7,7 @@
 #include <sstream>
 #include <regex>
 #include "anime_vault/services/MikanChinese.hpp"
+#include "anime_vault/services/MikanSubjectLink.hpp"
 
 namespace anime_vault {
 namespace {
@@ -156,8 +157,18 @@ void MikanDownloadWorker::stop() {
         thread_.join();
 }
 void MikanDownloadWorker::subscribe(MikanSubscription feed, QbWebClient::ActionCompletion complete) {
+    const auto series = mikanSeriesId(feed.url).value_or(0);
+    std::int64_t account{};
+    try {
+        // 在提交时确定账号，避免等待 qB 的过程中把收藏发给另一个账号。
+        if (series)
+            account = store_.collectionAccount();
+    } catch (const std::exception &) {
+        complete({false, "watch_sync_account_unavailable"});
+        return;
+    }
     std::lock_guard lock(mutex_);
-    jobs_.push_back({std::move(feed), std::move(complete)});
+    jobs_.push_back({std::move(feed), std::move(complete), {}, false, series, account});
     cv_.notify_one();
 }
 void MikanDownloadWorker::synchronize(bool preview, SyncCompletion complete) {
@@ -329,11 +340,14 @@ void MikanDownloadWorker::refresh(const std::optional<Job> &job, std::stop_token
         const auto &feed = job->feed;
         if (!feedPresent(Json::parse(items), feed.url)) {
             const auto status = send("/api/v2/rss/addFeed", QbRssRules::mikanFeedForm(feed.url)).first;
-            if (status != 200)
+            if (status != 200 && status != 204)
                 throw QbConfigError("qb_feed_exists_or_invalid", "qB RSS add failed");
         }
-        if (!clearForFeed(rules, feed, savePath_, send, [&] { store_.subscribe(endpoint, feed); }))
+        if (!clearForFeed(rules, feed, savePath_, send,
+                          [&] { store_.subscribe(endpoint, feed, job->seriesId, job->account); }))
             throw QbConfigError("qb_rule_exists", "qB rule conflict");
+        if (job->seriesId)
+            store_.activateCollection(endpoint, feed.url);
         feeds = store_.feeds(endpoint);
     }
     const auto tasks = read(send, "/api/v2/torrents/info");
@@ -369,6 +383,8 @@ void MikanDownloadWorker::refresh(const std::optional<Job> &job, std::stop_token
                     ((job && job->feed.url == feed.url) || clearForFeed(rules, feed, savePath_, send));
         if (!active[i])
             continue;
+        // 崩溃或旧 qB 规则停用失败后，仅在该订阅实际可用时恢复收藏任务。
+        if (!job || job->feed.url!=feed.url) store_.activateCollection(endpoint,feed.url);
         baseline[i] = store_.baseline(endpoint, feed.url);
         const auto before = known;
         std::map<std::string, int> observed;

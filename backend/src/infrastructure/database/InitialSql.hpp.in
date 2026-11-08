@@ -17,3 +17,4 @@ inline constexpr const char* kMikanSubtitleSql = R"ANIME_VAULT_SQL(@ANIME_VAULT_
 inline constexpr const char* kGameImportAliasSql = R"ANIME_VAULT_SQL(@ANIME_VAULT_GAME_IMPORT_ALIAS_SQL@)ANIME_VAULT_SQL";
 inline constexpr const char* kMikanRuleSyncSql = R"ANIME_VAULT_SQL(@ANIME_VAULT_MIKAN_RULE_SYNC_SQL@)ANIME_VAULT_SQL";
 inline constexpr const char* kWatchProgressSql = R"ANIME_VAULT_SQL(@ANIME_VAULT_WATCH_PROGRESS_SQL@)ANIME_VAULT_SQL";
+inline constexpr const char* kSubscriptionCollectionSql = R"ANIME_VAULT_SQL(@ANIME_VAULT_SUBSCRIPTION_COLLECTION_SQL@)ANIME_VAULT_SQL";

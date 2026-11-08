@@ -4,8 +4,31 @@
 #include <nlohmann/json.hpp>
 namespace anime_vault {
 using namespace sqlite_support;
-void MikanDownloadStore::subscribe(const std::string &endpoint, const MikanSubscription &feed) {
+std::int64_t MikanDownloadStore::collectionAccount() {
     std::lock_guard lock(db_.mutex());
+    auto q = prepare(db_.handle(),
+                     "SELECT CASE WHEN enabled THEN account ELSE 0 END FROM watch_sync_account WHERE singleton=1");
+    if (sqlite3_step(q.get()) != SQLITE_ROW)
+        throw std::runtime_error("watch_sync_account_unavailable");
+    return sqlite3_column_int64(q.get(), 0);
+}
+void MikanDownloadStore::subscribe(const std::string &endpoint, const MikanSubscription &feed, std::int64_t mikanId,
+                                   std::int64_t account) {
+    std::lock_guard lock(db_.mutex());
+    Transaction tx(db_.handle());
+    if (mikanId > 0 && account > 0) {
+        // 只记录真正新增的订阅；偏好修改、旧规则迁移均不补写账号收藏。
+        auto intent = prepare(db_.handle(), R"sql(INSERT INTO subscription_collection(account,mikan_id,endpoint,feed)
+            SELECT ?4,?1,?2,?3 WHERE NOT EXISTS
+              (SELECT 1 FROM mikan_subscription WHERE endpoint=?2 AND feed=?3)
+            ON CONFLICT(account,mikan_id) DO UPDATE SET endpoint=excluded.endpoint,feed=excluded.feed
+              WHERE subscription_collection.ready=0 AND subscription_collection.completed=0)sql");
+        sqlite3_bind_int64(intent.get(), 1, mikanId);
+        sqlite_support::bind(intent.get(), 2, endpoint);
+        sqlite_support::bind(intent.get(), 3, feed.url);
+        sqlite3_bind_int64(intent.get(), 4, account);
+        done(db_.handle(), intent.get());
+    }
     auto q = prepare(db_.handle(),
                      "INSERT INTO mikan_subscription VALUES(?,?,?,?,?) ON CONFLICT(endpoint,feed) DO UPDATE SET "
                      "preferred_group=excluded.preferred_group,preferred_resolution=excluded.preferred_resolution,"
@@ -15,6 +38,15 @@ void MikanDownloadStore::subscribe(const std::string &endpoint, const MikanSubsc
     sqlite_support::bind(q.get(), 3, feed.group);
     sqlite_support::bind(q.get(), 4, feed.resolution);
     sqlite_support::bind(q.get(), 5, feed.subtitle);
+    done(db_.handle(), q.get());
+    tx.commit();
+}
+void MikanDownloadStore::activateCollection(const std::string &endpoint, const std::string &feedUrl) {
+    std::lock_guard lock(db_.mutex());
+    auto q =
+        prepare(db_.handle(), "UPDATE subscription_collection SET ready=1 WHERE endpoint=? AND feed=? AND ready=0");
+    sqlite_support::bind(q.get(), 1, endpoint);
+    sqlite_support::bind(q.get(), 2, feedUrl);
     done(db_.handle(), q.get());
 }
 std::vector<MikanSubscription> MikanDownloadStore::feeds(const std::string &endpoint) {

@@ -48,22 +48,32 @@ std::shared_ptr<WatchSyncService> makeWatchSyncService(SqliteDatabase& db, const
     auto target = [prefix = L"AnimeVault/bgm-watch/" + path + L"/"](std::int64_t account) {
         return prefix + std::to_wstring(account);
     };
+    const auto agent = [get = std::move(userAgent)] {
+        auto value = get();
+        return value.empty()
+                   ? std::string("suoyi127/Link-to-Bangumi/0.1 (Windows) (https://github.com/suoyi127/Link-to-Bangumi)")
+                   : value;
+    };
     auto service = std::make_shared<WatchSyncService>(
         db,
-        [agent = std::move(userAgent)](const auto& method, const auto& route, const auto& body,
-                                       const auto& token) -> WatchResponse {
+        [agent](const auto& method, const auto& route, const auto& body, const auto& token) -> WatchResponse {
 #ifdef _WIN32
-            auto userAgent = agent();
-            if (userAgent.empty())
-                userAgent = "suoyi127/Link-to-Bangumi/0.1 (Windows) (https://github.com/suoyi127/Link-to-Bangumi)";
-            auto response = authenticatedBangumiRequest(route, method, userAgent, body, token);
+            auto response = authenticatedBangumiRequest(route, method, agent(), body, token);
             return {response.status, response.body.value_or("")};
 #else
             throw WatchSyncError(503, "watch_sync_unavailable");
 #endif
         },
         [target](auto account) { return readCredential(target(account)); },
-        [target](auto account, const auto& token) { writeCredential(target(account), token); });
+        [target](auto account, const auto& token) { writeCredential(target(account), token); },
+        [agent](std::int64_t id) -> WatchResponse {
+#ifdef _WIN32
+            auto result = mikanSeriesPage(id, agent());
+            return {result.status, result.body.value_or("")};
+#else
+            return {};
+#endif
+        });
     service->start();
     return service;
 }

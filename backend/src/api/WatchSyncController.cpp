@@ -12,6 +12,14 @@ Json::Value summary(const WatchSyncStatus& status) {
     result["username"] = status.username;
     result["pending"] = Json::Int64(status.pending);
     result["errorCode"] = status.errorCode;
+    result["subscriptionPending"] = Json::Int64(status.subscriptionPending);
+    result["subscriptionIssues"] = Json::arrayValue;
+    for (const auto& issue : status.subscriptionIssues) {
+        Json::Value row;
+        row["mikanId"] = Json::Int64(issue.mikanId);
+        row["errorCode"] = issue.errorCode;
+        result["subscriptionIssues"].append(std::move(row));
+    }
     result["issues"] = Json::arrayValue;
     for (const auto& issue : status.issues) {
         Json::Value row;
@@ -51,8 +59,7 @@ void submit(const std::shared_ptr<WatchSyncService>& service, const Request& req
         });
     };
     if (!service->post(std::move(task)))
-        deliver(std::move(cb), requestContext(req, RequestIdPolicy::Media), 503,
-                errorJson("sync_busy", "sync busy"));
+        deliver(std::move(cb), requestContext(req, RequestIdPolicy::Media), 503, errorJson("sync_busy", "sync busy"));
 }
 } // namespace
 void registerWatchSyncEndpoints(std::shared_ptr<WatchSyncService> service) {
@@ -65,18 +72,18 @@ void registerWatchSyncEndpoints(std::shared_ptr<WatchSyncService> service) {
                                       });
                                   },
                                   {drogon::Get});
-    drogon::app().registerHandler(
-        "/api/watch-sync",
-        [service](const Request& req, Callback&& cb) {
-            submit(service, req, std::move(cb), [service, req] {
-                const auto data = body(req);
-                if (!hasOnlyFields(data, {"enabled", "token"}) || !data["enabled"].isBool() ||
-                    (data.isMember("token") && !data["token"].isString()))
-                    throw ApiError(400, "invalid_request", "invalid settings");
-                return service->configure({data["enabled"].asBool(), readStringField(data, "token")});
-            });
-        },
-        {drogon::Put});
+    drogon::app().registerHandler("/api/watch-sync",
+                                  [service](const Request& req, Callback&& cb) {
+                                      submit(service, req, std::move(cb), [service, req] {
+                                          const auto data = body(req);
+                                          if (!hasOnlyFields(data, {"enabled", "token"}) || !data["enabled"].isBool() ||
+                                              (data.isMember("token") && !data["token"].isString()))
+                                              throw ApiError(400, "invalid_request", "invalid settings");
+                                          return service->configure(
+                                              {data["enabled"].asBool(), readStringField(data, "token")});
+                                      });
+                                  },
+                                  {drogon::Put});
     drogon::app().registerHandler("/api/watch-sync/collect",
                                   [service](const Request& req, Callback&& cb) {
                                       submit(service, req, std::move(cb), [service, req] {

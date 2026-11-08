@@ -5,7 +5,10 @@ namespace anime_vault {
 class MikanDownloadStore {
   public:
     explicit MikanDownloadStore(SqliteDatabase &db) : db_(db) {}
-    void subscribe(const std::string &endpoint, const MikanSubscription &feed);
+    std::int64_t collectionAccount();
+    void subscribe(const std::string &endpoint, const MikanSubscription &feed, std::int64_t mikanId = 0,
+                   std::int64_t account = 0);
+    void activateCollection(const std::string &endpoint, const std::string &feedUrl);
     void adoptRule(const std::string &endpoint, const std::string &feed, const std::set<std::string> &urls,
                    const std::map<std::string, std::set<std::string>> &history, const MikanAliases &aliases);
     std::set<std::string> baseline(const std::string &endpoint, const std::string &feed);
