@@ -213,6 +213,11 @@ it('shows Mikan feeds and adds a user-approved feed through qB', async () => {
   fireEvent.click(screen.getByRole('button', { name: '添加 Mikan 订阅' }))
   await waitFor(() => expect(add).toHaveBeenCalledWith('https://mikanani.me/RSS/Bangumi?bangumiId=123'))
   await waitFor(() => expect(feeds).toHaveBeenCalledTimes(2))
+  fireEvent.change(screen.getByLabelText('优先字幕', { exact: true }), { target: { value: 'cht' } })
+  fireEvent.change(screen.getByLabelText('Mikan RSS 地址'), { target: { value: 'https://mikanani.me/RSS/Bangumi?bangumiId=123' } })
+  fireEvent.click(screen.getByRole('button', { name: '添加 Mikan 订阅' }))
+  await waitFor(() => expect(add).toHaveBeenCalledWith('https://mikanani.me/RSS/Bangumi?bangumiId=123',
+    { preferredGroup: '', preferredResolution: '', preferredSubtitle: 'cht' }))
 })
 
 it('creates a qB download rule only after confirming its target and immediate effect', async () => {

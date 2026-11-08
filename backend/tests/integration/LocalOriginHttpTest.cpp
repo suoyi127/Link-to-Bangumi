@@ -1,4 +1,5 @@
 #include "anime_vault/api/GameController.hpp"
+#include "anime_vault/api/SteamController.hpp"
 #include "anime_vault/api/NovelController.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <drogon/drogon.h>
@@ -7,6 +8,7 @@
 TEST_CASE("desktop dynamic origin reaches input validation while foreign origins are rejected") {
     anime_vault::NativeProcessLauncher launcher;
     anime_vault::api::registerGameEndpoints(nullptr, nullptr, launcher);
+    anime_vault::api::registerSteamEndpoints(nullptr, nullptr);
     anime_vault::api::registerNovelEndpoints(nullptr, nullptr, launcher);
     drogon::app().addListener("127.0.0.1", 18854);
     std::thread server([] { drogon::app().run(); });
@@ -27,7 +29,7 @@ TEST_CASE("desktop dynamic origin reaches input validation while foreign origins
         REQUIRE(response);
         return (*response->getJsonObject())["error"]["code"].asString();
     };
-    for (const auto& path : {"/api/game-imports", "/api/novel-imports"}) {
+    for (const auto& path : {"/api/game-imports", "/api/novel-imports", "/api/steam/imports"}) {
         REQUIRE(send(path, "http://127.0.0.1:18854", "same-origin") == "invalid_request");
         REQUIRE(send(path, "http://localhost:18854", "same-origin") == "invalid_request");
         REQUIRE(send(path, "http://localhost:5173", "same-site") == "invalid_request");

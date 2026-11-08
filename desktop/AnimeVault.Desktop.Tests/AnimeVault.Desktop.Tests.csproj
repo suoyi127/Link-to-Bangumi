@@ -7,5 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../AnimeVault.Desktop/DesktopLayout.cs" Link="DesktopLayout.cs" />
+    <Compile Include="../AnimeVault.Desktop/SteamLoginProtocol.cs" Link="SteamLoginProtocol.cs" />
   </ItemGroup>
 </Project>

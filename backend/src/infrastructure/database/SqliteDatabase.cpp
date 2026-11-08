@@ -1,5 +1,6 @@
 #include "anime_vault/infrastructure/database/SqliteDatabase.hpp"
 #include "InitialSql.hpp"
+#include "anime_vault/services/MikanChinese.hpp"
 
 #include <sqlite3.h>
 #include <stdexcept>
@@ -46,11 +47,19 @@ int SqliteDatabase::schemaVersion() const {
 void SqliteDatabase::migrate() {
     std::lock_guard lock(mutex_);
     const int version = schemaVersion();
-    if (version > 12 || version < 0) throw std::runtime_error("unsupported schema version");
+    if (version > 17 || version < 0) throw std::runtime_error("unsupported schema version");
+    if (version < 15 && sqlite3_create_function(db_,"mikan_fold",1,SQLITE_UTF8 | SQLITE_DETERMINISTIC,nullptr,
+        [](sqlite3_context* ctx,int,sqlite3_value** args) {
+            try {
+                const auto* value = reinterpret_cast<const char*>(sqlite3_value_text(args[0]));
+                const auto folded = foldMikanChinese(value ? value : "");
+                sqlite3_result_text(ctx,folded.data(),static_cast<int>(folded.size()),SQLITE_TRANSIENT);
+            } catch (...) { sqlite3_result_error(ctx,"Mikan title migration failed",-1); }
+        },nullptr,nullptr) != SQLITE_OK) throw std::runtime_error("cannot register Mikan title migration");
     const char* migrations[] = {kInitialSql, kCorrectionSql, kSourceSnapshotSql,
                                 kMediaOriginSql, kOrganizationExecutionSql, kParsedTitleSql,
-                                kFolderImportSql, kNovelSql, kGameSql, kGameVndbSql, kEpisodeMappingSql, kAnimeMergeSql};
-    for (int next = version + 1; next <= 12; ++next) {
+                                kFolderImportSql, kNovelSql, kGameSql, kGameVndbSql, kEpisodeMappingSql, kAnimeMergeSql, kGameSteamSql, kMikanDownloadSql, kMikanSubtitleSql, kGameImportAliasSql, kMikanRuleSyncSql};
+    for (int next = version + 1; next <= 17; ++next) {
         exec(db_, "BEGIN IMMEDIATE");
         try {
             exec(db_, migrations[next - 1]);

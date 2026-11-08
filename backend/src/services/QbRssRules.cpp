@@ -1,5 +1,5 @@
 #include "anime_vault/services/QbRssRules.hpp"
-#include "anime_vault/services/TitleNormalization.hpp"
+#include "anime_vault/services/MikanChinese.hpp"
 #include "anime_vault/services/FilenameParser.hpp"
 #include "anime_vault/services/ReleaseTextNormalization.hpp"
 
@@ -68,14 +68,14 @@ QbMikanCatalog QbRssRules::parseMikanItems(std::string_view body) {
                     canonical = feedTitle.substr(prefix.size());
                 if (!canonical.empty() && canonical.size() <= 500) {
                     const auto add = [&](const std::string& alias, int episode) {
-                        if (!alias.empty() && alias.size() <= 500 && normalizedTitleKey(alias) != normalizedTitleKey(canonical))
+                        if (!alias.empty() && alias.size() <= 500 && scrapeTitleKey(alias) != scrapeTitleKey(canonical))
                             pairs.push_back({canonical, alias, episode, true});
                     };
                     const auto originalPairs = pairs;
                     for (auto& pair : pairs) { pair.canonicalTitle = canonical; pair.feedScoped = true; }
                     for (const auto& pair : originalPairs) {
                         add(pair.canonicalTitle, pair.episode);
-                        const auto aliasPoints = normalizeTitle(pair.alias);
+                        const auto aliasPoints = normalizeScrapeTitle(pair.alias);
                         if (std::none_of(aliasPoints.begin(), aliasPoints.end(), [](char32_t c) { return c >= 0x3400 && c <= 0x9fff; }))
                             add(pair.canonicalTitle + " " + pair.alias, pair.episode);
                     }
@@ -92,9 +92,9 @@ QbMikanCatalog QbRssRules::parseMikanItems(std::string_view body) {
                     }
                 }
                 for (const auto& pair : pairs) {
-                    const auto aliasKey = normalizedTitleKey(pair.alias);
+                    const auto aliasKey = scrapeTitleKey(pair.alias);
                     if (aliasKey.empty() || conflicts.contains(aliasKey)) continue;
-                    const auto canonicalKey = normalizedTitleKey(pair.canonicalTitle);
+                    const auto canonicalKey = scrapeTitleKey(pair.canonicalTitle);
                     const auto [owner, added] = owners.emplace(aliasKey, canonicalKey);
                     if (!added && owner->second != canonicalKey) { conflicts.insert(aliasKey); continue; }
                     const auto key = aliasKey + (pair.feedScoped ? ":episode:" + std::to_string(pair.episode) : "");
@@ -107,7 +107,7 @@ QbMikanCatalog QbRssRules::parseMikanItems(std::string_view body) {
     };
     visit(root, 0);
     for (auto& [_, pair] : unique)
-        if (!conflicts.contains(normalizedTitleKey(pair.alias))) result.pairs.push_back(std::move(pair));
+        if (!conflicts.contains(scrapeTitleKey(pair.alias))) result.pairs.push_back(std::move(pair));
     return result;
 }
 

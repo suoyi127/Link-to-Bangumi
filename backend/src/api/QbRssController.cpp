@@ -1,10 +1,12 @@
 #include "anime_vault/api/QbRssController.hpp"
 #include "anime_vault/api/HttpSupport.hpp"
+#include "anime_vault/api/LocalRequest.hpp"
 #include <drogon/drogon.h>
 
 namespace anime_vault::api {
 void registerQbRssEndpoints(std::shared_ptr<QbConnectionManager> qb, std::filesystem::path source,
-    std::function<std::string()> qbDownloadError, std::function<void()> validateSourceReady) {
+    std::function<std::string()> qbDownloadError, std::function<void()> validateSourceReady,
+    std::shared_ptr<MikanDownloadWorker> downloads) {
     drogon::app().registerHandler("/api/qb/status", [qb](const drogon::HttpRequestPtr&,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
         qb->current()->inspect([callback = std::move(callback)](anime_vault::QbStatus status) mutable {
@@ -37,10 +39,45 @@ void registerQbRssEndpoints(std::shared_ptr<QbConnectionManager> qb, std::filesy
             deliver(std::move(callback), RequestContext{}, 200, std::move(payload));
         });
     }, {drogon::Get});
-    drogon::app().registerHandler("/api/qb/rss/feeds", [qb, source, qbDownloadError, validateSourceReady](const drogon::HttpRequestPtr& request,
+    drogon::app().registerHandler(
+        "/api/qb/rss/sync",
+        [downloads](const drogon::HttpRequestPtr &request,
+                    std::function<void(const drogon::HttpResponsePtr &)> &&callback) {
+            const auto body = request->body().size() <= 256 ? request->getJsonObject() : nullptr;
+            if (!localRequestAllowed(request) || !body || !body->isObject() || body->size() != 1 ||
+                !(*body)["preview"].isBool()) {
+                Json::Value out;
+                out["error"]["code"] = "invalid_request";
+                deliver(std::move(callback), RequestContext{}, 400, out);
+                return;
+            }
+            if (!downloads) {
+                Json::Value out;
+                out["error"]["code"] = "qb_unconfigured";
+                deliver(std::move(callback), RequestContext{}, 503, out);
+                return;
+            }
+            downloads->synchronize(
+                (*body)["preview"].asBool(), [callback = std::move(callback)](MikanRuleSync result) mutable {
+                    Json::Value out;
+                    out["eligible"] = result.eligible;
+                    out["migrated"] = result.migrated;
+                    out["alreadyManaged"] = result.alreadyManaged;
+                    out["retained"] = result.retained;
+                    out["unavailable"] = result.unavailable;
+                    out["historicalEpisodes"] = result.historicalEpisodes;
+                    out["baselineArticles"] = result.baselineArticles;
+                    out["aliases"] = result.aliases;
+                    if (!result.errorCode.empty())
+                        out["error"]["code"] = result.errorCode;
+                    deliver(std::move(callback), RequestContext{}, result.errorCode.empty() ? 200 : 503, out);
+                });
+        },
+        {drogon::Post});
+    drogon::app().registerHandler("/api/qb/rss/feeds", [downloads, qbDownloadError, validateSourceReady](const drogon::HttpRequestPtr& request,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
         const auto body = request->body().size() <= 2048 ? request->getJsonObject() : nullptr;
-        if (!body || !body->isObject() || body->size() != 1 || !(*body)["url"].isString() ||
+        if (!body || !body->isObject() || !(*body)["url"].isString() ||
             !anime_vault::QbWebClient::validMikanFeedUrl((*body)["url"].asString())) {
             Json::Value payload;
             payload["error"]["code"] = "invalid_mikan_feed_url";
@@ -50,6 +87,25 @@ void registerQbRssEndpoints(std::shared_ptr<QbConnectionManager> qb, std::filesy
             callback(response);
             return;
         }
+        MikanSubscription feed{(*body)["url"].asString(), "", ""};
+        bool invalid = false;
+        for (const auto& key : body->getMemberNames()) {
+            if (key == "url") continue;
+            if ((key != "preferredGroup" && key != "preferredResolution" && key != "preferredSubtitle") || !(*body)[key].isString()) { invalid = true; break; }
+            auto value = (*body)[key].asString();
+            if (key == "preferredGroup") {
+                if (value.size() > 120 || std::any_of(value.begin(), value.end(), [](unsigned char c){return c < 32;})) invalid = true;
+                feed.group = value;
+            } else if (key == "preferredSubtitle") {
+                if (!value.empty() && value != "chs" && value != "cht") invalid = true;
+                feed.subtitle = value;
+            } else {
+                if (!value.empty() && value != "480p" && value != "720p" && value != "1080p" && value != "2160p") invalid = true;
+                feed.resolution = value;
+            }
+        }
+        if (invalid) { Json::Value payload; payload["error"]["code"] = "invalid_mikan_preference";
+            deliver(std::move(callback), RequestContext{}, 400, payload); return; }
         if (const auto error = qbDownloadError(); !error.empty()) {
             Json::Value payload;
             payload["error"]["code"] = error;
@@ -73,10 +129,7 @@ void registerQbRssEndpoints(std::shared_ptr<QbConnectionManager> qb, std::filesy
             callback(response);
             return;
         }
-        const auto path = std::filesystem::absolute(source).u8string();
-        qb->current()->addMikanFeedWithAutoRule((*body)["url"].asString(),
-            std::string(reinterpret_cast<const char*>(path.data()), path.size()),
-            [callback = std::move(callback)](anime_vault::QbActionResult result) mutable {
+        auto complete = [callback = std::move(callback)](anime_vault::QbActionResult result) mutable {
                 Json::Value payload;
                 payload["success"] = result.success;
                 payload["errorCode"] = result.errorCode;
@@ -90,7 +143,9 @@ void registerQbRssEndpoints(std::shared_ptr<QbConnectionManager> qb, std::filesy
                      result.errorCode == "qb_rule_exists") ? drogon::k409Conflict :
                     drogon::k503ServiceUnavailable);
                 callback(response);
-            });
+            };
+        if (downloads) downloads->subscribe(std::move(feed), std::move(complete));
+        else complete({false,"qb_unconfigured"});
     }, {drogon::Post});
     drogon::app().registerHandler("/api/qb/rss/rules", [qb, source, qbDownloadError, validateSourceReady](const drogon::HttpRequestPtr& request,
         std::function<void(const drogon::HttpResponsePtr&)>&& callback) {

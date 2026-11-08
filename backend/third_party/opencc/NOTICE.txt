@@ -1,0 +1,1 @@
+TSCharacters.txt and TSPhrases.txt come from OpenCC ver.1.1.9 (https://github.com/BYVoid/OpenCC/tree/ver.1.1.9/data/dictionary), distributed under the included Apache 2.0 license. Anime Vault uses the unambiguous character entries for RSS download matching and the character and phrase dictionaries for metadata scraping.

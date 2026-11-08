@@ -1,0 +1,10 @@
+ALTER TABLE game_resource ADD COLUMN steam_app_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE game_resource ADD COLUMN steam_install_path TEXT NOT NULL DEFAULT '';
+ALTER TABLE game_resource ADD COLUMN steam_manifest_path TEXT NOT NULL DEFAULT '';
+ALTER TABLE game_resource ADD COLUMN steam_executable TEXT NOT NULL DEFAULT '';
+ALTER TABLE game_resource ADD COLUMN steam_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE game_resource ADD COLUMN steam_stats_error TEXT NOT NULL DEFAULT '';
+ALTER TABLE game_resource ADD COLUMN playtime_minutes INTEGER CHECK(playtime_minutes >= 0);
+ALTER TABLE game_resource ADD COLUMN achievements_unlocked INTEGER CHECK(achievements_unlocked >= 0);
+ALTER TABLE game_resource ADD COLUMN achievements_total INTEGER CHECK(achievements_total >= 0);
+CREATE UNIQUE INDEX game_steam_app_id ON game_resource(steam_app_id) WHERE steam_app_id <> '';

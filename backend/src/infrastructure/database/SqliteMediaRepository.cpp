@@ -1,6 +1,7 @@
 #include "anime_vault/infrastructure/database/SqliteMediaRepository.hpp"
 #include "anime_vault/infrastructure/database/SqliteDatabase.hpp"
 #include "anime_vault/services/TitleNormalization.hpp"
+#include "anime_vault/services/MikanChinese.hpp"
 
 #include <sqlite3.h>
 #include <memory>
@@ -76,8 +77,23 @@ void SqliteMediaRepository::updateMediaCorrection(
             if (sqlite3_step(bound.get()) == SQLITE_ROW) animeId = sqlite3_column_int64(bound.get(), 0);
         }
         if (!animeId) {
-            if (const auto local = findAnimeByTitle(correction.title, correction.season))
+            if (const auto local = findAnimeByTitle(correction.title, correction.season)) {
                 animeId = local->id;
+            } else if (intent == MediaCorrectionIntent::automaticScan) {
+                // 旧库可能同时收录同季的繁简标题；只续入原字形唯一相符的条目。
+                const auto key = scrapeTitleKey(correction.title);
+                const auto matches = titleIndex_.find(key);
+                if (matches != titleIndex_.end()) {
+                    const auto spelling = normalizedTitleKey(correction.title);
+                    for (const auto& item : matches->second) {
+                        if (item.season != correction.season) continue;
+                        if (scrapeTitleKey(item.displayTitle) != key) { animeId = 0; break; }
+                        if (normalizedTitleKey(item.displayTitle) != spelling) continue;
+                        if (animeId) { animeId = 0; break; }
+                        animeId = item.id;
+                    }
+                }
+            }
         }
         if (!animeId && intent == MediaCorrectionIntent::automaticScan) {
             // 旧版本未提取 Season 字段；完整标题明确同季时复用唯一的既有绑定。
@@ -157,7 +173,7 @@ void SqliteMediaRepository::updateMediaCorrection(
 std::optional<AnimeRecord> SqliteMediaRepository::findAnimeByTitle(
     const std::string& title, std::optional<std::string> season) const {
     if (title.empty() || title.size() > 500) return std::nullopt;
-    const auto key = normalizedTitleKey(title);
+    const auto key = scrapeTitleKey(title);
     if (key.empty()) return std::nullopt;
     std::lock_guard lock(database_.mutex());
     auto* db = database_.handle();
@@ -174,8 +190,8 @@ std::optional<AnimeRecord> SqliteMediaRepository::findAnimeByTitle(
         int rc;
         while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) {
             const auto anime = animeRow(stmt.get());
-            addTitleIndexEntry(refreshed, normalizedTitleKey(column(stmt.get(), 8)), anime);
-            addTitleIndexEntry(refreshed, normalizedTitleKey(column(stmt.get(), 9)), anime);
+            addTitleIndexEntry(refreshed, scrapeTitleKey(column(stmt.get(), 8)), anime);
+            addTitleIndexEntry(refreshed, scrapeTitleKey(column(stmt.get(), 9)), anime);
         }
         if (rc != SQLITE_DONE) throw std::runtime_error(sqlite3_errmsg(db));
         titleIndex_ = std::move(refreshed);
@@ -193,9 +209,10 @@ std::optional<AnimeRecord> SqliteMediaRepository::findAnimeByTitle(
     if (!found && season && matches->second.size() == 1) {
         // 人工纠正季数后仍接受唯一的人工别名；存在多个同名候选时保持严格季数匹配。
         const auto& candidate = matches->second.front();
-        auto userAlias = prepare(db, "SELECT 1 FROM anime_alias WHERE anime_id=? AND normalized_alias=? AND source IN ('user','merged')");
-        sqlite3_bind_int64(userAlias.get(), 1, candidate.id); sqlite_support::bind(userAlias.get(), 2, key);
-        if (sqlite3_step(userAlias.get()) == SQLITE_ROW) return candidate;
+        auto userAlias = prepare(db, "SELECT normalized_alias FROM anime_alias WHERE anime_id=? AND source IN ('user','merged')");
+        sqlite3_bind_int64(userAlias.get(), 1, candidate.id);
+        while (sqlite3_step(userAlias.get()) == SQLITE_ROW)
+            if (scrapeTitleKey(column(userAlias.get(), 0)) == key) return candidate;
     }
     return found;
 }

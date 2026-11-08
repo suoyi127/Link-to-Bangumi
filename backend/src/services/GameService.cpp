@@ -1,5 +1,6 @@
 #include "anime_vault/services/GameService.hpp"
 #include "anime_vault/infrastructure/ProcessLauncher.hpp"
+#include "anime_vault/services/SteamLibrary.hpp"
 #include <regex>
 namespace anime_vault {
 namespace {
@@ -23,6 +24,7 @@ fs::path checkedPath(const std::string& value, const LibraryFileAccess& files) {
     std::error_code error; auto canonical = fs::canonical(path, error);
     if (error) throw GameError("invalid_game_path"); return canonical;
 }
+
 void validText(const std::string& value, std::size_t maximum, bool required = false) {
     if (value.size() > maximum || value.find('\0') != std::string::npos || (required && value.find_first_not_of(" \t\r\n") == std::string::npos)) throw GameError("invalid_game_metadata");
 }
@@ -30,24 +32,35 @@ void validText(const std::string& value, std::size_t maximum, bool required = fa
 std::vector<GameResource> GameService::list() const {
     auto lock = repository_.lock();
     auto games = repository_.list();
-    for (auto& game : games) game.missing = !files_.isGameExecutableAccessible(fromUtf8(game.path));
+    for (auto& game : games) game.missing = game.steamAppId.empty()
+        ? !files_.isGameExecutableAccessible(fromUtf8(game.path))
+        : !SteamLibrary::available({game.steamAppId, game.title, game.steamInstallPath, game.steamManifestPath, game.steamExecutable});
     return games;
 }
 GameResource GameService::get(std::int64_t id) const {
+    auto lock = repository_.lock();
+    id = repository_.canonicalId(id);
     for (const auto& game : list()) if (game.id == id) return game;
     throw GameError("game_not_found");
 }
-GameResource GameService::importExecutable(const fs::path& input) {
+GameResource GameService::metadataForCover(std::int64_t id) const {
+    auto lock = repository_.lock();
+    id = repository_.canonicalId(id);
+    for (const auto& game : repository_.list()) if (game.id == id) return game;
+    throw GameError("game_not_found");
+}
+GameResource GameService::importExecutable(const fs::path& input, bool* reused) {
     const auto path = checkedPath(utf8(input), files_);
     auto title = utf8(path.stem());
     if (title == "game" || title == "Game" || title == "launcher" || title == "Launcher") title = utf8(path.parent_path().filename());
     validText(title, 600, true);
     auto lock = repository_.lock();
-    return get(repository_.importExecutable(utf8(path), title));
+    return get(repository_.importExecutable(utf8(path), title, reused));
 }
 void GameService::edit(std::int64_t id, const std::string& title, const std::string& developer, const std::string& summary, const std::string& value) {
     validText(title, 600, true); validText(developer, 600); validText(summary, 20000);
     auto lock = repository_.lock(); const auto previous = get(id);
+    if (!previous.steamAppId.empty() && value != previous.path) throw GameError("steam_launch_path_read_only");
     // 缺失时仍可编辑元数据；替换路径必须指向可访问 EXE。
     const auto path = value == previous.path ? previous.path : utf8(checkedPath(value, files_));
     if (repository_.pathUsedByOther(path, id)) throw GameError("game_path_already_imported");
@@ -61,6 +74,12 @@ void GameService::removeUnavailable(std::int64_t id) {
 void GameService::launch(std::int64_t id, ProcessLauncher& launcher) const {
     const auto game = get(id);
     if (game.missing) throw GameError("game_executable_unavailable");
+    if (!game.steamAppId.empty()) {
+        // URI 只由已校验的数字 AppID 生成，不接受用户传入任意协议或命令。
+        if (!std::regex_match(game.steamAppId, std::regex("[1-9][0-9]{0,9}"))) throw GameError("invalid_steam_app_id");
+        if (!launcher.launch(fromUtf8(game.steamExecutable), {"steam://rungameid/" + game.steamAppId})) throw GameError("game_launch_failed");
+        return;
+    }
     const auto path = checkedPath(game.path, files_);
     if (!launcher.launchInDirectory(path, {}, path.parent_path())) throw GameError("game_launch_failed");
 }

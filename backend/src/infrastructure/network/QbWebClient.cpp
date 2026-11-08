@@ -1,3 +1,4 @@
+#include "anime_vault/infrastructure/network/QbConnectionManager.hpp"
 #include "anime_vault/infrastructure/network/QbWebClient.hpp"
 
 #include <nlohmann/json.hpp>
@@ -338,130 +339,32 @@ std::string QbWebClient::mikanFeedForm(const std::string& url) {
     return QbRssRules::mikanFeedForm(url);
 }
 
-void QbWebClient::addMikanFeedWithAutoRule(std::string url, std::string savePath,
-                                           ActionCompletion completion) const {
-    if (!validMikanFeedUrl(url)) { completion({false, "invalid_mikan_feed_url"}); return; }
-    if (!configured()) { completion({false, "qb_unconfigured"}); return; }
-    std::uint64_t hash = 14695981039346656037ull;
-    for (const unsigned char ch : url) { hash ^= ch; hash *= 1099511628211ull; }
-    std::ostringstream name;
-    name << "AnimeVault Auto " << std::hex << std::setw(16) << std::setfill('0') << hash;
-    const QbMikanRuleSpec spec{name.str(), url, "", std::move(savePath)};
-    std::string ruleJson;
-    std::string pendingJson;
-    try {
-        ruleJson = autoMikanRuleJson(spec);
-        pendingJson = autoMikanRuleJson(spec, false);
-    }
-    catch (...) { completion({false, "invalid_mikan_rule"}); return; }
-    auto client = client_;
-    const auto base = baseUrl_;
-    const auto form = "username=" + formEncode(username_) + "&password=" + formEncode(password_);
-    addMikanFeed(url, [client, base, form, spec, ruleJson = std::move(ruleJson),
-                       pendingJson = std::move(pendingJson),
-                       completion = std::move(completion)](QbActionResult added) mutable {
-        if (!added.success) { completion(std::move(added)); return; }
-        std::thread([client, base, form, spec, ruleJson = std::move(ruleJson),
-                     pendingJson = std::move(pendingJson),
-                     completion = std::move(completion)]() mutable {
-            try {
-                const auto send = [&](drogon::HttpMethod method, const std::string& path,
-                                      const std::string& body, const std::string& cookie) {
-                    auto request = drogon::HttpRequest::newHttpRequest();
-                    request->setMethod(method);
-                    request->setPath(path);
-                    request->addHeader("Host", hostHeader(base));
-                    request->addHeader("Referer", base + "/");
-                    if (!cookie.empty()) request->addHeader("Cookie", cookie);
-                    if (method == drogon::Post) {
-                        request->addHeader("Content-Type", "application/x-www-form-urlencoded");
-                        request->setBody(body);
-                    }
-                    const auto [result, response] = client->sendRequest(request, 10.0);
-                    return result == drogon::ReqResult::Ok ? response : drogon::HttpResponsePtr{};
-                };
-                const auto login = send(drogon::Post, "/api/v2/auth/login", form, "");
-                const auto cookie = loginCookie(login);
-                if (!cookie) { completion({false, "qb_auth_failed"}); return; }
-                const auto rulesResponse = send(drogon::Get, "/api/v2/rss/rules", "", *cookie);
-                if (!rulesResponse || rulesResponse->statusCode() != drogon::k200OK ||
-                    rulesResponse->getBody().size() > 1024 * 1024) {
-                    completion({false, "qb_api_unavailable"}); return;
-                }
-                const auto rules = nlohmann::json::parse(rulesResponse->getBody());
-                if (!rules.is_object()) throw std::invalid_argument("invalid qB rules");
-                if (rules.contains(spec.ruleName)) {
-                    completion({false, "qb_rule_exists"}); return;
-                }
-                for (const auto& rule : rules) {
-                    if (!rule.is_object() || !rule.value("enabled", false)) continue;
-                    const auto feeds = rule.value("affectedFeeds", nlohmann::json::array());
-                    if (std::find(feeds.begin(), feeds.end(), spec.feedUrl) != feeds.end()) {
-                        completion({false, "qb_rule_exists"}); return;
-                    }
-                }
-                std::optional<std::string> feedPath;
-                std::string feedItems;
-                for (int attempt = 0; attempt < 30 && !feedPath; ++attempt) {
-                    const auto items = send(drogon::Get, "/api/v2/rss/items?withData=true", "", *cookie);
-                    if (!items || items->statusCode() != drogon::k200OK ||
-                        items->getBody().size() > 4 * 1024 * 1024) {
-                        completion({false, "qb_api_unavailable"}); return;
-                    }
-                    feedItems = std::string(items->getBody());
-                    feedPath = readyMikanFeedPath(feedItems, spec.feedUrl);
-                    if (!feedPath) std::this_thread::sleep_for(std::chrono::milliseconds(500));
-                }
-                if (!feedPath) { completion({false, "qb_feed_not_ready"}); return; }
-                const auto preferences = send(drogon::Get, "/api/v2/app/preferences", "", *cookie);
-                if (!preferences || preferences->statusCode() != drogon::k200OK ||
-                    preferences->getBody().size() > 1024 * 1024) {
-                    completion({false, "qb_api_unavailable"}); return;
-                }
-                const auto current = nlohmann::json::parse(preferences->getBody());
-                if (!current.is_object() || !current.value("rss_auto_downloading_enabled", false) ||
-                    !current.value("rss_processing_enabled", false)) {
-                    completion({false, "qb_auto_download_disabled"}); return;
-                }
-                const auto settings = autoEpisodePreferencesJson(preferences->getBody());
-                if (current.value("rss_smart_episode_filters", std::string{}) !=
-                        nlohmann::json::parse(settings)["rss_smart_episode_filters"].get<std::string>() ||
-                    current.value("rss_download_repack_proper_episodes", true)) {
-                    const auto saved = send(drogon::Post, "/api/v2/app/setPreferences",
-                        "json=" + formEncode(settings), *cookie);
-                    if (!saved || (saved->statusCode() != drogon::k200OK &&
-                                   saved->statusCode() != drogon::k204NoContent)) {
-                        completion({false, "qb_preferences_rejected"}); return;
-                    }
-                }
-                const auto tasks = send(drogon::Get, "/api/v2/torrents/info", "", *cookie);
-                if (!tasks || tasks->statusCode() != drogon::k200OK || tasks->getBody().size() > 8 * 1024 * 1024) {
-                    completion({false, "qb_api_unavailable"}); return;
-                }
-                const auto history = nlohmann::json::parse(autoMikanHistoryJson(
-                    spec, rulesResponse->getBody(), feedItems, tasks->getBody()));
-                auto activeRule = nlohmann::json::parse(ruleJson);
-                activeRule["previouslyMatchedEpisodes"] = history;
-                ruleJson = activeRule.dump();
-                activeRule["enabled"] = false;
-                pendingJson = activeRule.dump();
-                // 先创建禁用规则，再启用；已读状态不作为下载完成的证据。
-                const auto pending = send(drogon::Post, "/api/v2/rss/setRule",
-                    "ruleName=" + formEncode(spec.ruleName) +
-                    "&ruleDef=" + formEncode(pendingJson), *cookie);
-                if (!pending || pending->statusCode() != drogon::k200OK) {
-                    completion({false, "qb_rule_rejected"}); return;
-                }
-                const auto created = send(drogon::Post, "/api/v2/rss/setRule",
-                    "ruleName=" + formEncode(spec.ruleName) +
-                    "&ruleDef=" + formEncode(ruleJson), *cookie);
-                if (!created || created->statusCode() != drogon::k200OK) {
-                    completion({false, "qb_rule_rejected"}); return;
-                }
-                completion({true, ""});
-            } catch (...) { completion({false, "qb_bad_response"}); }
-        }).detach();
-    });
+QbWebClient::MikanRequest QbWebClient::openMikanSession() const {
+    if (!configured()) throw QbConfigError("qb_unconfigured", "qB not configured");
+    const auto send = [client = client_, base = baseUrl_](const std::string& path, const std::string& form, const std::string& cookie) {
+        auto req = drogon::HttpRequest::newHttpRequest();
+        req->setMethod(form.empty() ? drogon::Get : drogon::Post);
+        req->setPath(path);
+        req->addHeader("Host",hostHeader(base));
+        req->addHeader("Referer",base + "/");
+        if (!cookie.empty()) req->addHeader("Cookie",cookie);
+        if (!form.empty()) {
+            req->setContentTypeCode(drogon::CT_APPLICATION_X_FORM);
+            req->setBody(form);
+        }
+        const auto [result,response] = client->sendRequest(req,10.0);
+        if (result != drogon::ReqResult::Ok || !response) throw QbConfigError("qb_unreachable","qB unavailable");
+        if (response->getBody().size() > 8 * 1024 * 1024) throw QbConfigError("qb_bad_response","qB response too large");
+        return response;
+    };
+    if (!verifiedLandingPage(drogon::ReqResult::Ok,send("/", "", "")))
+        throw QbConfigError("qb_unexpected_service","qB landing page invalid");
+    const auto cookie = loginCookie(send("/api/v2/auth/login","username="+formEncode(username_)+"&password="+formEncode(password_), ""));
+    if (!cookie) throw QbConfigError("qb_auth_failed","qB login failed");
+    return [send,cookie = *cookie](const std::string& path, const std::string& form) {
+        auto response = send(path,form,cookie);
+        return std::pair<int,std::string>{static_cast<int>(response->statusCode()),std::string(response->getBody())};
+    };
 }
 
 void QbWebClient::createMikanRule(QbMikanRuleSpec spec, ActionCompletion completion) const {

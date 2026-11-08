@@ -1,5 +1,7 @@
 using AnimeVault.Desktop;
 
+SteamLoginProtocolTests.Run();
+
 var temporary = Path.Combine(Path.GetTempPath(), "anime-vault-layout-" + Guid.NewGuid().ToString("N"));
 try
 {

@@ -1,5 +1,5 @@
 #include "anime_vault/services/FilenameParser.hpp"
-#include "anime_vault/services/ReleaseTextNormalization.hpp"
+#include "anime_vault/services/MikanChinese.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -161,6 +161,8 @@ std::optional<EpisodeMatch> detectEpisode(const std::string& text) {
         }
     }
     if (auto found = matchPattern(text, epPattern, 1, EpisodeType::normal)) return found;
+    static const std::regex numbered(R"(\[?第\s*([0-9]{1,3})\s*(?:話|话|集)\]?(?=$|[ \[(]))");
+    if (auto found = matchPattern(text, numbered, 1, EpisodeType::normal)) return found;
 
     for (const auto& token : brackets(text)) {
         std::smatch match;
@@ -232,7 +234,9 @@ ParseResult FilenameParser::parse(std::string_view filename) const {
         return result;
     }
 
-    auto text = normalize(normalizeReleaseText(removeExtension(filename)));
+    std::string cleaned;
+    mikanSubtitleScripts(removeExtension(filename), &cleaned);
+    auto text = normalize(std::move(cleaned));
     if (text.empty() || text == "[]" || text == "...") {
         result.warnings.push_back("invalid_filename");
         return result;
@@ -241,7 +245,8 @@ ParseResult FilenameParser::parse(std::string_view filename) const {
     extractReleaseGroup(text, result);
 
     std::smatch multiple;
-    if (std::regex_search(text, multiple, multiplePattern)) {
+    static const std::regex chineseRange(R"(\[?第\s*[0-9]{1,3}\s*(?:話|话|集)?\s*(?:-|~|～|至|\+)\s*(?:第\s*)?[0-9]{1,3}\s*(?:話|话|集))");
+    if (std::regex_search(text, multiple, multiplePattern) || std::regex_search(text, multiple, chineseRange)) {
         result.title = cleanTitle(text, static_cast<std::size_t>(multiple.position()));
         result.warnings.push_back("multiple_episodes");
         return result;

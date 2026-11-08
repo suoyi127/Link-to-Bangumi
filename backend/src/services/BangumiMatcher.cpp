@@ -1,5 +1,5 @@
 #include "anime_vault/services/BangumiMatcher.hpp"
-#include "anime_vault/services/TitleNormalization.hpp"
+#include "anime_vault/services/MikanChinese.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -46,20 +46,20 @@ bool hasKnownYear(std::string_view date) {
 RankedCandidates rankBangumiCandidates(const BangumiMatchQuery& query,
                                        const std::vector<BangumiSubject>& subjects) {
     RankedCandidates ranked;
-    const auto normalizedQuery = normalizeTitle(query.title);
+    const auto normalizedQuery = normalizeScrapeTitle(query.title);
     if (normalizedQuery.empty()) return ranked;
 
     for (const auto& subject : subjects) {
         if (subject.type != 2 || subject.id <= 0) continue;
-        const double primary = titleScore(normalizedQuery, normalizeTitle(subject.name));
-        const double chinese = titleScore(normalizedQuery, normalizeTitle(subject.nameCn));
+        const double primary = titleScore(normalizedQuery, normalizeScrapeTitle(subject.name));
+        const double chinese = titleScore(normalizedQuery, normalizeScrapeTitle(subject.nameCn));
         double base = 0.0;
         if (primary == 1.0) base = 0.96;
         else if (chinese == 1.0) base = 0.92;
         else base = std::max(primary, chinese);
         // 只给服务端明确返回且完整一致的别名精确分，不用短名称推断罗马音。
         for (const auto& alias : subject.aliases)
-            if (normalizeTitle(alias) == normalizedQuery) base = std::max(base, 0.92);
+            if (normalizeScrapeTitle(alias) == normalizedQuery) base = std::max(base, 0.92);
         if (base == 0.0) continue;
 
         double score = base;

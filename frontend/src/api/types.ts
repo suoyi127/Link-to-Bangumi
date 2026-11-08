@@ -39,7 +39,9 @@ export type NovelScrape = { bound: boolean; coverUpdated: boolean; errorCode: st
 export type GameResource = {
   id: number; title: string; path: string; developer: string; summary: string; platform: string
   subjectId: number | null; manualMetadata: boolean; missing: boolean; coverUrl: string
-  vndbId: string; metadataSource: string
+  vndbId: string; metadataSource: string; posterUrl?: string
+  steamAppId?: string; steamId?: string; steamInstallPath?: string; steamStatsError?: string
+  playtimeMinutes?: number | null; achievementsUnlocked?: number | null; achievementsTotal?: number | null
 }
 export type GameCandidate = { id: number; name: string; nameCn: string; platform: string }
 export type GameScrape = { bound: boolean; coverUpdated: boolean; errorCode: string; source: string }

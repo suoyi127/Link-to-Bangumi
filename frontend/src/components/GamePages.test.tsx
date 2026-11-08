@@ -9,16 +9,16 @@ beforeEach(() => {
   vi.spyOn(window, 'getComputedStyle').mockImplementation((element) => computed(element))
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
-it('imports an executable directly from the game library without launching it', async () => {
+it.each([false, true])('imports an executable and reports whether it was reused (%s)', async (reused) => {
   vi.spyOn(gamesApi, 'getGames').mockResolvedValue({ items: [] })
-  const add = vi.spyOn(gamesApi, 'importGame').mockResolvedValue({ game, bound: true, coverUpdated: true, errorCode: '', source: 'bangumi' })
+  const add = vi.spyOn(gamesApi, 'importGame').mockResolvedValue({ game, reused, bound: !reused, coverUpdated: !reused, errorCode: '', source: 'bangumi' })
   const launch = vi.spyOn(gamesApi, 'launchGame').mockResolvedValue({ started: true })
   render(<GameLibraryPage />)
   fireEvent.click(screen.getByText('导入游戏', { selector: 'summary' }))
   fireEvent.change(screen.getByLabelText('游戏可执行文件路径'), { target: { value: game.path } })
   fireEvent.click(screen.getByRole('button', { name: '导入游戏' }))
   await waitFor(() => expect(add).toHaveBeenCalledWith(game.path))
-  expect(await screen.findByText('Bangumi 绑定与封面刮削完成。')).toBeInTheDocument()
+  expect(await screen.findByText(reused ? '游戏库中已有《中文游戏》，已保留现有资料。' : 'Bangumi 绑定与封面刮削完成。')).toBeInTheDocument()
   expect(launch).not.toHaveBeenCalled()
 })
 it('requires launch confirmation and disables missing games', async () => {

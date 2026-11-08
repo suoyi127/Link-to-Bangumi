@@ -1,6 +1,7 @@
 #include "anime_vault/api/GameController.hpp"
 #include "anime_vault/api/HttpSupport.hpp"
 #include "anime_vault/api/LocalRequest.hpp"
+#include "anime_vault/services/SteamPoster.hpp"
 #include <drogon/drogon.h>
 #include <set>
 namespace anime_vault::api {
@@ -45,7 +46,14 @@ Json::Value gameJson(const GameResource& game) {
     Json::Value out; out["id"] = Json::Int64(game.id); out["title"] = game.title; out["path"] = game.path; out["developer"] = game.developer; out["summary"] = game.summary; out["platform"] = game.platform;
     out["subjectId"] = game.subjectId ? Json::Value(Json::Int64(*game.subjectId)) : Json::Value();
     out["manualMetadata"] = game.manualMetadata; out["missing"] = game.missing; out["coverUrl"] = game.hasCover ? "/api/games/" + std::to_string(game.id) + "/cover" : "";
-    out["vndbId"] = game.vndbId; out["metadataSource"] = game.metadataSource; return out;
+    out["posterUrl"] = usesSteamPoster(game) ? "/api/games/" + std::to_string(game.id) + "/cover?view=poster" : out["coverUrl"].asString();
+    out["vndbId"] = game.vndbId; out["metadataSource"] = game.metadataSource;
+    out["steamAppId"] = game.steamAppId; out["steamId"] = game.steamId;
+    out["steamInstallPath"] = game.steamInstallPath; out["steamStatsError"] = game.steamStatsError;
+    out["playtimeMinutes"] = game.playtimeMinutes ? Json::Value(Json::Int64(*game.playtimeMinutes)) : Json::Value();
+    out["achievementsUnlocked"] = game.achievementsUnlocked ? Json::Value(Json::Int64(*game.achievementsUnlocked)) : Json::Value();
+    out["achievementsTotal"] = game.achievementsTotal ? Json::Value(Json::Int64(*game.achievementsTotal)) : Json::Value();
+    return out;
 }
 Json::Value scrapeJson(const GameScrapeResult& result) {
     Json::Value out; out["bound"] = result.bound; out["coverUpdated"] = result.coverUpdated; out["errorCode"] = result.errorCode; out["source"] = result.source; return out;
@@ -74,9 +82,19 @@ void registerGameEndpoints(std::shared_ptr<GameService> games, std::shared_ptr<G
     drogon::app().registerHandler("/api/game-imports", [games, bangumi](const Request& request, Callback&& callback) {
         try {
             const GameImportRequest input{stringField(body(request, {"path"}), "path")};
-            const auto game = games->importExecutable(std::filesystem::path(std::u8string_view(reinterpret_cast<const char8_t*>(input.path.data()), input.path.size())));
+            bool reused = false;
+            const auto game = games->importExecutable(std::filesystem::path(std::u8string_view(reinterpret_cast<const char8_t*>(input.path.data()), input.path.size())), &reused);
+            if (reused) {
+                GameScrapeResult skipped;
+                skipped.source = game.metadataSource;
+                auto out = scrapeJson(skipped);
+                out["reused"] = true;
+                out["game"] = gameJson(game);
+                reply(std::move(callback), out, 200);
+                return;
+            }
             bangumi->scrape(game.id, {}, [games, id = game.id, callback = std::move(callback)](GameScrapeResult result) mutable {
-                try { auto out = scrapeJson(result); out["game"] = gameJson(games->get(id)); reply(std::move(callback), out, 201); }
+                try { auto out = scrapeJson(result); out["reused"] = false; out["game"] = gameJson(games->get(id)); reply(std::move(callback), out, 201); }
                 catch (const std::exception& cause) { error(std::move(callback), cause); }
             });
         } catch (const std::exception& cause) { error(std::move(callback), cause); }
@@ -109,8 +127,13 @@ void registerGameEndpoints(std::shared_ptr<GameService> games, std::shared_ptr<G
             reply(std::move(callback), out);
         });
     }, {drogon::Get});
-    drogon::app().registerHandler("/api/games/{1}/cover", [games](const Request&, Callback&& callback, std::int64_t id) {
-        try { const auto cover = games->cover(id); if (!cover) { failure(std::move(callback), "cover_unavailable"); return; }
+    drogon::app().registerHandler("/api/games/{1}/cover", [games](const Request& request, Callback&& callback, std::int64_t id) {
+        try {
+            std::optional<CachedCover> cover;
+            if (request->getQuery()=="view=poster") cover = readSteamPoster(games->metadataForCover(id));
+            else if (!request->getQuery().empty()) throw GameError("invalid_request");
+            if (!cover) cover = games->cover(id);
+            if (!cover) { failure(std::move(callback), "cover_unavailable"); return; }
             auto response = drogon::HttpResponse::newHttpResponse(); response->setContentTypeString(cover->mimeType); response->setBody(cover->bytes); response->addHeader("Cache-Control", "no-cache"); response->addHeader("X-Content-Type-Options", "nosniff"); callback(response);
         } catch (const std::exception& cause) { error(std::move(callback), cause); }
     }, {drogon::Get});

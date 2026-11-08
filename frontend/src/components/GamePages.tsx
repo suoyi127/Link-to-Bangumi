@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, Button, Card, Input, List, Popconfirm, Space, Spin, Table, Tag, Typography } from 'antd'
 import { editGame, getGames, importGame, launchGame, removeUnavailableGame, scrapeGame, scrapeGameVndb, searchGameBangumi, searchGameVndb } from '../api/games'
 import type { GameCandidate, GameResource, GameScrape, VndbCandidate } from '../api/types'
+import { SteamImport } from './SteamImport'
+import { steamWarningText } from '../api/steamMessages'
 
 const errorText = (error: unknown) => error instanceof Error ? error.message : '请求失败'
 function scrapeMessage(result: GameScrape) {
@@ -54,23 +56,28 @@ function useGames() {
   }, [load])
   return { items, setItems, loading, error, setError, load }
 }
-function GameCover({ game }: { game: GameResource }) {
-  const [failedUrl, setFailedUrl] = useState('')
-  return <div className="anime-cover" style={{
-    position: 'relative',
-    width: '100%',
-    aspectRatio: '2 / 3',
-    overflow: 'hidden',
-    background: '#edf2f4',
-    display: 'grid',
-    placeItems: 'center',
-    color: '#83959e'
-  }}>
-    {game.coverUrl && failedUrl !== game.coverUrl ? <img
-      src={game.coverUrl}
+function SteamStats({ game }: { game: GameResource }) {
+  if (!game.steamAppId) return null
+  return <Space direction="vertical" size="small">
+    <Tag>Steam</Tag>
+    <Typography.Text>游玩时长：{game.playtimeMinutes == null ? '未知' : `${game.playtimeMinutes} 分钟`}</Typography.Text>
+    <Typography.Text>成就：{game.achievementsUnlocked == null && game.achievementsTotal == null ? '未知' : `${game.achievementsUnlocked ?? '未知'} / ${game.achievementsTotal ?? '未知'}`}</Typography.Text>
+    {game.steamStatsError && <Typography.Text type="warning">{game.steamStatsError === 'steam_stats_pending' ? 'Steam 统计尚未同步；已有数值为上次成功同步的结果。' : `统计同步失败；已有数值为上次成功同步的结果（${steamWarningText(game.steamStatsError)}）。`}</Typography.Text>}
+  </Space>
+}
+function GameCover({ game, detail = false }: { game: GameResource; detail?: boolean }) {
+  const [failed, setFailed] = useState<string[]>([])
+  const [shape, setShape] = useState<'portrait' | 'square' | 'wide'>('portrait')
+  const sources = detail ? [game.coverUrl, game.posterUrl] : [game.posterUrl, game.coverUrl]
+  const src = sources.find((url) => url && !failed.includes(url))
+  return <div className="game-cover" data-shape={shape}>
+    {src ? <img
+      src={src}
       alt={`${game.title} 封面`}
-      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
-      onError={() => setFailedUrl(game.coverUrl)}
+      onLoad={({ currentTarget: img }) => {
+        if (detail) setShape(img.naturalWidth > img.naturalHeight ? 'wide' : img.naturalWidth === img.naturalHeight ? 'square' : 'portrait')
+      }}
+      onError={() => setFailed((urls) => [...urls, src])}
     /> : <span>暂无封面</span>}
   </div>
 }
@@ -90,7 +97,7 @@ export function GameLibraryPage() {
     try {
       const result = await importGame(path.trim())
       setPath('')
-      setMessage(scrapeMessage(result))
+      setMessage(result.reused ? `游戏库中已有《${result.game.title}》，已保留现有资料。` : scrapeMessage(result))
       await load()
     }
     catch (error) {
@@ -129,6 +136,7 @@ export function GameLibraryPage() {
           />
           <Button type="primary" loading={busy} disabled={!path.trim()} onClick={() => void add()}>导入游戏</Button>
         </Space.Compact>
+        <SteamImport onImported={() => load()} disabled={busy} />
       </Space>
     </details>
     {error && <Alert type="error" message={error} />}
@@ -138,8 +146,8 @@ export function GameLibraryPage() {
       <Button disabled={busy} loading={loading} onClick={() => void load()}>刷新游戏库</Button>
     </Space>
     {loading ? <Spin aria-label="正在加载游戏库" /> : game ? <section className="settings-section">
-      <div className="novel-detail-header">
-        <GameCover game={game} />
+      <div className="game-detail-header">
+        <GameCover key={game.id} game={game} detail />
         <div>
           <Typography.Title level={3}>
             {game.title}
@@ -153,7 +161,7 @@ export function GameLibraryPage() {
           <Space wrap>
             {game.subjectId && <a href={`https://bgm.tv/subject/${game.subjectId}`} target="_blank" rel="noreferrer">Bangumi 条目</a>}
             {game.vndbId && <a href={`https://vndb.org/${game.vndbId}`} target="_blank" rel="noreferrer">VNDB 条目</a>}
-            {game.metadataSource && <Tag>资料来源：{game.metadataSource === 'vndb' ? 'VNDB' : 'Bangumi'}</Tag>}
+            {game.metadataSource && <Tag>资料来源：{game.metadataSource === 'steam' ? 'Steam' : game.metadataSource === 'vndb' ? 'VNDB' : 'Bangumi'}</Tag>}
             {!game.subjectId && !game.vndbId && <Tag>未绑定条目</Tag>}
           </Space>
           <Typography.Paragraph style={{ whiteSpace: 'pre-wrap' }}>
@@ -161,7 +169,8 @@ export function GameLibraryPage() {
           </Typography.Paragraph>
         </div>
       </div>
-      {game.missing && <Alert type="warning" message="启动文件不可访问；恢复原位后会自动更新，也可在游戏资源中修改路径。" />}
+      <SteamStats game={game} />
+      {game.missing && <Alert type="warning" message={game.steamAppId ? 'Steam 游戏安装目录不可访问；请检查 Steam 安装状态并重新导入。' : '启动文件不可访问；恢复原位后会自动更新，也可在游戏资源中修改路径。'} />}
       <Popconfirm
         title={`启动「${game.title}」？`}
         description={game.path}
@@ -182,8 +191,8 @@ export function GameLibraryPage() {
         onChange={(event) => setQuery(event.target.value)}
       />
       <List
-        className="poster-library"
-        grid={{ gutter: 20, xs: 2, sm: 3, md: 4, lg: 5, xl: 6, xxl: 6 }}
+        className="poster-library game-library"
+        grid={{ gutter: 16, xs: 2, sm: 3, md: 4, lg: 4, xl: 5, xxl: 6 }}
         dataSource={items.filter((game) => `${game.title} ${game.developer}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()))}
         locale={{ emptyText: '暂无游戏，请在上方导入游戏可执行文件。' }}
         renderItem={(game) => <List.Item>
@@ -199,8 +208,9 @@ export function GameLibraryPage() {
               {game.title}
             </Button>
             <Typography.Text type="secondary">
-              {game.missing ? '启动文件不可访问' : game.developer || '开发商待刮削'}
+              {game.missing ? (game.steamAppId ? 'Steam 游戏未安装或不可访问' : '启动文件不可访问') : game.developer || '开发商待刮削'}
             </Typography.Text>
+            <SteamStats game={game} />
           </Card>
         </List.Item>}
       />
@@ -323,11 +333,13 @@ export function GameResources() {
         /></label>
         <label>启动文件路径<Input
           aria-label="游戏启动路径"
+          readOnly={!!selected.steamAppId}
           value={selected.path}
           maxLength={4096}
           disabled={busy}
           onChange={(event) => setSelected({ ...selected, path: event.target.value })}
         /></label>
+        {selected.steamAppId && <Typography.Text type="secondary">Steam 启动地址由 App ID 生成；安装位置变化后请重新导入 Steam 游戏。</Typography.Text>}
         <Button
           loading={busy}
           disabled={!selected.title.trim() || !selected.path.trim()}

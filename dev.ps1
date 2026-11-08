@@ -27,6 +27,9 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'CMake 配置失败' }
     & cmake --build $managedBuild --config Debug
     if ($LASTEXITCODE -ne 0) { throw '后端构建失败' }
+    # 浏览器版的 Steam 登录会调用同一桌面程序的独立登录模式。
+    & dotnet build desktop/AnimeVault.Desktop/AnimeVault.Desktop.csproj -c Debug
+    if ($LASTEXITCODE -ne 0) { throw 'Steam 登录窗口构建失败' }
     if (-not (Test-Path -LiteralPath (Join-Path $repo 'frontend/node_modules/vite/bin/vite.js'))) {
         & npm.cmd --prefix frontend ci
         if ($LASTEXITCODE -ne 0) { throw '前端依赖安装失败' }

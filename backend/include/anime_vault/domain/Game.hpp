@@ -16,5 +16,7 @@ struct GameResource {
     std::string path, title, developer, summary, platform, vndbId, metadataSource;
     std::optional<std::int64_t> subjectId;
     bool manualMetadata{}, hasCover{}, missing{};
+    std::string steamAppId, steamInstallPath, steamManifestPath, steamExecutable, steamId, steamStatsError;
+    std::optional<std::int64_t> playtimeMinutes, achievementsUnlocked, achievementsTotal;
 };
 }

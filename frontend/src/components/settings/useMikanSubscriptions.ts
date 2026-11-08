@@ -10,6 +10,9 @@ export function useMikanSubscriptions() {
   const [mikanError, setMikanError] = useState('')
   const [feedUrl, setFeedUrl] = useState('')
   const [addingFeed, setAddingFeed] = useState(false)
+  const [preferredGroup, setPreferredGroup] = useState('')
+  const [preferredResolution, setPreferredResolution] = useState('')
+  const [preferredSubtitle, setPreferredSubtitle] = useState('')
   const [ruleName, setRuleName] = useState('')
   const [ruleFeedUrl, setRuleFeedUrl] = useState('')
   const [ruleKeyword, setRuleKeyword] = useState('')
@@ -72,14 +75,19 @@ export function useMikanSubscriptions() {
     setAddingFeed(true)
     setMikanError('')
     try {
-      const result = await addMikanFeed(feedUrl.trim())
+      const url = feedUrl.trim()
+      const result = preferredGroup.trim() || preferredResolution || preferredSubtitle
+        ? await addMikanFeed(url, { preferredGroup: preferredGroup.trim(), preferredResolution, preferredSubtitle })
+        : await addMikanFeed(url)
       if (!request.isCurrent()) return
       if (!result.success) throw new Error(result.errorCode)
       setFeedUrl('')
       await refreshFeeds('throw')
     } catch (cause) {
       if (!request.isCurrent()) return
-      setMikanError(`${errorText(cause)}；若订阅已出现但自动规则未建立，请检查 qB RSS 状态。`)
+      const message = errorText(cause)
+      const hints: Record<string, string> = { qb_rule_exists: '请检查并停用同一订阅上冲突的 qB 下载规则，再添加该地址。', qb_auto_download_disabled: '请在 qB 中启用 RSS 处理与 RSS 自动下载。', qb_torrent_rejected: 'qB 未接受下载请求，后端会再次尝试。' }
+      setMikanError(hints[message] ?? `${message}；若订阅已出现，请检查 qB RSS 状态。`)
       // 添加或首次读取失败时重试订阅读取，同时保留操作警告。
       await refreshFeeds('preserve')
     } finally {
@@ -109,7 +117,8 @@ export function useMikanSubscriptions() {
 
   return {
     qbStatus, statusError, clearStatusError, mikanFeeds, mikanError,
-    feedUrl, setFeedUrl, addingFeed, ruleName, setRuleName, ruleFeedUrl, setRuleFeedUrl,
+    feedUrl, setFeedUrl, addingFeed, preferredGroup, setPreferredGroup, preferredResolution, setPreferredResolution, preferredSubtitle, setPreferredSubtitle,
+    ruleName, setRuleName, ruleFeedUrl, setRuleFeedUrl,
     ruleKeyword, setRuleKeyword, creatingRule, ruleMessage, refreshStatus, refreshFeeds, connectionChanged, addFeed, addRule,
   }
 }

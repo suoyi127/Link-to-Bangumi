@@ -15,6 +15,18 @@ using anime_vault::test_support::ConfidenceBand;
 using anime_vault::test_support::confidenceBand;
 using anime_vault::test_support::loadFilenameFixtures;
 
+TEST_CASE("Chinese numbered episodes keep the original show title in both scripts") {
+    for (const auto& filename : {"[字幕組] 藥屋少女 [第03話] [繁體內嵌].mkv",
+                                 "[字幕組] 藥屋少女 第03集 [1080p].mkv",
+                                 "[字幕組] 藥屋少女 第03话 [1080p].mkv"}) {
+        const auto parsed = FilenameParser{}.parse(filename);
+        CAPTURE(filename);
+        CHECK(parsed.title == "藥屋少女");
+        CHECK(parsed.episode == EpisodeNumber::parse("3"));
+    }
+    CHECK_FALSE(FilenameParser{}.parse("藥屋少女 第01話-第12話.mkv").episode);
+}
+
 TEST_CASE("explicit season title preserves cumulative raw episode") {
     const auto parsed = FilenameParser{}.parse("[Dynamis One] Ao no Hako Season 2 - 27 (ABEMA 1920x1080 AVC AAC MKV) [50700C83]");
     REQUIRE(parsed.title == "Ao no Hako Season 2");

@@ -8,5 +8,5 @@ export const putQbConfig = (draft: QbConfigDraft) => request<QbConfig>('/api/qb/
 export const testQbConfig = (draft: QbConfigDraft) => request<QbStatus>('/api/qb/config/test', json({ url: draft.url, username: draft.username, password: draft.password }))
 export const deleteQbConfig = () => request<QbConfig>('/api/qb/config', { method: 'DELETE' })
 export const getMikanFeeds = (signal?: AbortSignal) => request<MikanFeeds>('/api/qb/rss', signal ? { signal } : undefined)
-export const addMikanFeed = (url: string) => request<QbAction>('/api/qb/rss/feeds', json({ url }))
+export const addMikanFeed = (url: string, preferences?: { preferredGroup: string; preferredResolution: string; preferredSubtitle?: string }) => request<QbAction>('/api/qb/rss/feeds', json({ url, ...preferences }))
 export const createMikanRule = (rule: QbMikanRule) => request<QbAction>('/api/qb/rss/rules', json({ ruleName: rule.ruleName, feedUrl: rule.feedUrl, keyword: rule.keyword }))

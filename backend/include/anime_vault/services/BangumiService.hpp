@@ -50,6 +50,7 @@ public:
     void subject(std::int64_t id, SubjectCompletion completion, Priority priority = Priority::manual);
     void episodeMapping(std::int64_t id, SubjectCompletion completion, Priority priority = Priority::manual);
 private:
+    void searchOnce(BangumiMatchQuery query, SearchCompletion completion, Priority priority);
     void loadEpisodes(BangumiSubject subject, int offset, int total, SubjectCompletion completion, int pages = 0, Priority priority = Priority::manual);
     bool allowRequest(std::chrono::system_clock::time_point now);
     void scheduleRequest(Priority priority, std::function<void()> action, std::function<void(std::string)> rejected);

@@ -43,7 +43,14 @@ struct FakeTransport final : BangumiTransport {
         ++calendarCalls;
         completion(calendarNext, calendarNext ? "" : "offline");
     }
-    void search(std::string, Completion completion) override {
+    std::vector<std::string> searchQueries;
+    std::string emptyKeyword;
+    void search(std::string keyword, Completion completion) override {
+        searchQueries.push_back(keyword);
+        if (!emptyKeyword.empty() && keyword == emptyKeyword) {
+            completion(Response{200, R"({"data":[]})"}, "");
+            return;
+        }
         ++calls;
         if (throwOnSearch) throw std::runtime_error("transport exception with private details");
         if (delay) { pending = std::move(completion); return; }
@@ -61,6 +68,66 @@ struct TempDb {
         ("anime-vault-bangumi-" + std::to_string(std::random_device{}()) + ".db");
     ~TempDb() { std::error_code ec; std::filesystem::remove(path, ec); }
 };
+}
+
+TEST_CASE("Traditional search retries a simplified keyword and keeps ambiguous subjects unbound") {
+    TempDb temp;
+    SqliteDatabase db(temp.path);
+    db.migrate();
+    SqliteMediaRepository repo(db);
+    FakeTransport transport;
+    transport.emptyKeyword = "藥屋少女的呢喃";
+    transport.next = FakeTransport::Response{200,
+        R"({"data":[{"id":20,"type":2,"name":"薬屋","name_cn":"药屋少女的呢喃"}]})"};
+    auto service = std::make_shared<BangumiService>(repo, transport);
+    std::optional<BangumiSearchResult> result;
+    service->search({transport.emptyKeyword}, [&](auto value){ result = std::move(value); });
+    REQUIRE(result);
+    REQUIRE(transport.searchQueries == std::vector<std::string>{"藥屋少女的呢喃", "药屋少女的呢喃"});
+    REQUIRE(result->candidates.autoBindEligible);
+    auto ranked = rankBangumiCandidates({"魔法少女育成計劃"}, {
+        {1, "魔法少女育成计划", "", "", "", 0, 2},
+        {2, "魔法少女育成計劃", "", "", "", 0, 2}});
+    REQUIRE(ranked.items.size() == 2);
+    REQUIRE_FALSE(ranked.autoBindEligible);
+    auto contextual = rankBangumiCandidates({"乾隆年間的計畫"}, {
+        {3, "乾隆年间的计划", "", "", "", 0, 2},
+        {4, "干隆年间的计划", "", "", "", 0, 2}});
+    REQUIRE(contextual.autoBindEligible);
+    REQUIRE(contextual.items.front().id == 3);
+    auto japanese = rankBangumiCandidates({"薬屋のひとりごと"}, {
+        {5, "药屋のひとりごと", "", "", "", 0, 2}});
+    REQUIRE_FALSE(japanese.autoBindEligible);
+}
+TEST_CASE("Previously stored Traditional user aliases match new simplified scans across a corrected season") {
+    TempDb temp;
+    SqliteDatabase db(temp.path);
+    db.migrate();
+    SqliteMediaRepository repo(db);
+    REQUIRE(sqlite3_exec(db.handle(), "INSERT INTO anime(display_title,season) VALUES('Custom','2');"
+        "INSERT INTO anime_alias(anime_id,normalized_alias,source) VALUES(1,'藥屋少女','user');",
+        nullptr,nullptr,nullptr)==SQLITE_OK);
+    auto match = repo.findAnimeByTitle("药屋少女","1");
+    REQUIRE(match);
+    REQUIRE(match->id == 1);
+    REQUIRE(sqlite3_exec(db.handle(), "INSERT INTO anime(display_title,season) VALUES('药屋少女','3');",
+        nullptr,nullptr,nullptr)==SQLITE_OK);
+    REQUIRE_FALSE(repo.findAnimeByTitle("藥屋少女"));
+}
+
+TEST_CASE("New episodes reuse an exact spelling when the old library already has both scripts") {
+    TempDb temp;
+    SqliteDatabase db(temp.path);
+    db.migrate();
+    SqliteMediaRepository repo(db);
+    REQUIRE(sqlite3_exec(db.handle(), "INSERT INTO anime(display_title,season) VALUES('學生會也有洞','1'),('学生会也有洞','1');",
+        nullptr,nullptr,nullptr)==SQLITE_OK);
+    const auto scan = repo.createScan({0,"test","completed"});
+    const auto media = repo.insertMedia({0,scan,"C:/test/show.mkv","show.mkv","3","normal",1,"inbox",.95});
+    repo.updateMediaCorrection(media, {"學生會也有洞","1","3","normal",.95,std::nullopt}, MediaCorrectionIntent::automaticScan);
+    REQUIRE(repo.getMedia(media)->animeId == 1);
+    REQUIRE(repo.listAnime().size() == 2);
+    REQUIRE_FALSE(repo.findAnimeByTitle("學生會也有洞"));
 }
 
 TEST_CASE("Bangumi subject lookup rejects a response for a different requested ID") {

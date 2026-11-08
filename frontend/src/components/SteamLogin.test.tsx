@@ -1,0 +1,128 @@
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { SteamImport } from './SteamImport'
+
+const config = { steamPath: 'D:/Steam', steamId: '', hasApiKey: false }
+const response = (body: object, status = 200) => new Response(JSON.stringify(body), { status })
+beforeEach(() => {
+  vi.stubGlobal('matchMedia', vi.fn().mockImplementation(() => ({ matches: false, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn() })))
+})
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
+async function mount(fetchMock: ReturnType<typeof vi.fn>) {
+  vi.stubGlobal('fetch', fetchMock)
+  const onImported = vi.fn().mockResolvedValue(undefined)
+  const view = render(<SteamImport disabled={false} onImported={onImported} />)
+  await waitFor(() => expect(screen.getByRole('button', { name: '登录 Steam 并自动配置' })).toBeEnabled())
+  vi.useFakeTimers()
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: '登录 Steam 并自动配置' })) })
+  return { ...view, onImported }
+}
+it('automatically refreshes saved configuration after official login without sending credentials or importing', async () => {
+  const fetchMock = vi.fn().mockResolvedValueOnce(response(config))
+    .mockResolvedValueOnce(response({ sessionId: 'session-1', state: 'pending' }))
+    .mockResolvedValueOnce(response({ state: 'pending', errorCode: '' }))
+    .mockResolvedValueOnce(response({ state: 'completed', errorCode: '' }))
+    .mockResolvedValueOnce(response({ ...config, steamId: '76561198000000000', hasApiKey: true }))
+  const { onImported } = await mount(fetchMock)
+  expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/steam/login', expect.objectContaining({ method: 'POST', body: '{}' }))
+  expect(screen.getByRole('button', { name: '一键导入 Steam 游戏' })).toBeDisabled()
+  await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+  expect(screen.getByText('Steam 登录完成，配置已自动保存。')).toBeInTheDocument()
+  fireEvent.click(screen.getByText('Steam 导入设置', { selector: 'summary' }))
+  expect(screen.getByLabelText('Steam ID')).toHaveValue('76561198000000000')
+  expect(screen.getByLabelText('Steam 安装目录')).toHaveValue('D:/Steam')
+  expect(screen.getByLabelText('Steam API Key')).toHaveValue('')
+  expect(screen.getByText('已保存 API Key；留空保留原密钥')).toBeInTheDocument()
+  expect(onImported).not.toHaveBeenCalled()
+  expect(fetchMock.mock.calls.filter(([, init]) => init?.body).map(([, init]) => init.body)).toEqual(['{}'])
+})
+it.each([
+  ['cancelled', 'Steam 登录已取消，可以重新登录。'],
+  ['expired', 'Steam 登录已超时，请重新登录。'],
+  ['failed', 'Steam 自动配置失败，请重试或展开 Steam 导入设置手动填写。'],
+])('allows retry after %s', async (state, message) => {
+  const fetchMock = vi.fn().mockResolvedValueOnce(response(config)).mockResolvedValueOnce(response({ sessionId: 'one', state: 'pending' }))
+    .mockResolvedValueOnce(response({ state, errorCode: '' })).mockResolvedValueOnce(response({ sessionId: 'two', state: 'pending' }))
+  await mount(fetchMock)
+  await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+  expect(screen.getByText(message)).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '登录 Steam 并自动配置' })).toBeEnabled()
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: '登录 Steam 并自动配置' })) })
+  expect(fetchMock).toHaveBeenCalledTimes(4)
+})
+it('stops polling and aborts an outstanding request when unmounted without overlapping polls', async () => {
+  let finish!: (value: Response) => void
+  const fetchMock = vi.fn().mockResolvedValueOnce(response(config)).mockResolvedValueOnce(response({ sessionId: 'one', state: 'pending' }))
+    .mockImplementationOnce(() => new Promise<Response>((resolve) => { finish = resolve }))
+  const { unmount } = await mount(fetchMock)
+  await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
+  expect(fetchMock).toHaveBeenCalledTimes(3)
+  const signal = fetchMock.mock.calls[2][1].signal as AbortSignal
+  unmount()
+  expect(signal.aborted).toBe(true)
+  await act(async () => { finish(response({ state: 'pending', errorCode: '' })); await vi.advanceTimersByTimeAsync(5000) })
+  expect(fetchMock).toHaveBeenCalledTimes(3)
+})
+it('offers manual configuration when the desktop login helper is unavailable', async () => {
+  const fetchMock = vi.fn().mockResolvedValueOnce(response(config)).mockResolvedValueOnce(response({ errorCode: 'steam_login_helper_unavailable' }, 400))
+  await mount(fetchMock)
+  expect(screen.getByText('当前环境无法打开 Steam 登录窗口，请展开 Steam 导入设置手动填写。')).toBeInTheDocument()
+  fireEvent.click(screen.getByText('Steam 导入设置', { selector: 'summary' }))
+  expect(screen.getByRole('button', { name: '保存 Steam 设置' })).toBeEnabled()
+  fireEvent.change(screen.getByLabelText('Steam 安装目录'), { target: { value: 'E:/Steam' } })
+  expect(screen.getByRole('button', { name: '登录 Steam 并自动配置' })).toBeDisabled()
+})
+it('retries a transient poll failure using the same session and refreshes configuration', async () => {
+  const fetchMock = vi.fn().mockResolvedValueOnce(response(config))
+    .mockResolvedValueOnce(response({ sessionId: 'session-1', state: 'pending' }))
+    .mockRejectedValueOnce(new Error('offline'))
+    .mockResolvedValueOnce(response({ state: 'completed', errorCode: '' }))
+    .mockResolvedValueOnce(response({ ...config, steamId: '76561198000000000', hasApiKey: true }))
+  await mount(fetchMock)
+  await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+  expect(screen.getByText('Steam 连接暂时中断，正在重新连接。')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '登录 Steam 并自动配置' })).toBeDisabled()
+  await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+  expect(screen.getByText('Steam 登录完成，配置已自动保存。')).toBeInTheDocument()
+  expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
+  expect(fetchMock.mock.calls.filter(([url]) => url.includes('?'))).toHaveLength(2)
+})
+it('stops reconnecting at the login deadline', async () => {
+  const fetchMock = vi.fn().mockResolvedValueOnce(response(config))
+    .mockResolvedValueOnce(response({ sessionId: 'session-1', state: 'pending' }))
+    .mockRejectedValue(new Error('offline'))
+  await mount(fetchMock)
+  await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+  vi.setSystemTime(Date.now() + 15 * 60 * 1000)
+  await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+  expect(screen.getByText('Steam 登录已超时，请重新登录。')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '登录 Steam 并自动配置' })).toBeEnabled()
+  const count = fetchMock.mock.calls.length
+  await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
+  expect(fetchMock).toHaveBeenCalledTimes(count)
+})
+it('stops tracking a session that the backend no longer recognizes', async () => {
+  const fetchMock = vi.fn().mockResolvedValueOnce(response(config))
+    .mockResolvedValueOnce(response({ sessionId: 'session-1', state: 'pending' }))
+    .mockResolvedValueOnce(response({ errorCode: 'steam_login_not_found' }, 404))
+  await mount(fetchMock)
+  await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
+  expect(screen.getByText('Steam 登录会话已失效，请重新登录。')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '登录 Steam 并自动配置' })).toBeEnabled()
+  expect(fetchMock).toHaveBeenCalledTimes(3)
+})
+it('retries a transient configuration refresh failure after login completes', async () => {
+  const fetchMock = vi.fn().mockResolvedValueOnce(response(config))
+    .mockResolvedValueOnce(response({ sessionId: 'session-1', state: 'pending' }))
+    .mockResolvedValueOnce(response({ state: 'completed', errorCode: '' }))
+    .mockRejectedValueOnce(new Error('offline'))
+    .mockResolvedValueOnce(response({ state: 'completed', errorCode: '' }))
+    .mockResolvedValueOnce(response({ ...config, steamId: '76561198000000000', hasApiKey: true }))
+  await mount(fetchMock)
+  await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+  expect(screen.getByRole('button', { name: '登录 Steam 并自动配置' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: '一键导入 Steam 游戏' })).toBeDisabled()
+  await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+  expect(screen.getByText('Steam 登录完成，配置已自动保存。')).toBeInTheDocument()
+  expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
+})

@@ -2,7 +2,7 @@ import type { GameResource, GameCandidate, GameScrape, VndbCandidate } from './t
 import { request, json } from './request'
 
 export const getGames = (signal?: AbortSignal) => request<{ items: GameResource[] }>('/api/games', { signal })
-export const importGame = (path: string) => request<GameScrape & { game: GameResource }>('/api/game-imports', json({ path }))
+export const importGame = (path: string) => request<GameScrape & { game: GameResource; reused: boolean }>('/api/game-imports', json({ path }))
 export const editGame = (id: number, metadata: Pick<GameResource, 'title' | 'developer' | 'summary' | 'path'>) => request<GameResource>(`/api/games/${id}`, { ...json({ title: metadata.title, developer: metadata.developer, summary: metadata.summary, path: metadata.path }), method: 'PUT' })
 export const removeUnavailableGame = (id: number) => request<{ removedId: number }>(`/api/games/${id}`, { ...json({ confirmed: true }), method: 'DELETE' })
 export const launchGame = (id: number) => request<{ started: boolean }>(`/api/games/${id}/launch`, json({ confirmed: true }))

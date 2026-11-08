@@ -22,8 +22,9 @@ public:
     void readMikanTitles(RssCompletion completion) const;
     using ActionCompletion = std::function<void(QbActionResult)>;
     void addMikanFeed(std::string url, ActionCompletion completion) const;
-    void addMikanFeedWithAutoRule(std::string url, std::string savePath,
-                                  ActionCompletion completion) const;
+    using MikanRequest = std::function<std::pair<int, std::string>(const std::string&, const std::string&)>;
+    // 同步会话仅在订阅工作线程中使用，第二个参数为空时发送 GET。
+    MikanRequest openMikanSession() const;
     void createMikanRule(QbMikanRuleSpec spec, ActionCompletion completion) const;
     static std::optional<std::string> loginCookie(int status, std::string_view body,
                                                   std::string_view setCookie);

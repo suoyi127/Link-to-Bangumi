@@ -8,7 +8,12 @@ public:
     virtual ~GameRepository() = default;
     virtual std::unique_ptr<RepositoryLock> lock() const = 0;
     virtual std::vector<GameResource> list() const = 0;
-    virtual std::int64_t importExecutable(const std::string& path, const std::string& title) = 0;
+    virtual std::int64_t canonicalId(std::int64_t id) const { return id; }
+    virtual std::int64_t importExecutable(const std::string& path, const std::string& title, bool* reused = nullptr) = 0;
+    // 返回本批次匹配到原有可见条目的数量，填写各条目的规范 ID。
+    virtual std::size_t importSteamBatch(std::vector<GameResource>& games) = 0;
+    virtual void updateSteamStats(const GameResource& game) = 0;
+    virtual void updateSteamMetadata(std::int64_t id, const std::string& appId, const std::string& chineseTitle, const std::optional<CachedCover>& cover) = 0;
     virtual bool pathUsedByOther(const std::string& path, std::int64_t id) const = 0;
     virtual void updateMetadata(std::int64_t id, const std::string& title, const std::string& developer, const std::string& summary, const std::string& path) = 0;
     virtual void remove(std::int64_t id) = 0;

@@ -55,7 +55,7 @@ TEST_CASE("scan and inbox records survive reopening a migrated database") {
     {
         SqliteDatabase db(path);
         db.migrate();
-        REQUIRE(db.schemaVersion() == 12);
+        REQUIRE(db.schemaVersion() == 17);
         SqliteMediaRepository repo(db);
         const auto scanId = repo.createScan({0, "D:/sample", "running", 1, 0, 0, ""});
         const auto mediaId = repo.insertMedia({0, scanId, "D:/sample/01.mkv", "01.mkv", "1.5", "normal", 1234, "inbox", 0.9});
@@ -108,7 +108,7 @@ TEST_CASE("scan and inbox records survive reopening a migrated database") {
     {
         SqliteDatabase db(path);
         db.migrate();
-        REQUIRE(db.schemaVersion() == 12);
+        REQUIRE(db.schemaVersion() == 17);
         SqliteMediaRepository repo(db);
         const auto scans = repo.listScans();
         const auto media = repo.listInbox();
@@ -142,11 +142,11 @@ TEST_CASE("schema migration six backfills parsed titles from existing correction
         "DROP INDEX media_file_folder_import;"
         "ALTER TABLE media_file DROP COLUMN folder_import_id;"
         "DROP TABLE folder_import;"
-        "DROP TABLE game_resource; DROP TABLE novel_file; DROP TABLE novel_work; DROP TABLE novel_source;"
+        "DROP TABLE mikan_rule_history; DROP TABLE mikan_rule_baseline; DROP TABLE game_import_alias; DROP TABLE mikan_title_alias; DROP TABLE mikan_pending; DROP TABLE mikan_download; DROP TABLE mikan_subscription; DROP TABLE game_resource; DROP TABLE novel_file; DROP TABLE novel_work; DROP TABLE novel_source;"
         "ALTER TABLE media_file DROP COLUMN parsed_title; ALTER TABLE media_file DROP COLUMN raw_episode_number;"
         "ALTER TABLE media_file DROP COLUMN episode_number_source; DROP TABLE bangumi_episode_mapping; DROP TABLE anime_merge_preview; DROP TRIGGER anime_identity_insert; DROP TABLE anime_identity; PRAGMA user_version=5;", nullptr, nullptr, nullptr) == SQLITE_OK);
     db.migrate();
-    REQUIRE(db.schemaVersion() == 12);
+    REQUIRE(db.schemaVersion() == 17);
     SqliteMediaRepository repo(db);
     const auto media = repo.getMedia(1);
     REQUIRE(media);
@@ -165,6 +165,11 @@ TEST_CASE("migration eleven preserves existing numbers and manual provenance") {
         db.migrate();
         REQUIRE(sqlite3_exec(db.handle(),
             "ALTER TABLE media_file DROP COLUMN raw_episode_number; ALTER TABLE media_file DROP COLUMN episode_number_source;"
+            "DROP TABLE mikan_rule_history; DROP TABLE mikan_rule_baseline; DROP TABLE game_import_alias; DROP TABLE mikan_title_alias; DROP TABLE mikan_pending; DROP TABLE mikan_download; DROP TABLE mikan_subscription; DROP INDEX game_steam_app_id; ALTER TABLE game_resource DROP COLUMN steam_app_id;"
+            "ALTER TABLE game_resource DROP COLUMN steam_install_path; ALTER TABLE game_resource DROP COLUMN steam_manifest_path;"
+            "ALTER TABLE game_resource DROP COLUMN steam_executable; ALTER TABLE game_resource DROP COLUMN steam_id;"
+            "ALTER TABLE game_resource DROP COLUMN steam_stats_error; ALTER TABLE game_resource DROP COLUMN playtime_minutes;"
+            "ALTER TABLE game_resource DROP COLUMN achievements_unlocked; ALTER TABLE game_resource DROP COLUMN achievements_total;"
             "DROP TABLE bangumi_episode_mapping; DROP TABLE anime_merge_preview; DROP TRIGGER anime_identity_insert; DROP TABLE anime_identity; PRAGMA user_version=10;"
             "INSERT INTO anime(id,display_title) VALUES(1,'Auto'),(2,'User title');"
             "INSERT INTO anime_alias(anime_id,normalized_alias,source) VALUES(2,'user','user');"
@@ -185,7 +190,7 @@ TEST_CASE("migration eleven preserves existing numbers and manual provenance") {
     SqliteDatabase db(path);
     db.migrate();
     SqliteMediaRepository repo(db);
-    REQUIRE(db.schemaVersion() == 12);
+    REQUIRE(db.schemaVersion() == 17);
     REQUIRE(repo.getMedia(1)->rawEpisodeNumber == "27");
     REQUIRE(repo.getMedia(2)->episodeNumber == "7");
 }

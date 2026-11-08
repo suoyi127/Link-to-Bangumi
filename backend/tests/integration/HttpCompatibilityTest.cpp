@@ -218,6 +218,13 @@ TEST_CASE("HTTP families preserve their existing compatibility differences") {
     REQUIRE_FALSE(animeCover->getJsonObject());
     error(send(drogon::Get, novelPath + "/cover"), drogon::k404NotFound, "cover_unavailable");
     error(send(drogon::Get, gamePath + "/cover"), drogon::k400BadRequest, "cover_unavailable");
+    games->bind(gameId, 25, "Bound", "", "", "PC");
+    Json::Value repeated;
+    repeated["path"] = games->get(gameId).path;
+    const auto reused = send(drogon::Post, "/api/game-imports", repeated);
+    REQUIRE(reused->statusCode() == drogon::k200OK);
+    REQUIRE(json(reused)["reused"].asBool());
+    REQUIRE(json(reused)["game"]["subjectId"].asInt64() == 25);
     REQUIRE(transport.calls == 2);
     REQUIRE(images.calls == 0);
     REQUIRE(launcher.calls == 0);

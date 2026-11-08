@@ -66,6 +66,24 @@ button, input, select { font: inherit; }
 .poster-library .ant-list-item { padding-block: 0; }
 .anime-cover { border-radius: 9px 9px 0 0; }
 .anime-cover > span { font-size: 12px; letter-spacing: 1px; }
+/* 游戏封面横竖比例不同，完整展示图片，统一卡片区域以保持行列对齐。 */
+.game-cover { position: relative; width: 100%; min-width: 0; aspect-ratio: 2 / 3; overflow: hidden; display: grid; place-items: center; background: #edf2f4; color: #83959e; border-radius: 9px 9px 0 0; }
+.game-cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; object-position: center; }
+.game-cover > span { font-size: 12px; letter-spacing: 1px; }
+.game-library .ant-card-body { padding: 16px; }
+.game-detail-header { display: grid; grid-template-columns: minmax(0, 210px) minmax(0, 1fr); gap: 24px; align-items: start; margin-bottom: 24px; }
+.game-detail-header > * { min-width: 0; }
+.game-detail-header .game-cover { aspect-ratio: auto; border-radius: 9px; min-height: 70px; }
+.game-detail-header .game-cover img { position: static; width: 100%; height: auto; max-height: 340px; }
+.game-detail-header:has(.game-cover[data-shape="wide"]) { grid-template-columns: minmax(0, 1fr); }
+.game-detail-header .game-cover[data-shape="wide"] { width: fit-content; max-width: 100%; }
+.game-detail-header .game-cover[data-shape="wide"] img { width: auto; max-width: 100%; }
+@media (max-width: 700px) {
+  .game-detail-header { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .game-detail-header .game-cover { max-width: 210px; justify-self: center; }
+  .game-detail-header .game-cover[data-shape="wide"] { max-width: 100%; }
+  .game-library .ant-card-body { padding: 10px; }
+}
 .calendar-day { background: #fff; border: 1px solid #e6ecef; padding: 20px; border-radius: 12px; }
 .calendar-week-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; align-items: start; }
 .calendar-day h4 { margin-top: 0; margin-bottom: 20px; }

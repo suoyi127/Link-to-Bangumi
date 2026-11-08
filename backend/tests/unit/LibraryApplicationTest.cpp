@@ -45,13 +45,16 @@ struct NovelFake : NovelRepository {
     std::optional<CachedCover> cover(std::int64_t, bool) const override { return {}; }
 };
 struct GameFake : GameRepository {
+    void updateSteamMetadata(std::int64_t, const std::string&, const std::string&, const std::optional<CachedCover>&) override { throw GameError("unexpected_steam_metadata"); }
+    std::size_t importSteamBatch(std::vector<GameResource>&) override { throw GameError("unexpected_steam_import"); }
+    void updateSteamStats(const GameResource&) override { throw GameError("unexpected_steam_update"); }
     mutable int depth{};
     std::vector<GameResource> games;
     bool removed{}, updated{}, duplicate{};
     std::string updatedPath;
     std::unique_ptr<RepositoryLock> lock() const override { return std::make_unique<DepthLock>(depth); }
     std::vector<GameResource> list() const override { REQUIRE(depth > 0); return games; }
-    std::int64_t importExecutable(const std::string&, const std::string&) override { return 1; }
+    std::int64_t importExecutable(const std::string&, const std::string&, bool*) override { return 1; }
     bool pathUsedByOther(const std::string&, std::int64_t) const override { REQUIRE(depth > 0); return duplicate; }
     void updateMetadata(std::int64_t, const std::string&, const std::string&, const std::string&, const std::string& path) override { REQUIRE(depth > 0); updated = true; updatedPath = path; }
     void remove(std::int64_t) override { REQUIRE(depth > 0); removed = true; }

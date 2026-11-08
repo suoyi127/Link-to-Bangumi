@@ -1,6 +1,6 @@
 #include "anime_vault/services/MikanTitleParser.hpp"
 #include "anime_vault/services/ReleaseTextNormalization.hpp"
-#include "anime_vault/services/TitleNormalization.hpp"
+#include "anime_vault/services/MikanChinese.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -14,7 +14,7 @@ std::string trim(std::string value) {
     return value.substr(first, value.find_last_not_of(" \t\r\n") - first + 1);
 }
 bool chineseName(const std::string& value) {
-    const auto points = normalizeTitle(value);
+    const auto points = normalizeScrapeTitle(value);
     bool han = false;
     for (auto point : points) {
         if (point >= 0x3040 && point <= 0x30ff) return false;
@@ -86,7 +86,7 @@ std::vector<MikanTitlePair> MikanTitleParser::parseAll(std::string_view articleT
     std::size_t start = 0;
     for (const auto i : separators) {
         auto name = trim(titles.substr(start, i - start));
-        if (name.empty() || name.size() > 500 || normalizedTitleKey(name).empty()) return {};
+        if (name.empty() || name.size() > 500 || scrapeTitleKey(name).empty()) return {};
         names.push_back(std::move(name));
         start = i + 1;
     }
@@ -97,9 +97,9 @@ std::vector<MikanTitlePair> MikanTitleParser::parseAll(std::string_view articleT
     for (auto name : names) {
         while (!name.empty() && name.back() == '.') name.pop_back();
         name = trim(name);
-        const auto key = normalizedTitleKey(name);
-        if (key.empty() || key == normalizedTitleKey(canonical)) continue;
-        if (std::any_of(pairs.begin(), pairs.end(), [&key](const auto& pair) { return normalizedTitleKey(pair.alias) == key; })) continue;
+        const auto key = scrapeTitleKey(name);
+        if (key.empty() || key == scrapeTitleKey(canonical)) continue;
+        if (std::any_of(pairs.begin(), pairs.end(), [&key](const auto& pair) { return scrapeTitleKey(pair.alias) == key; })) continue;
         pairs.push_back({canonical, std::move(name), episode});
     }
     if (!pairs.empty() && !bracketedAlias.empty() && bracketedAlias.size() <= 500)

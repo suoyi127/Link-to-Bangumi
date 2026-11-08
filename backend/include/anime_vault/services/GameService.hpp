@@ -8,7 +8,8 @@ public:
     GameService(GameRepository& repository, LibraryFileAccess& files) : repository_(repository), files_(files) {}
     std::vector<GameResource> list() const;
     GameResource get(std::int64_t id) const;
-    GameResource importExecutable(const std::filesystem::path& path);
+    GameResource metadataForCover(std::int64_t id) const;
+    GameResource importExecutable(const std::filesystem::path& path, bool* reused = nullptr);
     void edit(std::int64_t id, const std::string& title, const std::string& developer, const std::string& summary, const std::string& path);
     void removeUnavailable(std::int64_t id);
     void launch(std::int64_t id, ProcessLauncher& launcher) const;

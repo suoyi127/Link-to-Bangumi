@@ -10,6 +10,8 @@
 #include "anime_vault/api/BangumiConfigController.hpp"
 #include "anime_vault/api/NovelController.hpp"
 #include "anime_vault/api/GameController.hpp"
+#include "anime_vault/api/SteamController.hpp"
+#include "anime_vault/infrastructure/network/WindowsSystemHttp.hpp"
 #include "anime_vault/api/MediaService.hpp"
 #include "anime_vault/infrastructure/database/SqliteMediaRepository.hpp"
 #include "anime_vault/services/OrganizationService.hpp"
@@ -123,14 +125,56 @@ int main() {
         auto novelBangumi = std::make_shared<anime_vault::NovelBangumiService>(*novels, *bangumiConnection, *bangumiConnection);
         anime_vault::api::registerNovelEndpoints(novels, novelBangumi, processLauncher);
         anime_vault::SqliteGameRepository gamesRepository(database);
+        gamesRepository.reconcileImportPaths();
         auto games = std::make_shared<anime_vault::GameService>(gamesRepository, libraryFiles);
         auto vndb = std::make_shared<anime_vault::DrogonVndbTransport>();
         auto gameBangumi = std::make_shared<anime_vault::GameBangumiService>(*games, *bangumiConnection, *bangumiConnection, vndb.get());
         anime_vault::api::registerGameEndpoints(games, gameBangumi, processLauncher);
+        auto steamConfig = std::make_shared<anime_vault::SteamConfiguration>(data);
+        auto steamClient = std::make_shared<anime_vault::SteamClient>([](std::string path, auto callback) {
+#ifdef _WIN32
+            anime_vault::windowsSystemHttpsRequest("api.steampowered.com", std::move(path), "GET",
+                "LinkToBangumi/0.1.2", "", 8 * 1024 * 1024,
+                [callback = std::move(callback)](anime_vault::WindowsHttpResult result) mutable {
+                    callback(result.status, result.body.value_or(""));
+                });
+#else
+            (void)path; callback(0, "");
+#endif
+        });
+        auto steamMetadata = std::make_shared<anime_vault::SteamMetadataClient>([](std::string host, std::string path, auto callback) {
+#ifdef _WIN32
+            const auto limit = host == "store.steampowered.com" ? 2 * 1024 * 1024 : 8 * 1024 * 1024;
+            anime_vault::windowsSystemHttpsRequest(std::move(host), std::move(path), "GET", "LinkToBangumi/0.1.2", "", limit,
+                [callback = std::move(callback)](anime_vault::WindowsHttpResult result) mutable {
+                    callback(result.status, result.body.value_or(""));
+                });
+#else
+            (void)host; (void)path; callback(0, "");
+#endif
+        });
+        auto steamImports = std::make_shared<anime_vault::SteamImportService>(gamesRepository, *steamClient, steamMetadata.get());
+        struct StopSteamImports {
+            std::shared_ptr<anime_vault::SteamImportService> service;
+            ~StopSteamImports() { service->stop(); }
+        } stopSteamImports{steamImports};
+        auto steamLogin = std::make_shared<anime_vault::SteamLoginService>(processLauncher,
+            mediaRoot.parent_path(), data / "SteamLogin",
+            [steamConfig](std::string id, std::string key) {
+                auto value = steamConfig->current(); value.steamId = std::move(id); value.apiKey = std::move(key);
+                steamConfig->save(std::move(value));
+            }, [steamImports] { return steamImports->busy(); });
+        anime_vault::api::registerSteamEndpoints(steamConfig, steamImports, steamLogin);
         auto calendar = std::make_shared<anime_vault::BangumiCalendarService>(repository, *bangumiConnection);
         anime_vault::api::registerAnimeEndpoints(repository, bangumi, covers, calendar);
+        const auto sourceUtf8 = source.u8string();
+        auto downloads = std::make_shared<anime_vault::MikanDownloadWorker>(database, qb,
+            std::string(sourceUtf8.begin(), sourceUtf8.end()), [qbDownloadError, &media] {
+                if (auto code = qbDownloadError(); !code.empty()) throw anime_vault::QbConfigError(code, code);
+                media.validateQbSourceReady();
+            });
         anime_vault::api::registerQbRssEndpoints(qb, source, qbDownloadError,
-            [&media] { media.validateQbSourceReady(); });
+            [&media] { media.validateQbSourceReady(); }, downloads);
         if (const char* webDirectory = std::getenv("ANIME_VAULT_WEB_DIR"); webDirectory && *webDirectory) {
             const auto* bytes = reinterpret_cast<const char8_t*>(webDirectory);
             const auto root = anime_vault::validatedWebRoot(
@@ -158,6 +202,7 @@ int main() {
         });
         automaticScan.start();
         drogon::app().addListener(std::string(anime_vault::api::kHealthBindAddress), port).run();
+        downloads->stop();
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

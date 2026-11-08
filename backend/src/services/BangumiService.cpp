@@ -1,6 +1,6 @@
 #include "anime_vault/services/BangumiService.hpp"
 #include "anime_vault/repositories/MediaRepository.hpp"
-#include "anime_vault/services/TitleNormalization.hpp"
+#include "anime_vault/services/MikanChinese.hpp"
 
 #include <nlohmann/json.hpp>
 #include <algorithm>
@@ -79,7 +79,9 @@ BangumiSubject parseSubject(const nlohmann::json& item) {
     }
     if (item.contains("infobox") && item["infobox"].is_array()) {
         for (const auto& field : item["infobox"]) {
-            if (!field.is_object() || field.value("key", "") != "别名" || !field.contains("value")) continue;
+            if (!field.is_object() || !field.contains("value")) continue;
+            const auto label = field.value("key", "");
+            if (label != "别名" && label != "別名") continue;
             const auto add = [&subject](const nlohmann::json& value) {
                 if (value.is_string()) subject.aliases.push_back(boundedString(value, 500));
                 else if (value.is_object() && value.contains("v") && value["v"].is_string())
@@ -114,11 +116,14 @@ std::optional<std::int64_t> uniqueLegacyId(const std::string& body) {
 }
 
 bool verifiedAlias(const std::string& title, const BangumiSubject& subject) {
-    const auto key = normalizeTitle(title);
-    if (key.size() < 12) return false;
-    const auto matches = [&key](const std::string& candidate) {
-        const auto alias = normalizeTitle(candidate);
+    const auto key = normalizeScrapeTitle(title);
+    if (key.empty()) return false;
+    const bool latin = std::all_of(key.begin(), key.end(), [](char32_t c){ return c < 128; });
+    if (latin && key.size() < 12) return false;
+    const auto matches = [&key, latin](const std::string& candidate) {
+        const auto alias = normalizeScrapeTitle(candidate);
         if (alias == key) return true;
+        if (!latin) return false;
         if (alias.size() >= key.size() && std::equal(key.begin(), key.end(), alias.begin())) return true;
         // 罗马音转写中的一两个字母差异可以接受，但短名称不能模糊绑定。
         if (key.size() < 24 || alias.size() + 2 < key.size() || key.size() + 2 < alias.size()) return false;
@@ -256,6 +261,25 @@ void BangumiService::pumpRequests() {
 }
 
 void BangumiService::search(BangumiMatchQuery query, SearchCompletion completion, Priority priority) {
+    try { query.title = normalizeQuery(query.title); }
+    catch (...) { completion({{}, "bangumi_invalid_query"}); return; }
+    auto alternate = query;
+    alternate.title = foldScrapeTitle(query.title);
+    if (alternate.title == query.title) {
+        searchOnce(std::move(query), std::move(completion), priority);
+        return;
+    }
+    // 两种写法各自使用原有的缓存与限流；歧义、网络错误不会触发第二次查询。
+    searchOnce(std::move(query), [self = shared_from_this(), alternate = std::move(alternate),
+            completion = std::move(completion), priority](BangumiSearchResult result) mutable {
+        if (result.errorCode.empty() && !result.localMatch && result.candidates.items.empty())
+            self->searchOnce(std::move(alternate), std::move(completion), priority);
+        else
+            completion(std::move(result));
+    }, priority);
+}
+
+void BangumiService::searchOnce(BangumiMatchQuery query, SearchCompletion completion, Priority priority) {
     std::string normalized;
     try { normalized = normalizeQuery(query.title); }
     catch (...) { completion({{}, "bangumi_invalid_query"}); return; }
@@ -459,7 +483,8 @@ void BangumiService::aliasSubject(std::string title, SubjectCompletion completio
                 catch (...) { finish({std::nullopt, "bangumi_bad_response"}); return; }
                 if (id && *id < 0) { finish({std::nullopt, ""}); return; }
                 if (!id) {
-                    const auto prefix = retry ? distinctivePrefix(title) : std::string{};
+                    const auto folded = retry ? foldScrapeTitle(title) : title;
+                    const auto prefix = folded != title ? folded : (retry ? distinctivePrefix(title) : std::string{});
                     if (!prefix.empty() && prefix != title) {
                         if (next) { (*next)(prefix, false); return; }
                     }

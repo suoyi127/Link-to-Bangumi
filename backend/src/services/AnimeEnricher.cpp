@@ -94,7 +94,7 @@ void AnimeEnricher::runPending(std::vector<AnimeRecord> pending, Completion comp
             // 正常标题匹配优先；只有没有可靠结果时才走 Bangumi 别名回退。
             if (result.candidates.autoBindEligible && !result.candidates.items.empty()) {
                 self->bangumi_->subject(result.candidates.items.front().id, bindVerified, BangumiService::Priority::background);
-            } else if (!result.localMatch) {
+            } else if (!result.localMatch && (result.candidates.items.empty() || result.candidates.items.front().score < 0.92)) {
                 self->bangumi_->aliasSubject(item.displayTitle, bindVerified, BangumiService::Priority::background);
             } else (*next)();
         }, BangumiService::Priority::background);

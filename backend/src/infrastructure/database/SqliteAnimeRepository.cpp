@@ -1,6 +1,7 @@
 #include "anime_vault/infrastructure/database/SqliteMediaRepository.hpp"
 #include "anime_vault/infrastructure/database/SqliteDatabase.hpp"
 #include "anime_vault/services/TitleNormalization.hpp"
+#include "anime_vault/services/MikanChinese.hpp"
 
 #include <sqlite3.h>
 #include <memory>
@@ -277,24 +278,24 @@ bool SqliteMediaRepository::applyMikanAlias(const std::string& alias,
                                             const std::string& canonicalTitle) {
     if (alias.empty() || canonicalTitle.empty() || alias.size() > 500 ||
         canonicalTitle.size() > 500) return false;
-    const auto key = normalizedTitleKey(alias);
-    if (key.empty() || key == normalizedTitleKey(canonicalTitle)) return false;
+    const auto key = scrapeTitleKey(alias);
+    if (key.empty() || key == scrapeTitleKey(canonicalTitle)) return false;
     auto candidate = findAnimeByTitle(alias);
     const bool aliasFound = candidate.has_value();
-    const auto canonicalKey = normalizedTitleKey(canonicalTitle);
+    const auto canonicalKey = scrapeTitleKey(canonicalTitle);
     if (!candidate) candidate = findAnimeByTitle(canonicalTitle);
     if (!candidate) return false;
-    const auto displayKey = normalizedTitleKey(candidate->displayTitle);
+    const auto displayKey = scrapeTitleKey(candidate->displayTitle);
     if (displayKey != key && displayKey != canonicalKey) return false;
     std::lock_guard lock(database_.mutex());
     // 别名有多个归属时不能退回规范标题猜测；已保存的映射无需重复改写。
     if (!aliasFound && titleIndex_.contains(key)) return false;
     auto* db = database_.handle();
     Transaction tx(db);
-    auto existing = prepare(db, "SELECT 1 FROM anime_alias WHERE anime_id=? AND normalized_alias=?");
+    auto existing = prepare(db, "SELECT normalized_alias FROM anime_alias WHERE anime_id=?");
     sqlite3_bind_int64(existing.get(), 1, candidate->id);
-    sqlite_support::bind(existing.get(), 2, key);
-    if (sqlite3_step(existing.get()) == SQLITE_ROW) return false;
+    while (sqlite3_step(existing.get()) == SQLITE_ROW)
+        if (scrapeTitleKey(column(existing.get(), 0)) == key) return false;
     // RSS may suggest a title only for an untouched local entry. A user alias or
     // Bangumi binding is authoritative and must never be replaced by feed text.
     auto update = prepare(db,
