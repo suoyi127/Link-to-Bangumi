@@ -90,6 +90,9 @@ button, input, select { font: inherit; }
 .calendar-day h4 .ant-typography { font-size: 11px; margin-left: 7px; font-weight: 400; }
 .calendar-day .ant-list-item { margin-bottom: 0; }
 .detail-page { background: #fff; padding: 28px; border: 1px solid #e6ecef; border-radius: 12px; }
+.episode-progress-list .ant-list-item { flex-wrap: wrap; gap: 10px; }
+.episode-progress-list .ant-list-item > .ant-space { min-width: 0; overflow-wrap: anywhere; }
+.episode-progress-list .ant-list-item-action { display: flex; flex-wrap: wrap; gap: 6px 0; margin-inline-start: 0; }
 .detail-page .ant-descriptions { max-width: 950px; }
 .detail-page > .ant-space-item > img { border-radius: 9px; border: 1px solid #e7edef; }
 .detail-page > .ant-space-item:has(> h4) { margin-top: 18px; padding-top: 18px; border-top: 1px solid #edf1f3; }

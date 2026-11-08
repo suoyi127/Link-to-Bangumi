@@ -5,6 +5,7 @@ import type { Settings } from '../api/types'
 import { PlayerSettings } from './PlayerSettings'
 import { NovelSettings } from './NovelSettings'
 import { AuditHistorySection } from './settings/AuditHistorySection'
+import { WatchSyncSection } from './settings/WatchSyncSection'
 import { BangumiConnectionSection } from './settings/BangumiConnectionSection'
 import { DownloadPathsSection } from './settings/DownloadPathsSection'
 import { MikanSubscriptionsSection } from './settings/MikanSubscriptionsSection'
@@ -72,6 +73,7 @@ export function SettingsPage() {
       <DownloadPathsSection settings={settings} qbPathPending={qbPathPending} controller={paths} />
       <QbConnectionSection controller={qb} statusError={mikan.statusError} />
       <BangumiConnectionSection controller={bangumi} />
+      <WatchSyncSection />
       <MikanSubscriptionsSection settings={settings} qbPathPending={qbPathPending} controller={mikan} />
       <PreferencesSection controller={preferences} />
       <div className="settings-section"><PlayerSettings /></div>

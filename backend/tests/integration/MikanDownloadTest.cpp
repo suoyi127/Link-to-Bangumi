@@ -102,6 +102,7 @@ TEST_CASE("Version 14 traditional download history still deduplicates simplified
         ALTER TABLE mikan_download DROP COLUMN subtitle_scripts;
         INSERT INTO mikan_download VALUES('local','old','["進擊的巨人",1,0,"3"]','url1','','',1);
         INSERT INTO mikan_title_alias VALUES('local','old','進擊','進擊的巨人');
+        DROP VIEW watch_episode_state; DROP VIEW watch_episode; DROP TABLE watch_progress; DROP TABLE watch_sync_queue; DROP TABLE watch_sync_account; DROP TABLE watch_clock; DROP TABLE watch_bangumi_episode;
         DROP TABLE mikan_rule_baseline; DROP TABLE mikan_rule_history;
         PRAGMA user_version=14;
     )sql",

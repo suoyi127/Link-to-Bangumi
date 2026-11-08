@@ -3,6 +3,7 @@ import { Alert, Button, Card, Input, List, Space, Spin, Table, Tabs, Tag, Typogr
 import { getAnime } from '../api/anime'
 import type { Anime, AnimeSort } from '../api/types'
 import { AnimeCover } from './AnimeCover'
+import { ContinueWatching } from './ContinueWatching'
 import { LibraryCalendar } from './LibraryCalendar'
 
 type Props = { onOpenAnime: (id: number) => void }
@@ -63,6 +64,7 @@ export function LibraryPage({ onOpenAnime }: Props) {
       <Space wrap><Input.Search aria-label="筛选本页番剧" placeholder="筛选本页番剧" value={filter} onChange={(event) => setFilter(event.target.value)} style={{ width: 240 }} allowClear /><Button aria-label="网格视图" type={view === 'grid' ? 'primary' : 'default'} onClick={() => setView('grid')}>网格</Button><Button aria-label="列表视图" type={view === 'list' ? 'primary' : 'default'} onClick={() => setView('list')}>列表</Button></Space>
     </div>
     {error && <Alert type="error" showIcon message={error} />}
+    <ContinueWatching onOpenAnime={onOpenAnime} />
     <label>导入月份排序 <select aria-label="导入月份排序" value={sort} onChange={(event) => { setSort(event.target.value as AnimeSort); setOffset(0) }}><option value="import_desc">最新导入在前</option><option value="import_asc">最早导入在前</option></select></label>
     {loading ? <Spin aria-label="正在加载番剧库" /> : items.length === 0 ? <Typography.Text type="secondary">暂无本地番剧</Typography.Text> : visibleItems.length === 0 ? <Typography.Text type="secondary">本页没有匹配的番剧</Typography.Text> : [...groups].map(([month, monthItems]) => <section key={month} aria-label={monthTitle(month)}><Typography.Title level={4}>{monthTitle(month)}</Typography.Title>{view === 'grid' ?
       <List grid={{ gutter: 20, xs: 2, sm: 3, md: 4, lg: 5, xl: 6, xxl: 6 }} dataSource={monthItems} renderItem={(item) => <List.Item><Card hoverable cover={coverCell(item)} styles={{ body: { padding: 12 } }} style={{ overflow: 'hidden' }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title(item)}</div><Typography.Text type="secondary">{item.importedMonth && `${item.importedMonth} 导入`} {item.season || '季数未标注'}</Typography.Text><div><Tag color={item.bangumiSubjectId ? 'green' : 'default'}>{item.bangumiSubjectId ? '已绑定 Bangumi' : '未绑定 Bangumi'}</Tag></div></Card></List.Item>} /> :

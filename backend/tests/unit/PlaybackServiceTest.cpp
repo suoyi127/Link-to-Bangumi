@@ -1,3 +1,6 @@
+#include "anime_vault/services/MpvPlaybackSamples.hpp"
+#include "anime_vault/services/MpvProgressMonitor.hpp"
+#include "anime_vault/infrastructure/database/WatchProgressStore.hpp"
 #include "anime_vault/services/PlaybackService.hpp"
 #include "anime_vault/services/PlayerCatalog.hpp"
 #include "anime_vault/infrastructure/database/SqliteDatabase.hpp"
@@ -10,6 +13,12 @@
 #include <memory>
 #include <random>
 #include <sqlite3.h>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 namespace fs = std::filesystem;
 using namespace anime_vault;
@@ -160,3 +169,97 @@ TEST_CASE("playback rejects a folder-import file outside its registered root") {
     requireCode([&] { service.play(id, utf8(fixture.mpv)); }, "playback_path_outside_root");
     REQUIRE(launcher.calls == 0);
 }
+
+
+TEST_CASE("mpv keeps the last valid position and counts continuous playback across seeks and pauses") {
+    MpvPlaybackSamples samples;
+    samples.event(R"({"event":"property-change","name":"duration","data":100})", 0);
+    samples.event(R"({"event":"property-change","name":"time-pos","data":2})", 0);
+    samples.event(R"({"event":"property-change","name":"time-pos","data":3})", 1);
+    samples.event(R"({"event":"seek"})", 1.1);
+    samples.event(R"({"event":"property-change","name":"time-pos","data":70})", 1.2);
+    samples.event(R"({"event":"property-change","name":"time-pos","data":71})", 2.2);
+    samples.event(R"({"event":"property-change","name":"pause","data":true})", 2.3);
+    REQUIRE(samples.flushRequested);
+    samples.event(R"({"event":"property-change","name":"time-pos","data":72})", 4);
+    samples.event(R"({"event":"property-change","name":"time-pos"})", 5);
+    samples.event(R"({"event":"property-change","name":"duration","data":0})", 5);
+    samples.event(R"({"event":"end-file"})", 6);
+    REQUIRE(samples.finished);
+    REQUIRE(samples.position == 72);
+    REQUIRE(samples.duration == 100);
+    REQUIRE(samples.ranges == std::vector<std::pair<double,double>>{{2,3},{70,71}});
+}
+
+TEST_CASE("mpv does not credit unannounced jumps or rewinds") {
+    MpvPlaybackSamples samples;
+    samples.event(R"({"event":"property-change","name":"time-pos","data":0})", 0);
+    samples.event(R"({"event":"property-change","name":"time-pos","data":90})", 1);
+    samples.event(R"({"event":"property-change","name":"time-pos","data":40})", 2);
+    REQUIRE(samples.ranges.empty());
+}
+
+#ifdef _WIN32
+TEST_CASE("mpv pipe reports the last valid position on pause and close and resumes only this file") {
+    using namespace std::chrono_literals;
+    Fixture fixture;
+    // 使用临时目录与模拟播放器；测试不会启动桌面播放器。
+    const auto video = fixture.source / "episode.mkv";
+    std::ofstream(video) << "stub";
+    const auto mediaId = fixture.add(video);
+    WatchProgressStore store(*fixture.db);
+    MpvProgressMonitor monitor(store);
+    RecordingLauncher launcher;
+    PlaybackService service(*fixture.repository, fixture.source, fixture.imported, fixture.library, launcher, &monitor);
+    service.play(mediaId, utf8(fixture.mpv));
+    REQUIRE(launcher.arguments[0] == "--resume-playback=yes");
+    REQUIRE(launcher.arguments[1] == "--save-position-on-quit");
+    REQUIRE(std::none_of(launcher.arguments.begin(), launcher.arguments.end(),
+        [](const auto& option) { return option.starts_with("--start="); }));
+    const auto session = store.begin(mediaId, false);
+    store.sample(mediaId, session.id, 34, 100, {});
+    service.play(mediaId, utf8(fixture.mpv));
+    const auto options = launcher.arguments;
+    REQUIRE(options[0] == "--no-resume-playback");
+    REQUIRE(options[1] == "--start=34.000000");
+    const std::string prefix = "--input-ipc-server=";
+    REQUIRE(options[2].starts_with(prefix + R"(\\.\pipe\anime-vault-)"));
+    struct Server {
+        HANDLE handle;
+        ~Server() { if (handle != INVALID_HANDLE_VALUE) CloseHandle(handle); }
+    } server{CreateNamedPipeA(options[2].substr(prefix.size()).c_str(), PIPE_ACCESS_DUPLEX,
+         PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_NOWAIT | PIPE_REJECT_REMOTE_CLIENTS,
+         1, 4096, 4096, 0, nullptr)};
+    REQUIRE(server.handle != INVALID_HANDLE_VALUE);
+    auto until = [](auto&& predicate) {
+        auto deadline = std::chrono::steady_clock::now() + 4s;
+        do {
+            if (predicate()) return true;
+            std::this_thread::sleep_for(20ms);
+        } while (std::chrono::steady_clock::now() < deadline);
+        return false;
+    };
+    REQUIRE(until([&] {
+        return ConnectNamedPipe(server.handle, nullptr) || GetLastError() == ERROR_PIPE_CONNECTED;
+    }));
+    auto send = [&](const std::string& events) {
+        DWORD written{};
+        REQUIRE(WriteFile(server.handle, events.data(), static_cast<DWORD>(events.size()), &written, nullptr));
+        REQUIRE(written == events.size());
+    };
+    auto path = options.back();
+    std::replace(path.begin(), path.end(), '\\', '/');
+    send("{\"event\":\"property-change\",\"name\":\"path\",\"data\":\"" + path + "\"}\n"
+         R"({"event":"property-change","name":"duration","data":100})" "\n"
+         R"({"event":"property-change","name":"time-pos","data":40})" "\n"
+         R"({"event":"property-change","name":"pause","data":true})" "\n");
+    REQUIRE(until([&] { return store.resumePosition(mediaId) == 40; }));
+    send(R"({"event":"property-change","name":"time-pos","data":42})" "\n"
+         R"({"event":"property-change","name":"time-pos","data":null})" "\n"
+         R"({"event":"end-file"})" "\n");
+    REQUIRE(until([&] { return store.resumePosition(mediaId) == 42; }));
+    service.play(mediaId, utf8(fixture.mpv), "mpv", true);
+    REQUIRE(launcher.arguments[1] == "--start=0.000000");
+    REQUIRE(launcher.arguments[2] != options[2]);
+}
+#endif

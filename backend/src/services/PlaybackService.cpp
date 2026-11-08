@@ -1,5 +1,6 @@
 #include "anime_vault/services/PlaybackService.hpp"
 #include "anime_vault/services/PlayerCatalog.hpp"
+#include "anime_vault/services/MpvProgressMonitor.hpp"
 
 #include <algorithm>
 #include <system_error>
@@ -22,12 +23,12 @@ bool within(const fs::path& root, const fs::path& candidate) {
 
 PlaybackService::PlaybackService(ScanRepository& repository, fs::path sourceRoot,
                                  fs::path importRoot, fs::path libraryRoot,
-                                 ProcessLauncher& launcher)
+                                 ProcessLauncher& launcher, MpvProgressMonitor* monitor)
     : repository_(repository), sourceRoot_(std::move(sourceRoot)),
       importRoot_(std::move(importRoot)), libraryRoot_(std::move(libraryRoot)),
-      launcher_(launcher) {}
+      launcher_(launcher), monitor_(monitor) {}
 
-void PlaybackService::play(std::int64_t mediaId, const std::string& mpvExecutable, const std::string& playerType) const {
+void PlaybackService::play(std::int64_t mediaId, const std::string& mpvExecutable, const std::string& playerType, bool fromStart) const {
     if (mediaId <= 0) throw PlaybackError("invalid_media_id");
     if (!validPlayerType(playerType)) throw PlaybackError("invalid_player");
     const auto media = repository_.getMedia(mediaId);
@@ -76,6 +77,11 @@ void PlaybackService::play(std::int64_t mediaId, const std::string& mpvExecutabl
         return;
     }
     // 固定参数配置；临时选择只改变播放器，不允许网页提交命令行。
+    if (playerType == "mpv" && monitor_) {
+        if (!monitor_->launch(launcher_, resolvedExecutable, toUtf8(canonicalPath), mediaId, fromStart))
+            throw PlaybackError("mpv_launch_failed");
+        return;
+    }
     std::vector<std::string> arguments{toUtf8(canonicalPath)};
     if (playerType == "mpv") arguments = {"--save-position-on-quit", "--", toUtf8(canonicalPath)};
     if (!launcher_.launch(resolvedExecutable, arguments))

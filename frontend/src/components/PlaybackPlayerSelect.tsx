@@ -3,15 +3,15 @@ import { Alert, Space } from 'antd'
 import { getPlayers } from '../api/media'
 import type { PlayerCatalog } from '../api/types'
 
-export function PlaybackPlayerSelect({ value, onChange }: { value: string; onChange: (id: string) => void }) {
+export function PlaybackPlayerSelect({ value, onChange, onDefault }: { value: string; onChange: (id: string) => void; onDefault: (id: string) => void }) {
   const [catalog, setCatalog] = useState<PlayerCatalog | null>(null)
   const [error, setError] = useState('')
   useEffect(() => {
     const controller = new AbortController()
-    void getPlayers(controller.signal).then((result) => { if (!controller.signal.aborted) setCatalog(result) })
+    void getPlayers(controller.signal).then((result) => { if (!controller.signal.aborted) { setCatalog(result); onDefault(result.selectedId) } })
       .catch(() => { if (!controller.signal.aborted) setError('播放器列表暂不可用，仍可尝试使用已保存的默认播放器。') })
     return () => controller.abort()
-  }, [])
+  }, [onDefault])
   const name = catalog?.items.find((item) => item.id === catalog.selectedId)?.name
   return <Space direction="vertical">
     <label>本次播放使用 <select aria-label="本次播放器" value={value} onChange={(event) => onChange(event.target.value)}>

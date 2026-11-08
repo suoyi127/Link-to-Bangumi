@@ -34,6 +34,7 @@ file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/014_mikan_download.sql" ANIME_
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/015_mikan_subtitle.sql" ANIME_VAULT_MIKAN_SUBTITLE_SQL)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/016_game_import_alias.sql" ANIME_VAULT_GAME_IMPORT_ALIAS_SQL)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/017_mikan_rule_sync.sql" ANIME_VAULT_MIKAN_RULE_SYNC_SQL)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/migrations/018_watch_progress.sql" ANIME_VAULT_WATCH_PROGRESS_SQL)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/migrations/001_initial.sql"
   "${CMAKE_CURRENT_SOURCE_DIR}/migrations/002_media_correction.sql"
@@ -51,7 +52,8 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/migrations/014_mikan_download.sql"
   "${CMAKE_CURRENT_SOURCE_DIR}/migrations/015_mikan_subtitle.sql"
   "${CMAKE_CURRENT_SOURCE_DIR}/migrations/016_game_import_alias.sql"
-  "${CMAKE_CURRENT_SOURCE_DIR}/migrations/017_mikan_rule_sync.sql")
+  "${CMAKE_CURRENT_SOURCE_DIR}/migrations/017_mikan_rule_sync.sql"
+  "${CMAKE_CURRENT_SOURCE_DIR}/migrations/018_watch_progress.sql")
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/infrastructure/database/InitialSql.hpp.in"
   "${CMAKE_CURRENT_BINARY_DIR}/generated/InitialSql.hpp" @ONLY)
 
@@ -59,6 +61,7 @@ add_library(anime_vault_storage STATIC
   src/infrastructure/database/SqliteNovelRepository.cpp
   src/infrastructure/database/SqliteGameRepository.cpp
   src/infrastructure/database/MikanDownloadStore.cpp
+  src/infrastructure/database/WatchProgressStore.cpp
   src/infrastructure/database/SqliteDatabase.cpp
   src/infrastructure/database/SqliteMediaRepository.cpp
   src/infrastructure/database/SqliteScanRepository.cpp
@@ -95,6 +98,7 @@ add_library(anime_vault_core STATIC
   src/services/OrganizationService.cpp
   src/services/BangumiMatcher.cpp
   src/services/PlaybackService.cpp
+  src/services/MpvProgressMonitor.cpp
   src/services/PlayerCatalog.cpp
   src/services/RuntimePaths.cpp
   src/services/RuntimeWebRoot.cpp
@@ -104,7 +108,7 @@ target_include_directories(anime_vault_core PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 target_compile_features(anime_vault_core PUBLIC cxx_std_20)
-target_link_libraries(anime_vault_core PRIVATE anime_vault_chinese nlohmann_json::nlohmann_json Threads::Threads)
+target_link_libraries(anime_vault_core PRIVATE anime_vault_chinese anime_vault_storage nlohmann_json::nlohmann_json Threads::Threads)
 if(WIN32)
   target_link_libraries(anime_vault_core PRIVATE shell32 ole32 Advapi32)
 endif()
@@ -114,6 +118,7 @@ anime_vault_apply_lto(anime_vault_core)
 
 add_library(anime_vault_bangumi_service STATIC src/services/BangumiService.cpp src/services/BangumiCalendarService.cpp src/services/AnimeEnricher.cpp src/services/MikanEnricher.cpp src/services/CoverScraper.cpp src/services/NovelBangumiService.cpp src/services/GameBangumiService.cpp)
 target_sources(anime_vault_bangumi_service PRIVATE src/services/VndbTransport.cpp src/services/SteamPoster.cpp)
+target_sources(anime_vault_bangumi_service PRIVATE src/services/WatchSyncService.cpp)
 target_include_directories(anime_vault_bangumi_service PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(anime_vault_bangumi_service PUBLIC cxx_std_20)
 target_link_libraries(anime_vault_bangumi_service PUBLIC anime_vault_core anime_vault_storage nlohmann_json::nlohmann_json)
@@ -126,6 +131,7 @@ target_sources(anime_vault_bangumi_transport PRIVATE src/infrastructure/network/
 target_sources(anime_vault_bangumi_transport PRIVATE src/infrastructure/network/SteamClient.cpp src/services/SteamImportService.cpp)
 target_sources(anime_vault_bangumi_transport PRIVATE src/services/SteamLoginService.cpp src/infrastructure/network/MikanDownloadWorker.cpp)
 target_sources(anime_vault_bangumi_transport PRIVATE src/infrastructure/network/SteamMetadataClient.cpp)
+target_sources(anime_vault_bangumi_transport PRIVATE src/infrastructure/network/WatchSyncClient.cpp)
 target_include_directories(anime_vault_bangumi_transport PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(anime_vault_bangumi_transport PUBLIC cxx_std_20)
 target_link_libraries(anime_vault_bangumi_transport PUBLIC Drogon::Drogon nlohmann_json::nlohmann_json anime_vault_core anime_vault_bangumi_service)
@@ -145,6 +151,8 @@ add_library(anime_vault_api STATIC
   src/api/AnimeController.cpp
   src/api/OrganizationController.cpp
   src/api/PlaybackController.cpp
+  src/api/WatchProgressController.cpp
+  src/api/WatchSyncController.cpp
   src/api/SettingsController.cpp
   src/api/QbRssController.cpp
   src/api/QbConfigController.cpp

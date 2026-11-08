@@ -9,6 +9,8 @@
 
 namespace anime_vault {
 
+class MpvProgressMonitor;
+
 class PlaybackError final : public std::runtime_error {
 public:
     explicit PlaybackError(std::string code)
@@ -22,14 +24,15 @@ class PlaybackService {
 public:
     PlaybackService(ScanRepository& repository, std::filesystem::path sourceRoot,
                     std::filesystem::path importRoot, std::filesystem::path libraryRoot,
-                    ProcessLauncher& launcher);
+                    ProcessLauncher& launcher, MpvProgressMonitor* monitor = nullptr);
     // 根据媒体 ID 解析并校验真实文件，再将可执行文件和参数分开交给系统启动器。
     void play(std::int64_t mediaId, const std::string& executable,
-              const std::string& playerType = "mpv") const;
+              const std::string& playerType = "mpv", bool fromStart = false) const;
 private:
     ScanRepository& repository_;
     std::filesystem::path sourceRoot_, importRoot_, libraryRoot_;
     ProcessLauncher& launcher_;
+    MpvProgressMonitor* monitor_;
 };
 
 } // namespace anime_vault

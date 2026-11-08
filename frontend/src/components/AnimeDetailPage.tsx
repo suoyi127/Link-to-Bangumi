@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, Button, Descriptions, Input, List, Modal, Space, Spin, Typography } from 'antd'
 import { ApiError } from '../api/request'
 import { previewAnimeMerge, mergeAnime, bindBangumi, editAnime, editAnimeMedia, getAnimeDetail, refreshAnimeCover, searchBangumi } from '../api/anime'
 import { getAuditLogs } from '../api/settings'
 import { playMedia } from '../api/media'
 import type { AnimeMergePreview, AnimeDetail, AuditLog, BangumiCandidate, BangumiSearch, Media } from '../api/types'
+import { getWatchProgress, setWatched } from '../api/watch'
+import { useWatchSnapshot, watchTime } from './useWatchSnapshot'
 import { PlaybackPlayerSelect } from './PlaybackPlayerSelect'
 
 type Props = { animeId: number; onBack: () => void; onOpenAnime?: (id: number) => void }
@@ -39,6 +41,13 @@ export function AnimeDetailPage({ animeId, onBack, onOpenAnime }: Props) {
   const [playError, setPlayError] = useState('')
   const [playNotice, setPlayNotice] = useState('')
   const [playerId, setPlayerId] = useState('')
+  const [defaultPlayerId, setDefaultPlayerId] = useState('')
+  const tracksProgress = (playerId || defaultPlayerId) === 'mpv'
+  const readProgress = useCallback((signal: AbortSignal) => getWatchProgress(animeId, signal), [animeId])
+  const progress = useWatchSnapshot(readProgress)
+  const byMedia = new Map(progress.data?.items?.map(row => [row.mediaId, row]))
+  const [watchBusy, setWatchBusy] = useState<number | null>(null)
+  const [watchError, setWatchError] = useState('')
   const generation = useRef(0)
   const searchGeneration = useRef(0)
   const mediaGeneration = useRef(0)
@@ -55,6 +64,7 @@ export function AnimeDetailPage({ animeId, onBack, onOpenAnime }: Props) {
     const searchRef = searchGeneration
     const mediaRef = mediaGeneration
     const current = ++generationRef.current
+    setWatchBusy(null); setWatchError('')
     setPlayerId(''); setSearching(false); setMergeSubject(null); setMergePreview(null); setMergeBusy(false)
     setEdit(null); setEpisodeEdit(null); setSaving(false); setEditError('')
     searchRef.current++
@@ -163,12 +173,25 @@ export function AnimeDetailPage({ animeId, onBack, onOpenAnime }: Props) {
     finally { if (current === generation.current) setRefreshingCover(false) }
   }
 
-  async function startPlayback(item: Media) {
+  async function markWatched(mediaId: number, watched: boolean) {
+    if (watchBusy !== null) return
+    const current = generation.current
+    setWatchBusy(mediaId); setWatchError('')
+    try {
+      const result = await setWatched(mediaId, watched)
+      if (current !== generation.current) return
+      progress.update(old => ({ items: [...(old?.items || []).filter(row => row.mediaId !== mediaId), result] }))
+      progress.refresh()
+    } catch (cause) { if (current === generation.current) setWatchError(errorText(cause)) }
+    finally { if (current === generation.current) setWatchBusy(null) }
+  }
+
+  async function startPlayback(item: Media, fromStart = false) {
     if (playingId !== null) return
     const current = generation.current
     setPlayingId(item.id); setPlayError(''); setPlayNotice('')
     try {
-      const result = playerId ? await playMedia(item.id, playerId) : await playMedia(item.id)
+      const result = fromStart ? await playMedia(item.id, playerId || undefined, true) : playerId ? await playMedia(item.id, playerId) : await playMedia(item.id)
       if (current === generation.current) setPlayNotice(`已启动${result.playerName || '所选播放器'}：${item.filename}`)
     } catch (cause) {
       if (current === generation.current) setPlayError(errorText(cause))
@@ -194,15 +217,32 @@ export function AnimeDetailPage({ animeId, onBack, onOpenAnime }: Props) {
         { key: 'aliases', label: '别名', children: detail.aliases.length ? detail.aliases.join('、') : '无' },
       ]} />
       <Typography.Title level={4}>媒体文件</Typography.Title>
-      <PlaybackPlayerSelect value={playerId} onChange={setPlayerId} />
+      <PlaybackPlayerSelect value={playerId} onChange={setPlayerId} onDefault={setDefaultPlayerId} />
+      <Typography.Text type="secondary">使用 mpv 可自动记录观看进度和续播。使用其他播放器时，可在这里手动标记已看。</Typography.Text>
+      {progress.error && <Alert type="warning" message={`本地观看进度读取失败：${progress.error}`} />}
+      {watchError && <Alert type="error" message={watchError} />}
       {playError && <Alert type="error" message={playError} />}
       {playNotice && <Alert type="success" message={playNotice} />}
-      <List dataSource={media} locale={{ emptyText: '暂无媒体文件' }} renderItem={(item) => {
+      <List className="episode-progress-list" dataSource={media} locale={{ emptyText: '暂无媒体文件' }} renderItem={(item) => {
         // One anime can contain releases whose parsed titles are romanized aliases.
         const title = detail.displayTitle.trim() || item.title.trim() || item.filename
         const number = item.episodeNumber.trim()
         const episode = item.episodeNumberSource === 'bangumi' && /^\d+$/.test(number) ? number.padStart(2, '0') : number
-        return <List.Item key={item.id} actions={[<Button key="edit" aria-label={`修改集数 ${item.filename}`} onClick={() => { setEditError(''); setEpisodeEdit({ id: item.id, episodeNumber: item.episodeNumber, episodeType: item.episodeType }) }}>{'修改集数'}</Button>, <Button key="play" aria-label={`播放 ${item.filename}`} loading={playingId === item.id} disabled={playingId !== null && playingId !== item.id} onClick={() => void startPlayback(item)}>播放</Button>]}><Space direction="vertical"><Typography.Text strong>{title}{episode ? ` [${episode}]` : ''}</Typography.Text><Typography.Text type="secondary">{item.filename}</Typography.Text>{item.episodeNumberSource === 'bangumi' && item.rawEpisodeNumber !== item.episodeNumber && <Typography.Text type="secondary">原始集数 {item.rawEpisodeNumber} → 本季 {episode}</Typography.Text>}<Typography.Text type="secondary">{item.episodeType} {item.episodeNumber} · {item.status} · {item.origin}</Typography.Text></Space></List.Item>
+        const row = byMedia.get(item.id)
+        const resume = !!row && !row.watched && row.position > 0
+        const playLabel = resume && tracksProgress ? '继续播放' : '播放'
+        const watchLabel = row?.watched ? '标为未看' : '标为已看'
+        let watchStatus = row?.updatedAt ? '未看' : '未记录'
+        if (row?.watched) watchStatus = '已看'
+        else if (resume) watchStatus = `${watchTime(row.position)}${row.duration > 0 ? ` / ${watchTime(row.duration)}` : ''}`
+        const actions = [
+          <Button key="edit" aria-label={`修改集数 ${item.filename}`} onClick={() => { setEditError(''); setEpisodeEdit({ id: item.id, episodeNumber: item.episodeNumber, episodeType: item.episodeType }) }}>修改集数</Button>,
+          <Button key="play" aria-label={`${playLabel} ${item.filename}`} loading={playingId === item.id} disabled={playingId !== null} onClick={() => void startPlayback(item)}>{playLabel}</Button>,
+        ]
+        if (resume && tracksProgress) actions.push(<Button key="restart" aria-label={`从头播放 ${item.filename}`} disabled={playingId !== null} onClick={() => void startPlayback(item, true)}>从头播放</Button>)
+        if (progress.data) actions.push(<Button key="watched" aria-label={`${watchLabel} ${item.filename}`} loading={watchBusy === item.id} disabled={watchBusy !== null} onClick={() => void markWatched(item.id, !row?.watched)}>{watchLabel}</Button>)
+        return <List.Item key={item.id} actions={actions}><Space direction="vertical"><Typography.Text strong>{title}{episode ? ` [${episode}]` : ''}</Typography.Text><Typography.Text type="secondary">{item.filename}</Typography.Text>
+          {progress.data && <Typography.Text type="secondary">本地 · {watchStatus}</Typography.Text>}{item.episodeNumberSource === 'bangumi' && item.rawEpisodeNumber !== item.episodeNumber && <Typography.Text type="secondary">原始集数 {item.rawEpisodeNumber} → 本季 {episode}</Typography.Text>}<Typography.Text type="secondary">{item.episodeType} {item.episodeNumber} · {item.status} · {item.origin}</Typography.Text></Space></List.Item>
       }} />
       {nextMediaOffset !== null && <Button loading={moreBusy} onClick={() => void loadMore()}>加载更多媒体</Button>}
       <Typography.Title level={4}>Bangumi 绑定</Typography.Title>

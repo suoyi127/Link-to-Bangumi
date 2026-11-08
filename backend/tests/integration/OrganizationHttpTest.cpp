@@ -34,6 +34,17 @@ std::string utf8(const fs::path& path) {
 
 TEST_CASE("play request accepts only a positive media ID and a local browser origin") {
     REQUIRE(parsePlayMediaRequest("7").mediaId == 7);
+    REQUIRE_FALSE(parsePlayMediaRequest("7").fromStart);
+    auto restart = parsePlayMediaRequest("7", R"({"fromStart":true})");
+    REQUIRE(restart.fromStart);
+    REQUIRE_FALSE(restart.playerId);
+    auto choice = parsePlayMediaRequest("7", R"({"playerId":"mpv","fromStart":false})");
+    REQUIRE(choice.playerId == "mpv");
+    REQUIRE_FALSE(choice.fromStart);
+    for (const auto* invalid : {R"({"fromStart":1})", R"({"playerId":null})", R"({"path":"x"})", "{}"}) {
+        try { (void)parsePlayMediaRequest("7",invalid); FAIL("expected invalid option"); }
+        catch (const ApiError& error) { REQUIRE(error.code == "invalid_request"); }
+    }
     for (const auto& id : {"0", "-1", "abc", "7/../8"}) {
         try { (void)parsePlayMediaRequest(id); FAIL("expected invalid ID"); }
         catch (const ApiError& error) { REQUIRE(error.code == "invalid_id"); }

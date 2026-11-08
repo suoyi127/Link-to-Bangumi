@@ -220,3 +220,59 @@ it('previews a conflict before confirming the merge', async () => {
   await waitFor(() => expect(open).toHaveBeenCalledWith(9))
   expect(merge).toHaveBeenCalledWith(7, 'a'.repeat(32))
 }, 20000)
+
+it('shows a saved position, restarts in the selected player, and marks watched', async () => {
+  vi.spyOn(animeApi, 'getAnimeDetail').mockResolvedValue(detail([media(1)], null))
+  vi.spyOn(settingsApi, 'getAuditLogs').mockResolvedValue({ items: [], nextOffset: null })
+  const progress = { mediaId: 1, watched: false, position: 72, duration: 1200, updatedAt: 1 }
+  const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (path, init) => {
+    if (path === '/api/watch-progress?animeId=7') return Response.json({ items: [progress] })
+    if (path === '/api/media/1/watched' && init?.method === 'PUT') { progress.watched = true; return Response.json(progress) }
+    throw Error(String(path))
+  })
+  const play = vi.spyOn(mediaApi, 'playMedia').mockResolvedValue({ mediaId: 1, status: 'started', playerId: 'mpv', playerName: 'mpv' })
+  render(<AnimeDetailPage animeId={7} onBack={vi.fn()} />)
+  expect(await screen.findByText(/01:12.*20:00/)).toBeVisible()
+  fireEvent.change(screen.getByLabelText('本次播放器'), { target: { value: 'mpv' } })
+  fireEvent.click(screen.getByRole('button', { name: '从头播放 1.mkv' }))
+  await waitFor(() => expect(play).toHaveBeenCalledWith(1, 'mpv', true))
+  fireEvent.click(screen.getByRole('button', { name: '标为已看 1.mkv' }))
+  expect(await screen.findByRole('button', { name: '标为未看 1.mkv' })).toBeVisible()
+  expect(fetch).toHaveBeenCalledWith('/api/media/1/watched', expect.objectContaining({ body: '{"watched":true}' }))
+}, 20000)
+
+it('keeps playback controls when watch progress cannot be loaded', async () => {
+  vi.spyOn(animeApi, 'getAnimeDetail').mockResolvedValue(detail([media(1)], null))
+  vi.spyOn(settingsApi, 'getAuditLogs').mockResolvedValue({ items: [], nextOffset: null })
+  vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'))
+  render(<AnimeDetailPage animeId={7} onBack={vi.fn()} />)
+  expect(await screen.findByText(/本地观看进度读取失败/)).toBeVisible()
+  expect(screen.getByRole('button', { name: '播放 1.mkv' })).toBeEnabled()
+})
+
+it('distinguishes unrecorded legacy media from a manual unwatched mark', async () => {
+  vi.spyOn(animeApi, 'getAnimeDetail').mockResolvedValue(detail([media(1), media(2)], null))
+  vi.spyOn(settingsApi, 'getAuditLogs').mockResolvedValue({ items: [], nextOffset: null })
+  const progress = { watched: false, position: 0, duration: 0 }
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ items: [
+    { ...progress, mediaId: 1, updatedAt: 0 }, { ...progress, mediaId: 2, updatedAt: 1720000000 },
+  ] }))
+  render(<AnimeDetailPage animeId={7} onBack={vi.fn()} />)
+  expect(await screen.findByText('本地 · 未记录')).toBeVisible()
+  expect(screen.getByText('本地 · 未看')).toBeVisible()
+}, 20000)
+
+it('refreshes all releases immediately after marking one copy watched', async () => {
+  vi.spyOn(animeApi, 'getAnimeDetail').mockResolvedValue(detail([media(1), { ...media(2), episodeNumber: '1' }], null))
+  vi.spyOn(settingsApi, 'getAuditLogs').mockResolvedValue({ items: [], nextOffset: null })
+  let watched = false
+  const row = (mediaId: number) => ({ mediaId, watched, position: 0, duration: 0, updatedAt: watched ? 1 : 0 })
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+    if (url === '/api/watch-progress?animeId=7') return Response.json({ items: [row(1), row(2)] })
+    if (url === '/api/media/1/watched' && init?.method === 'PUT') { watched = true; return Response.json(row(1)) }
+    throw Error(String(url))
+  })
+  render(<AnimeDetailPage animeId={7} onBack={vi.fn()} />)
+  fireEvent.click(await screen.findByRole('button', { name: '标为已看 1.mkv' }))
+  expect(await screen.findByRole('button', { name: '标为未看 2.mkv' }, { timeout: 2000 })).toBeVisible()
+}, 20000)

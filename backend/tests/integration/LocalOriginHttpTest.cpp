@@ -1,6 +1,9 @@
 #include "anime_vault/api/GameController.hpp"
 #include "anime_vault/api/SteamController.hpp"
 #include "anime_vault/api/NovelController.hpp"
+#include "anime_vault/api/WatchSyncController.hpp"
+#include "anime_vault/services/WatchSyncService.hpp"
+#include "anime_vault/infrastructure/database/SqliteDatabase.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <drogon/drogon.h>
 #include <thread>
@@ -10,6 +13,13 @@ TEST_CASE("desktop dynamic origin reaches input validation while foreign origins
     anime_vault::api::registerGameEndpoints(nullptr, nullptr, launcher);
     anime_vault::api::registerSteamEndpoints(nullptr, nullptr);
     anime_vault::api::registerNovelEndpoints(nullptr, nullptr, launcher);
+    anime_vault::SqliteDatabase db(":memory:");
+    db.migrate();
+    auto sync=std::make_shared<anime_vault::WatchSyncService>(db,anime_vault::WatchSyncService::Request{},
+        anime_vault::WatchSyncService::Read{},anime_vault::WatchSyncService::Save{});
+    sync->start();
+    struct StopSync { anime_vault::WatchSyncService& service; ~StopSync(){service.stop();} } stopSync{*sync};
+    anime_vault::api::registerWatchSyncEndpoints(sync);
     drogon::app().addListener("127.0.0.1", 18854);
     std::thread server([] { drogon::app().run(); });
     struct Stop { std::thread& thread; ~Stop() { drogon::app().quit(); thread.join(); } } stop{server};
@@ -21,7 +31,7 @@ TEST_CASE("desktop dynamic origin reaches input validation while foreign origins
         // 使用无效字段停在输入校验，不读取磁盘或调用导入服务。
         Json::Value body; body["unexpected"] = true;
         auto request = drogon::HttpRequest::newHttpJsonRequest(body);
-        request->setMethod(drogon::Post); request->setPath(path);
+        request->setMethod(path=="/api/watch-sync" ? drogon::Put : drogon::Post); request->setPath(path);
         if (!origin.empty()) request->addHeader("Origin", origin);
         request->addHeader("Sec-Fetch-Site", site);
         auto [result, response] = client->sendRequest(request);
@@ -29,7 +39,7 @@ TEST_CASE("desktop dynamic origin reaches input validation while foreign origins
         REQUIRE(response);
         return (*response->getJsonObject())["error"]["code"].asString();
     };
-    for (const auto& path : {"/api/game-imports", "/api/novel-imports", "/api/steam/imports"}) {
+    for (const auto& path : {"/api/game-imports", "/api/novel-imports", "/api/steam/imports","/api/watch-sync","/api/watch-sync/collect"}) {
         REQUIRE(send(path, "http://127.0.0.1:18854", "same-origin") == "invalid_request");
         REQUIRE(send(path, "http://localhost:18854", "same-origin") == "invalid_request");
         REQUIRE(send(path, "http://localhost:5173", "same-site") == "invalid_request");

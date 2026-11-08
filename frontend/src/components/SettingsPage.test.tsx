@@ -419,3 +419,28 @@ it('clears a previous saved-connection status error when testing qB again', asyn
   await screen.findByText(/测试成功.*5.2/)
   expect(screen.queryByText('旧连接状态错误')).not.toBeInTheDocument()
 })
+
+it('saves a private sync token and requires consent to add an uncollected work', async () => {
+  vi.spyOn(settingsApi, 'getSettings').mockResolvedValue(settings)
+  vi.spyOn(settingsApi, 'getAuditLogs').mockResolvedValue({ items: [], nextOffset: null })
+  const idle = { enabled: false, connected: false, username: '', pending: 0, issues: [], errorCode: '' }
+  const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (path, init) => {
+    if (path === '/api/watch-sync/collect') return Response.json({ ...idle, enabled: true, username: 'mika', connected: true })
+    if (path !== '/api/watch-sync') throw Error(String(path))
+    if (init?.method !== 'PUT') return Response.json(idle)
+    return Response.json({ enabled: true, connected: true, username: 'mika', pending: 1, errorCode: '', issues: [{ mediaId: 9, title: '星夜', episodeNumber: '02', episodeType: 'normal', errorCode: 'subject_not_collected' }] })
+  })
+  render(<SettingsPage />)
+  const token = await screen.findByLabelText('Bangumi 个人访问令牌')
+  expect(token).toHaveAttribute('type', 'password')
+  fireEvent.change(token, { target: { value: 'test-token' } })
+  fireEvent.click(screen.getByRole('checkbox', { name: '同步本地已看状态到 Bangumi' }))
+  fireEvent.click(screen.getByRole('button', { name: '保存观看同步设置' }))
+  const collect = await screen.findByRole('button', { name: '收藏并同步 星夜' })
+  expect(fetch).toHaveBeenCalledWith('/api/watch-sync', expect.objectContaining({ method: 'PUT', body: '{"enabled":true,"token":"test-token"}' }))
+  expect(token).toHaveValue('')
+  expect(fetch).not.toHaveBeenCalledWith('/api/watch-sync/collect', expect.anything())
+  fireEvent.click(collect)
+  fireEvent.click(await screen.findByRole('button', { name: '确认收藏' }))
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/watch-sync/collect', expect.objectContaining({ body: '{"mediaId":9}' })))
+}, 20000)

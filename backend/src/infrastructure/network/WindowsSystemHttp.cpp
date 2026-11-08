@@ -17,11 +17,11 @@ struct Handle {
 
 WindowsHttpResult perform(const std::string& host, const std::string& path,
                           const std::string& method, const std::string& userAgent,
-                          const std::string& body, std::size_t maxBytes) {
+                          const std::string& body, std::size_t maxBytes, const std::string& token = {}) {
     if ((host != "api.bgm.tv" && host != "lain.bgm.tv" && host != "api.vndb.org" && host != "t.vndb.org" && host != "api.steampowered.com" &&
          host != "store.steampowered.com" && host != "shared.akamai.steamstatic.com" && host != "shared.fastly.steamstatic.com" &&
          host != "cdn.akamai.steamstatic.com" && host != "cdn.cloudflare.steamstatic.com" && host != "steamcdn-a.akamaihd.net") || path.empty() || path[0] != '/' ||
-        path.size() > 2048 || (method != "GET" && method != "POST") || body.size() > 4096)
+        path.size() > 2048 || (method != "GET" && method != "POST" && !(method=="PUT" && !token.empty())) || body.size() > 4096)
         return {};
     const auto wideHost = std::wstring(host.begin(), host.end());
     const auto widePath = std::wstring(path.begin(), path.end());
@@ -40,8 +40,14 @@ WindowsHttpResult perform(const std::string& host, const std::string& path,
     DWORD disabled = WINHTTP_DISABLE_REDIRECTS;
     if (!WinHttpSetOption(request.value, WINHTTP_OPTION_DISABLE_FEATURE,
                           &disabled, sizeof(disabled))) return {};
-    const auto headers = method == "POST" ? L"Content-Type: application/json\r\n" : L"";
-    if (!WinHttpSendRequest(request.value, headers, static_cast<DWORD>(-1),
+    std::wstring headers = body.empty() ? L"" : L"Content-Type: application/json\r\n";
+    // 令牌只发往固定的 Bangumi HTTPS 主机，禁止重定向带出凭据。
+    if (!token.empty()) {
+        if (host != "api.bgm.tv" || token.size()>2048 ||
+            token.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~+/=")!=std::string::npos) return {};
+        headers += L"Authorization: Bearer " + std::wstring(token.begin(),token.end()) + L"\r\n";
+    }
+    if (!WinHttpSendRequest(request.value, headers.c_str(), static_cast<DWORD>(-1),
                             body.empty() ? WINHTTP_NO_REQUEST_DATA :
                                 const_cast<char*>(body.data()),
                             static_cast<DWORD>(body.size()), static_cast<DWORD>(body.size()), 0) ||
@@ -63,6 +69,12 @@ WindowsHttpResult perform(const std::string& host, const std::string& path,
     }
     return result;
 }
+}
+
+WindowsHttpResult authenticatedBangumiRequest(const std::string& path,const std::string& method,
+        const std::string& agent,const std::string& body,const std::string& token) {
+    if (token.empty()) return {};
+    return perform("api.bgm.tv",path,method,agent,body,512*1024,token);
 }
 
 void windowsSystemHttpsRequest(std::string host, std::string path, std::string method,

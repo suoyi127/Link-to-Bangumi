@@ -3,10 +3,27 @@
 #include "anime_vault/api/LocalRequest.hpp"
 #include "anime_vault/services/PlayerCatalog.hpp"
 #include <algorithm>
+#include <memory>
 
 namespace anime_vault::api {
-PlayMediaHttpRequest parsePlayMediaRequest(std::string_view rawId) {
-    return {parseId(rawId)};
+PlayMediaHttpRequest parsePlayMediaRequest(std::string_view rawId, std::string_view body) {
+    PlayMediaHttpRequest dto{parseId(rawId), std::nullopt, false};
+    if (body.empty()) return dto;
+    Json::CharReaderBuilder builder;
+    builder["failIfExtra"] = true;
+    builder["rejectDupKeys"] = true;
+    Json::Value obj;
+    std::string error;
+    const auto reader = std::unique_ptr<Json::CharReader>(builder.newCharReader());
+    if (body.size() > 128 || !reader->parse(body.data(), body.data() + body.size(), &obj, &error) ||
+        !obj.isObject() || obj.empty())
+        throw ApiError(400, "invalid_request", "invalid playback request");
+    for (const auto& key : obj.getMemberNames()) {
+        if (key == "playerId" && obj[key].isString()) dto.playerId = obj[key].asString();
+        else if (key == "fromStart" && obj[key].isBool()) dto.fromStart = obj[key].asBool();
+        else throw ApiError(400, "invalid_request", "invalid playback option");
+    }
+    return dto;
 }
 
 bool playbackOriginAllowed(std::string_view origin) {
@@ -70,22 +87,16 @@ void registerPlaybackController(SettingsRepository& repository, PlaybackService&
                 throw ApiError(400, "invalid_request", "invalid playback request");
             if (!localRequestAllowed(request))
                 throw ApiError(403, "playback_origin_forbidden", "playback requires a local page");
-            const auto dto = parsePlayMediaRequest(rawId);
+            const auto dto = parsePlayMediaRequest(rawId, request->body());
             const auto preferences = repository.getUiPreferences();
-            auto type = preferences.playerType;
-            if (!request->body().empty()) {
-                const auto body = request->getJsonObject();
-                if (!body || !body->isObject() || body->size() != 1 || !(*body)["playerId"].isString())
-                    throw ApiError(400, "invalid_request", "only playerId allowed");
-                type = (*body)["playerId"].asString();
-            }
+            const auto type = dto.playerId.value_or(preferences.playerType);
             if (!validPlayerType(type)) throw ApiError(400, "invalid_player", "unknown player");
             const auto options = discoverPlayers(preferences);
             const auto selected = std::find_if(options.begin(), options.end(), [&](const auto& option) { return option.id == type; });
             if (selected == options.end() || !selected->available)
                 throw ApiError(409, "player_not_found", "player unavailable");
             try {
-                playback.play(dto.mediaId, selected->executable, type);
+                playback.play(dto.mediaId, selected->executable, type, dto.fromStart);
             } catch (const PlaybackError& error) {
                 const auto& code = error.code();
                 const int status = code == "invalid_media_id" ? 400 :

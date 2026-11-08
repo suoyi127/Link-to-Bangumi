@@ -101,3 +101,35 @@ it('groups both views by import month including unknown dates', async () => {
   expect(screen.getAllByRole('table')).toHaveLength(3)
   expect(screen.getByRole('region', { name: '2026 年 09 月' })).toContainElement(screen.getByRole('button', { name: '打开 番剧 2' }))
 }, 20000)
+
+it('starts the suggested next episode from the library', async () => {
+  vi.spyOn(animeApi, 'getAnime').mockResolvedValue({ items: [anime(1)], nextOffset: null })
+  const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async path => {
+    if (path === '/api/watch-progress/continue') return Response.json({ items: [{ animeId: 1, title: '番剧 1', mediaId: 31, episodeType: 'normal', episodeNumber: '3', nextEpisode: true, position: 0, duration: 0 }] })
+    if (path === '/api/media/31/play') return Response.json({ status: 'started', playerName: 'mpv' })
+    throw Error(String(path))
+  })
+  render(<LibraryPage onOpenAnime={vi.fn()} />)
+  fireEvent.click(await screen.findByRole('button', { name: '播放下一集 番剧 1 第 3 集' }))
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/media/31/play', expect.objectContaining({ method: 'POST' })))
+})
+
+it('keeps library navigation available when continue watching is unavailable', async () => {
+  vi.spyOn(animeApi, 'getAnime').mockResolvedValue({ items: [anime(1)], nextOffset: null })
+  vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'))
+  render(<LibraryPage onOpenAnime={vi.fn()} />)
+  expect(await screen.findByRole('button', { name: '打开 番剧 1' })).toBeVisible()
+  expect(await screen.findByText(/继续观看读取失败/)).toBeVisible()
+})
+
+it('resumes partial episodes in mpv without depending on the saved default player', async () => {
+  vi.spyOn(animeApi, 'getAnime').mockResolvedValue({ items: [anime(1)], nextOffset: null })
+  const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async path => {
+    if (path === '/api/watch-progress/continue') return Response.json({ items: [{ animeId: 1, title: '番剧 1', mediaId: 32, episodeType: 'normal', episodeNumber: '4', nextEpisode: false, position: 61, duration: 120 }] })
+    if (path === '/api/media/32/play') return Response.json({ status: 'started', playerName: 'mpv' })
+    throw Error(String(path))
+  })
+  render(<LibraryPage onOpenAnime={vi.fn()} />)
+  fireEvent.click(await screen.findByRole('button', { name: '用 mpv 继续播放 番剧 1 第 4 集' }))
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/media/32/play', expect.objectContaining({ method: 'POST', body: '{"playerId":"mpv"}' })))
+}, 20000)

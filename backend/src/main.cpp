@@ -26,6 +26,11 @@
 #include "anime_vault/infrastructure/network/BangumiConnectionManager.hpp"
 #include "anime_vault/infrastructure/ProcessLauncher.hpp"
 #include "anime_vault/services/PlaybackService.hpp"
+#include "anime_vault/services/MpvProgressMonitor.hpp"
+#include "anime_vault/infrastructure/database/WatchProgressStore.hpp"
+#include "anime_vault/api/WatchProgressController.hpp"
+#include "anime_vault/api/WatchSyncController.hpp"
+#include "anime_vault/services/WatchSyncService.hpp"
 #include "anime_vault/services/RuntimePaths.hpp"
 #include "anime_vault/services/RuntimeWebRoot.hpp"
 
@@ -74,7 +79,9 @@ int main() {
         std::filesystem::create_directories(library);
         anime_vault::OrganizationService organization(repository, source, imported, library);
         anime_vault::NativeProcessLauncher processLauncher;
-        anime_vault::PlaybackService playback(repository, source, imported, library, processLauncher);
+        anime_vault::WatchProgressStore watchStore(database);
+        anime_vault::MpvProgressMonitor monitor(watchStore);
+        anime_vault::PlaybackService playback(repository, source, imported, library, processLauncher, &monitor);
         const char* configuredAgent = std::getenv("ANIME_VAULT_BANGUMI_USER_AGENT");
         auto bangumiConnection = std::make_shared<anime_vault::BangumiConnectionManager>(
             database, configuredAgent ? configuredAgent : "");
@@ -111,6 +118,15 @@ int main() {
             anime_vault::api::resolveInstanceToken(std::getenv("ANIME_VAULT_INSTANCE_TOKEN")));
         anime_vault::api::registerMediaEndpoints(media, organization, enricher, mikanEnricher);
         anime_vault::api::registerPlaybackEndpoint(repository, playback);
+        anime_vault::api::registerWatchProgressEndpoints(watchStore);
+        auto watchSync=anime_vault::makeWatchSyncService(database,data,[bangumiConnection] {
+            return bangumiConnection->summary().userAgent;
+        });
+        struct StopWatchSync {
+            std::shared_ptr<anime_vault::WatchSyncService> service;
+            ~StopWatchSync() { service->stop(); }
+        } stopWatchSync{watchSync};
+        anime_vault::api::registerWatchSyncEndpoints(watchSync);
         anime_vault::api::registerManagementEndpoints(repository,
             {source, imported, library, data,
              bangumiConnection->summary().configured, qb->summary().configured,
