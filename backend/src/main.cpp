@@ -150,7 +150,7 @@ int main() {
         auto steamClient = std::make_shared<anime_vault::SteamClient>([](std::string path, auto callback) {
 #ifdef _WIN32
             anime_vault::windowsSystemHttpsRequest("api.steampowered.com", std::move(path), "GET",
-                "LinkToBangumi/0.1.2", "", 8 * 1024 * 1024,
+                "LinkToBangumi/0.1.3", "", 8 * 1024 * 1024,
                 [callback = std::move(callback)](anime_vault::WindowsHttpResult result) mutable {
                     callback(result.status, result.body.value_or(""));
                 });
@@ -161,7 +161,7 @@ int main() {
         auto steamMetadata = std::make_shared<anime_vault::SteamMetadataClient>([](std::string host, std::string path, auto callback) {
 #ifdef _WIN32
             const auto limit = host == "store.steampowered.com" ? 2 * 1024 * 1024 : 8 * 1024 * 1024;
-            anime_vault::windowsSystemHttpsRequest(std::move(host), std::move(path), "GET", "LinkToBangumi/0.1.2", "", limit,
+            anime_vault::windowsSystemHttpsRequest(std::move(host), std::move(path), "GET", "LinkToBangumi/0.1.3", "", limit,
                 [callback = std::move(callback)](anime_vault::WindowsHttpResult result) mutable {
                     callback(result.status, result.body.value_or(""));
                 });
