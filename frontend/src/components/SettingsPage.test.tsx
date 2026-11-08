@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import * as mediaApi from '../api/media'
 import * as qbApi from '../api/qb'
@@ -447,13 +447,14 @@ it('saves a private sync token and requires consent to add an uncollected work',
       subscriptionPending: 2, subscriptionIssues: [{ mikanId: 42, errorCode: 'mikan_subject_unmapped' }, { mikanId: 43, errorCode: 'mikan_unavailable' }] })
   })
   render(<SettingsPage />)
-  const token = await screen.findByLabelText('Bangumi 个人访问令牌')
+  const sync = within(await screen.findByRole('region', { name: 'Bangumi 观看同步' }))
+  const token = await sync.findByLabelText('Bangumi 个人访问令牌')
   expect(token).toHaveAttribute('type', 'password')
   expect(screen.getByText(/分集待同步 0 项 · 订阅待收藏 0 项/)).toBeInTheDocument()
   fireEvent.change(token, { target: { value: 'test-token' } })
-  fireEvent.click(screen.getByRole('checkbox', { name: '同步本地已看状态到 Bangumi' }))
-  fireEvent.click(screen.getByRole('button', { name: '保存观看同步设置' }))
-  const collect = await screen.findByRole('button', { name: '收藏并同步 星夜' })
+  fireEvent.click(sync.getByRole('checkbox', { name: '同步本地已看状态到 Bangumi' }))
+  fireEvent.click(sync.getByRole('button', { name: '保存观看同步设置' }))
+  const collect = await sync.findByRole('button', { name: '收藏并同步 星夜' })
   expect(screen.getByText(/分集待同步 1 项 · 订阅待收藏 2 项/)).toBeInTheDocument()
   expect(screen.getByRole('link', { name: 'Mikan 番剧 #42' })).toHaveAttribute('href', 'https://mikanani.me/Home/Bangumi/42')
   expect(screen.getByText(/Mikan 番剧页缺少对应的 Bangumi 条目/)).toBeInTheDocument()

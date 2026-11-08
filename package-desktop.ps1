@@ -41,7 +41,7 @@ try {
     Copy-Item -Path (Join-Path $repo 'backend/third_party/lexbor/*.txt') -Destination $lexborLicenseDir
     Copy-Item -Path (Join-Path $repo 'frontend/dist/*') -Destination (Join-Path $package 'web') -Recurse
     Get-ChildItem -LiteralPath $publish -File |
-        Where-Object { $_.Extension -ne '.pdb' } |
+        Where-Object { $_.Extension -ne '.pdb' -and $_.Name -notlike 'Microsoft.Web.WebView2.*.xml' } |
         Copy-Item -Destination $package
     if (-not (Test-Path -LiteralPath (Join-Path $package 'AnimeVault.exe')) -or
         -not (Test-Path -LiteralPath (Join-Path $package 'web/index.html'))) {

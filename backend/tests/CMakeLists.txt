@@ -44,6 +44,7 @@ add_test(NAME LocalOriginHttp COMMAND anime_vault_local_origin_tests)
 add_executable(anime_vault_game_tests integration/GameServiceTest.cpp)
 target_link_libraries(anime_vault_game_tests PRIVATE anime_vault_bangumi_service Catch2::Catch2WithMain)
 target_compile_features(anime_vault_game_tests PRIVATE cxx_std_20)
+anime_vault_apply_warnings(anime_vault_game_tests)
 add_test(NAME GameService COMMAND anime_vault_game_tests)
 
 add_executable(anime_vault_novel_tests integration/NovelServiceTest.cpp)
